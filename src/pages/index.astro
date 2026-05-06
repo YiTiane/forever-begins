@@ -1,101 +1,26 @@
 ---
 /**
- * index.astro · 最小 Cover 占位（v0.2）
+ * index.astro · 主页（v0.3 · Phase 2 §0 第一刀）
  *
- * 当前阶段（Phase 1 §1.1.9）只验证字体管线。这个页面**只用 2 个 preload 字体**——
- * Cormorant Garamond Italic 与 Noto Serif SC Light——以保证生产 root 路由真正
- * 兑现 188KB 首屏字体预算的承诺。
+ * 职责：从 Base 拉全站布局，渲染 Cover.astro。
  *
- * 8 字体冒烟测试已迁出到 src/pages/dev-fonts.astro（开发期手动访问）。
+ * v0.3 变化：
+ *   - v0.2 内联的 welcome / Forever Begins / 新人 / 时间地点 / 诗句 整体迁入 src/components/Cover.astro
+ *   - 邀请函 part_1 通过 <CdnImage cdnTarget="misc" stem="invitation/part_1"> 首次接入主仓
+ *   - 满足 §5.2 #4b CdnImage runtime gate（v1.39 审计 P2 修订）
  *
- * Phase 2 §0 Cover 实装时此页将整体重写为带邀请函水彩 + parallax 的真 Cover。
+ * 后续在 Phase 2 §0 内逐步叠：
+ *   - §0 第二刀：含羞草花瓣 Canvas 粒子（轻量 / 可关）
+ *   - §0 第三刀：mouse parallax / device-orientation
+ *   - §0 第四刀：水彩纸纹背景 + Mimosa / Olive Branch SVG motif
  *
- * 排版约束（DESIGN UI 准则）：
- *   - 不用 clamp(_, _vw, _) 把字号直接绑定 viewport 宽
- *   - letter-spacing >= 0
- *   - 排版常量后续会进 tokens.css；当前用静态 rem 占位
+ * 当前页面没有任何 inline `font-family` / `vw` / 负 letter-spacing；排版常量
+ * 全走 §1.1.10–§1.1.12 的 token + helper class。
  */
 import Base from "@/layouts/Base.astro";
+import Cover from "@/components/Cover.astro";
 ---
 
 <Base>
-  <main class="cover-min">
-    <p class="welcome">Welcome</p>
-    <h1 class="hero">Forever Begins</h1>
-
-    <div class="meta">
-      <p class="couple">杨倚天 &amp; 希尔娜依</p>
-      <p class="when">二〇二六年六月十四日 · 晚七点</p>
-      <p class="where">新疆乌鲁木齐 · 二道桥大剧院</p>
-    </div>
-
-    <p class="poem">既见君子，云胡不喜。</p>
-  </main>
-
-  <style>
-    /* —— 占位样式；Phase 1 §1.1.10/§1.1.11/§1.1.12 起会被 tokens / reset / global 接替 —— */
-
-    .cover-min {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 6rem 1.5rem;
-      text-align: center;
-      color: #2a2a26;
-      background: #faf6ec;
-    }
-
-    /* 仅用 Cormorant Italic（preload #1） */
-    .welcome {
-      font-family: "Cormorant Garamond", Georgia, serif;
-      font-style: italic;
-      font-weight: 300;
-      font-size: 1.5rem;
-      letter-spacing: 0;
-      color: #7b8a6a;
-      margin: 0 0 1rem;
-    }
-    .hero {
-      font-family: "Cormorant Garamond", Georgia, serif;
-      font-style: italic;
-      font-weight: 300;
-      font-size: 5rem; /* 静态 rem，不绑 viewport */
-      letter-spacing: 0; /* 不用负值 */
-      line-height: 1.1;
-      color: #5a6b47;
-      margin: 0 0 3rem;
-    }
-
-    /* 仅用 Noto Serif SC Light（preload #2） */
-    .meta,
-    .poem {
-      font-family: "Noto Serif SC", "宋体", serif;
-      font-weight: 300;
-      letter-spacing: 0; /* 项目全局约束：letter-spacing = 0；空气感交给字号、行高、版心 */
-    }
-    .meta {
-      margin: 0 0 4rem;
-    }
-    .meta p {
-      font-size: 1.125rem;
-      margin: 0.5rem 0;
-      line-height: 1.7;
-    }
-    .poem {
-      font-size: 1.5rem;
-      margin: 0;
-      color: #5a6b47;
-    }
-
-    @media (max-width: 540px) {
-      .hero {
-        font-size: 3.5rem;
-      }
-      .meta p {
-        font-size: 1rem;
-      }
-      .poem {
-        font-size: 1.25rem;
-      }
-    }
-  </style>
+  <Cover />
 </Base>

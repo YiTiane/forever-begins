@@ -1,0 +1,138 @@
+---
+/**
+ * Cover.astro · §0 序幕 · 邀请（v0.1 · Phase 2 §0 第一刀）
+ *
+ * 本批次范围（v1.39 审计指引下严格收敛）：
+ *   ✓ 邀请函 part_1 通过 `<CdnImage cdnTarget="misc" stem="invitation/part_1">`
+ *     首次接入主仓 → 满足 §5.2 #4b CdnImage runtime gate
+ *   ✓ 把 v0.2 index.astro 的内联文本（welcome / Forever Begins 大字 / 新人名 /
+ *     时间地点 / 诗句）整体迁入 Cover 组件，保持视觉/排版不动
+ *   ✓ 已使用 §1.1.12 的 helper class（.latin-italic / .cn-song）替代 inline
+ *     `font-family: 'Cormorant Garamond'` 等硬编码；color 改用 var(--c-sage-*)
+ *
+ * **不**在本批次做（留给 Phase 2 §0 后续刀）：
+ *   ✗ 含羞草花瓣 Canvas 粒子（轻量 / 可关）
+ *   ✗ Mouse parallax / device-orientation 倾斜
+ *   ✗ 完整水彩纸纹背景 + Mimosa / Olive Branch SVG motif
+ *   ✗ OG 重做 / parallax 卡片本身位移 ≤12px 边界
+ *
+ * 视觉要点（DESIGN §4 §0 核心）：
+ *   - 邀请函**作为悬浮纸卡居中**，max-width: min(600px, 60vw)；
+ *     原图 800×1200，渲染像素永远 ≤ 原图像素，确保清晰度（v2.2 修订决策）
+ *   - "Forever Begins" 大字与新人名字在邀请函**下方**，不叠在邀请函里
+ *
+ * CdnImage 对应仓内派生品（已经过 GitHub API 真实清单交叉验证）：
+ *   misc/avif/invitation/part_1-{320,640,1024,1600,2400,3840}.avif
+ *   misc/webp/invitation/part_1-{320,640,1024,1600,2400,3840}.webp
+ *   misc/jpg/invitation/part_1-{320,640,1024,1600}.jpg
+ *
+ * sizes 计算（DESIGN §4 §0 + 8pt grid）：
+ *   - 移动 (<540px)：邀请函 80vw（带留白）
+ *   - 平板 (540–959px)：60vw（接近 max-width 上限）
+ *   - 桌面 (≥960px)：固定 600px（max-width 上限，避免过大模糊）
+ *   sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
+ */
+import CdnImage from "@/components/CdnImage.astro";
+---
+
+<section class="cover" aria-label="邀请">
+  {/* —— 邀请函悬浮纸卡（v0.1：仅图，无 parallax / particles） —— */}
+  <figure class="invitation-card">
+    <CdnImage
+      cdnTarget="misc"
+      stem="invitation/part_1"
+      sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
+      alt="婚礼邀请函 · 杨倚天 与 希尔娜依"
+      priority="high"
+      widths={[320, 640, 1024, 1600, 2400, 3840]}
+    />
+  </figure>
+
+  {/* —— 邀请函下方：Welcome + Forever Begins + 新人 + 时间地点 + 诗句 —— */}
+  <p class="welcome latin-italic">Welcome</p>
+  <h1 class="hero latin-italic">Forever Begins</h1>
+
+  <div class="meta cn-song">
+    <p class="couple">杨倚天 &amp; 希尔娜依</p>
+    <p class="when">二〇二六年六月十四日 · 晚七点</p>
+    <p class="where">新疆乌鲁木齐 · 二道桥大剧院</p>
+  </div>
+
+  <p class="poem cn-song">既见君子，云胡不喜。</p>
+</section>
+
+<style>
+  .cover {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    text-align: center;
+  }
+
+  /* —— 邀请函悬浮纸卡（DESIGN §4 §0 视觉要点：max-width: min(600px, 60vw)） —— */
+  .invitation-card {
+    margin: 0 auto 3rem;
+    max-width: min(600px, 60vw);
+    /* 8pt grid 留白；移动端略放宽到 80vw */
+    box-shadow: var(--shadow-paper);
+    /* 让悬浮卡有"信件放在桌上"的轻浮起感（DESIGN §4 §0 视觉要点） */
+  }
+  .invitation-card :global(picture),
+  .invitation-card :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    /* 微小圆角 · 模拟纸卡裁切；不要 rounded-lg 之类破坏原图比例感 */
+  }
+
+  /* —— 移动端把邀请函卡片放宽到 80vw（带留白）—— */
+  @media (max-width: 539px) {
+    .invitation-card {
+      max-width: 80vw;
+    }
+  }
+
+  /* —— 排版：welcome / hero / meta / poem ——
+     用 helper class（.latin-italic / .cn-song）替代 inline font-family；
+     字号继续用静态 rem（不绑 vw，DESIGN §2.3.5 v2.21）。 */
+  .welcome {
+    font-size: 1.5rem;
+    color: var(--c-sage);
+    margin: 0 0 1rem;
+  }
+  .hero {
+    font-size: 5rem;
+    line-height: 1.1;
+    color: var(--c-sage-deep);
+    margin: 0 0 3rem;
+  }
+
+  .meta {
+    margin: 0 0 4rem;
+    font-weight: 300;
+  }
+  .meta p {
+    font-size: 1.125rem;
+    margin: 0.5rem 0;
+    line-height: 1.7;
+  }
+  .poem {
+    font-size: 1.5rem;
+    font-weight: 300;
+    color: var(--c-sage-deep);
+    margin: 0;
+  }
+
+  @media (max-width: 540px) {
+    .hero {
+      font-size: 3.5rem;
+    }
+    .meta p {
+      font-size: 1rem;
+    }
+    .poem {
+      font-size: 1.25rem;
+    }
+  }
+</style>
