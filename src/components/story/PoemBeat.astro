@@ -1,6 +1,31 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.2 · v1.54 修 v1.53 P2 #2 双图布局 selector）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.3 · v1.55 role-driven layout 落地）
+ *
+ * v0.3 修 v1.54 审计 P2 #1（"动画只是 generic fade-in"）+ P2 #2（"role-specific layouts 没实施"）：
+ *
+ *   v0.2 之前组件只有"通用单/双列 grid + section 级 fade-in"，把 DESIGN §2.A 行 770-783
+ *   的"远近 parallax / 对视斜线 / 柔焦晕散 / 锚点定格"等空间叙事契约**全部丢了**。
+ *   双图、单图都是同一个矩形格栅，photo role 字段被忽略，beat 02 应该形成的"对视斜线"
+ *   实际上是"右列上下两张差不多的小图"。这不是长卷叙事，只是数据 + 通用 fade-in scaffold。
+ *
+ *   v0.3 引入 `data-layout` 反射（schema 新增 photoPoemLayout enum，content.config.ts 强约束
+ *   每个 beat 的 layout 必须严格匹配 EXPECTED_BEAT_LAYOUTS 表），CSS 按 layout 切到 4 套
+ *   真正不同的空间组合：
+ *     - **parallax-pair**（beat 01）：两图绝对定位，far 上右 56%、near 下左 64%，相互重叠形成纵深；
+ *       入场时 far 先淡入 + 略下沉、near 后淡入 + 略上浮，模拟"记忆被慢慢推近"
+ *     - **diagonal-gaze**（beat 02）：两张人像绝对定位在左上 + 右下对角，文字在中间用半透明纸白
+ *       底 + 轻 backdrop-blur 浮起；top-left 先淡入、bottom-right 后淡入，文字最后浮起，构成"对视"轴线
+ *     - **radial-mask**（beat 03）：单图居中，picture 元素叠 radial-gradient mask 让边缘从黑过渡到透明，
+ *       入场时 scale 从 1.05 收到 1.0 + 轻 saturate(0.92)→1，"心底晕散"由 mask + scale settle 表达
+ *     - **anchor-single**（beat 04）：单图缩到最大 480px，居中，scale 0.95→1.0 + opacity 0→1 一步 settle，
+ *       像"日期前的视觉锚点"
+ *
+ *   per-photo stagger 用 :nth-child + transition-delay 实现，无 JS；section 级 fade 仍由父级 IO 触发。
+ *   prefers-reduced-motion 时全部 layout 都退化为 opacity:1 + transform:none + 无 transition / animation。
+ *
+ *   后 6 个 photo-poem layout (vignette / overlap / reveal / wooden / pearl) 已写入 schema enum +
+ *   main.json，但 CSS 暂未实施 —— batch 3 lift maxBeats 时一并补上。
  *
  * v0.2 修：v0.1 把 `data-photo-count` 挂在 `<section class="poem-beat">` 上，
  * 但 CSS 选择器写的是 `.poem-photos[data-photo-count="2"]` —— 永远匹配不上。
@@ -12,29 +37,29 @@
  *
  * 单一职责：渲染 storyPoem.beats[i] —— 一段诗 + 0..N 张照片，进入视口时整体淡入。
  *
- * 视觉契约（DESIGN §4 §2.A 桌面 wireframe）：
+ * 视觉契约（DESIGN §4 §2.A 桌面 wireframe · v0.3 真正落地）：
  *   ┌───────────────────────────────────────────────────────────────┐
  *   │  左/中：诗性文字长卷                         右/背景：照片场    │
  *   │  我们都相信爱情，                         Snow_03 / Snow_07   │
  *   │  这种相信，源于第一次对视。                  轻浮起 / 慢推近      │
  *   └───────────────────────────────────────────────────────────────┘
  *
- * batch 1 落地范围（**严格收敛**，第一刀模式）：
+ * 落地范围（**严格收敛** · 与 §0/§1 第一刀同等抽象）：
  *   ✓ 每个 beat = `<section>`，min-height: 120vh（DESIGN §2.A 行 763）
- *   ✓ 桌面：CSS Grid 双列 [text 42vw max 620px | photos 1fr]，居中堆叠
- *   ✓ 移动端 (<540px)：单列堆叠（文字 → 照片）
+ *   ✓ 4 套 data-layout 真正不同的空间组合（v0.3 收口）
+ *   ✓ per-photo stagger 入场（CSS-only，无 JS）
  *   ✓ 文字：思源宋体 (cn-song)，行行分 `<p>` 保留断行
- *   ✓ 照片：CdnImage v0.3，widths={[320,640,1024,1600,2400]}（snow / wooden-door / pearl 系列实际派生品宽度），width/height 走 CLS 几何预留
- *   ✓ IntersectionObserver 进入视口 → `.visible` 切换 → opacity 0→1 + translateY 12px→0 缓入
- *   ✓ prefers-reduced-motion: 直接 visible（不加 transition / 不加 translate）
+ *   ✓ 照片：CdnImage v0.3，widths={[320,640,1024,1600,2400]}，width/height CLS 几何预留
+ *   ✓ 移动端 (<540px)：所有 layout 退化为单列堆叠（文字 → 照片）保证可读
+ *   ✓ prefers-reduced-motion：直接 visible，零 transition / 零 animation
  *   ✓ a11y：每个 beat 用 `aria-labelledby`（指向第一行 poem 作为可访问标题）
  *
- * **NOT in batch 1**（明确留 §2 后续刀，避免混批失焦）：
- *   ✗ 多张照片不同 layer/parallax（DESIGN §2.A 行 772–783 的 "一远一近 / 对视斜线 / radial mask")
+ * **NOT in this batch**（明确留 §2 后续刀，避免一刀混太多）：
+ *   ✗ vignette / overlap / reveal / wooden / pearl 五套 layout 的 CSS（等 batch 3 lift maxBeats 时一并）
  *   ✗ 文字字符级 stagger / blur enter（Phase 5 motion polish）
- *   ✗ beat 05 [N] 天 CountUp（DESIGN §2.D · 留独立小刀）
+ *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
  *   ✗ beat 09 缝线 SVG path / beat 10 珍珠高光闪动（motion polish 刀）
- *   ✗ kind="globe" / kind="finale" 渲染 → 见上层 StoryPoemScroller 占位
+ *   ✗ 鼠标 / 滚动 driven 真实 parallax（CSS 静态错位已能传达"远近"语义；motion polish 再加）
  *
  * 性能：
  *   - 每个 beat 一个 IntersectionObserver entry；模板顶层 setup 复用同一个 IO
@@ -60,22 +85,39 @@ interface BeatPhoto {
   height?: number;
 }
 
+type BeatLayout =
+  | "parallax-pair"
+  | "diagonal-gaze"
+  | "radial-mask"
+  | "anchor-single"
+  | "vignette"
+  | "overlap"
+  | "reveal"
+  | "wooden"
+  | "pearl";
+
 interface Props {
   id: string; // '01'..'12'
+  layout?: BeatLayout;
   lines: string[];
   photos: BeatPhoto[];
   /** 第一帧首屏内（极少数：仅 §2 第 01 个 beat 紧邻 §1）→ priority 'high'；其它 'auto' lazy。 */
   firstAboveFold?: boolean;
 }
 
-const { id, lines, photos, firstAboveFold = false } = Astro.props;
+const { id, layout, lines, photos, firstAboveFold = false } = Astro.props;
 
 // 取第一行作为 aria-labelledby 的 fallback heading（不可见 visually）
 const headingId = `beat-${id}-heading`;
 const firstLine = lines[0] ?? "";
 ---
 
-<section class="poem-beat" data-beat-id={id} aria-labelledby={headingId}>
+<section
+  class="poem-beat"
+  data-beat-id={id}
+  data-layout={layout}
+  aria-labelledby={headingId}
+>
   {/* 不可见 heading：给 AT 一个清晰的章节进入声明，不污染视觉 */}
   <h3 id={headingId} class="sr-only">
     第 {id} 段 · {firstLine}
@@ -87,11 +129,11 @@ const firstLine = lines[0] ?? "";
   </div>
 
   {
-    /* —— 照片层：CdnImage 列；layout 由 CSS Grid 控制 ——
-       v1.54（P2 #2 修）：data-photo-count 必须挂在 .poem-photos 本身，CSS
-       选择器 `.poem-photos[data-photo-count="2"]` 才能匹配上让双图错位双列生效；
-       v0.1 误挂在 .poem-beat 上，导致 beat 01 (Snow_03/07) / beat 02 (Snow_14/15)
-       的"双图对视"视觉契约从未生效，渲染成单列堆叠。 */
+    /* —— 照片层：CdnImage 列；layout 由 [data-layout] 切换 ——
+       v1.54（P2 #2 修）：data-photo-count 挂 .poem-photos 本身，CSS 选择器
+       `.poem-photos[data-photo-count="2"]` 才能匹配。
+       v1.55（P2 #1+#2 修）：再加 data-role，让 [data-layout="parallax-pair"]
+       等规则按 role 给每张照片绝对定位，形成真正的空间叙事。 */
   }
   {
     photos.length > 0 && (
@@ -120,12 +162,13 @@ const firstLine = lines[0] ?? "";
 </section>
 
 <style>
-  /* —— 单个 beat 容器：min-height 120vh 给滚动节奏（DESIGN §2.A 行 763）—— */
+  /* ──────────────────────────────────────────────────────────── */
+  /* 通用骨架（所有 layout 共享）                                  */
+  /* ──────────────────────────────────────────────────────────── */
   .poem-beat {
     min-height: 120vh;
     padding: 6rem 1.5rem;
     display: grid;
-    /* 桌面：text(min(42vw, 620px)) + photos(1fr)；居中靠 grid-column 与 max-width */
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     gap: 2rem;
@@ -133,13 +176,14 @@ const firstLine = lines[0] ?? "";
     justify-items: center;
     max-width: 1280px;
     margin: 0 auto;
-    /* IO fade-in 初态 */
+    /* IO fade-in 初态（section 级） */
     opacity: 0;
     transform: translateY(12px);
     transition:
       opacity 700ms ease-out,
       transform 700ms ease-out;
     will-change: opacity, transform;
+    position: relative; /* 给 [data-layout="diagonal-gaze"] 的 overlap 做准备 */
   }
 
   .poem-beat.visible {
@@ -147,7 +191,7 @@ const firstLine = lines[0] ?? "";
     transform: translateY(0);
   }
 
-  /* sr-only 兜底（避免依赖 Tailwind 检测时机；与 Countdown 同款规则） */
+  /* sr-only 兜底 */
   .poem-beat :global(.sr-only) {
     position: absolute;
     width: 1px;
@@ -162,29 +206,26 @@ const firstLine = lines[0] ?? "";
 
   /* —— 文字列 —— */
   .poem-text {
-    /* DESIGN §2.A 文字列宽 min(42vw, 620px) */
     max-width: min(620px, 42vw);
     width: 100%;
     color: var(--c-olive-ink);
     font-weight: 300;
     font-size: 1.5rem;
-    line-height: 1.95; /* leading-quote · 长卷气息 */
+    line-height: 1.95;
     text-align: center;
   }
   .poem-text p {
     margin: 0.35em 0;
   }
 
-  /* —— 照片层 —— */
+  /* —— 照片层（基线：单列 grid · 让没 data-layout 的 fallback 仍可看） —— */
   .poem-photos {
     display: grid;
     gap: 1.25rem;
     width: 100%;
     max-width: 720px;
-    /* 默认单列；多张照片由 grid-template-columns 决定 */
     grid-template-columns: 1fr;
   }
-  /* 两张照片：错位双列（far/near、portrait pair） */
   .poem-photos[data-photo-count="2"] {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -192,6 +233,24 @@ const firstLine = lines[0] ?? "";
   .poem-photo {
     margin: 0;
     box-shadow: var(--shadow-paper);
+    /* per-photo 入场（先隐藏，等父 .poem-beat.visible 触发后逐张 stagger） */
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 800ms ease-out,
+      transform 800ms ease-out,
+      filter 800ms ease-out;
+    will-change: opacity, transform, filter;
+  }
+  .poem-beat.visible .poem-photo {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .poem-beat.visible .poem-photo:nth-child(2) {
+    transition-delay: 220ms;
+  }
+  .poem-beat.visible .poem-photo:nth-child(3) {
+    transition-delay: 440ms;
   }
   .poem-photo :global(picture),
   .poem-photo :global(img) {
@@ -201,48 +260,232 @@ const firstLine = lines[0] ?? "";
     border-radius: var(--radius-sm);
   }
 
-  /* —— 桌面：双列 layout（≥ 960px）—— */
+  /* ──────────────────────────────────────────────────────────── */
+  /* layout = parallax-pair · beat 01（远 / 近 错位重叠）          */
+  /* ──────────────────────────────────────────────────────────── */
+  @media (min-width: 720px) {
+    .poem-beat[data-layout="parallax-pair"] .poem-photos {
+      position: relative;
+      max-width: none;
+      min-height: 84vh;
+      grid-template-columns: 1fr; /* 取消默认双列 */
+      gap: 0;
+    }
+    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 56%;
+      filter: saturate(0.92) brightness(1.02);
+    }
+    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 64%;
+      z-index: 1;
+    }
+    /* 入场补偿：far 先到位 + 略下沉收正；near 后到位 + 略上浮收正（推近感） */
+    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
+      transform: translateY(-22px);
+    }
+    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
+      transform: translateY(22px);
+    }
+    .poem-beat.visible[data-layout="parallax-pair"]
+      .poem-photo[data-role="far"],
+    .poem-beat.visible[data-layout="parallax-pair"]
+      .poem-photo[data-role="near"] {
+      transform: translateY(0);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────── */
+  /* layout = diagonal-gaze · beat 02（左上 / 右下 对视斜线）       */
+  /* ──────────────────────────────────────────────────────────── */
+  @media (min-width: 720px) {
+    .poem-beat[data-layout="diagonal-gaze"] {
+      grid-template-columns: 1fr; /* 文字与照片在同 grid cell 叠放 */
+      grid-template-rows: 1fr;
+      min-height: 110vh;
+      max-width: 1180px;
+    }
+    .poem-beat[data-layout="diagonal-gaze"] .poem-text {
+      grid-area: 1 / 1;
+      align-self: center;
+      justify-self: center;
+      max-width: min(520px, 60vw);
+      text-align: center;
+      z-index: 2;
+      padding: 1.5rem 1.75rem;
+      background: rgba(245, 240, 230, 0.55);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: var(--radius-sm);
+    }
+    .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
+      grid-area: 1 / 1;
+      position: relative;
+      width: 100%;
+      max-width: none;
+      min-height: 90vh;
+      grid-template-columns: 1fr;
+      gap: 0;
+      z-index: 1;
+    }
+    .poem-beat[data-layout="diagonal-gaze"] .poem-photo[data-role="top-left"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: clamp(220px, 32%, 360px);
+    }
+    .poem-beat[data-layout="diagonal-gaze"]
+      .poem-photo[data-role="bottom-right"] {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: clamp(220px, 32%, 360px);
+    }
+    /* 入场：左上 → 右下 顺次浮起，构成"对视轴"形成的视觉时序 */
+    .poem-beat[data-layout="diagonal-gaze"] .poem-photo[data-role="top-left"] {
+      transform: translate(-12px, -12px);
+    }
+    .poem-beat[data-layout="diagonal-gaze"]
+      .poem-photo[data-role="bottom-right"] {
+      transform: translate(12px, 12px);
+    }
+    .poem-beat.visible[data-layout="diagonal-gaze"]
+      .poem-photo[data-role="top-left"],
+    .poem-beat.visible[data-layout="diagonal-gaze"]
+      .poem-photo[data-role="bottom-right"] {
+      transform: translate(0, 0);
+    }
+  }
+
+  /* ──────────────────────────────────────────────────────────── */
+  /* layout = radial-mask · beat 03（单图居中柔焦 · 晕散）          */
+  /* ──────────────────────────────────────────────────────────── */
+  .poem-beat[data-layout="radial-mask"] .poem-photos {
+    max-width: 720px;
+  }
+  .poem-beat[data-layout="radial-mask"] .poem-photo[data-role="center"] {
+    /* picture 元素叠 mask；让边缘从中心向外淡出，模拟"柔焦边缘 / 晕散" */
+    -webkit-mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 1) 55%,
+      rgba(0, 0, 0, 0) 96%
+    );
+    mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 1) 55%,
+      rgba(0, 0, 0, 0) 96%
+    );
+    box-shadow: none; /* 边缘已被 mask 渐变 ate 掉，paper shadow 失意义 */
+  }
+  /* 入场：scale 从 1.06 settle 到 1.0 + saturate 渐回 1，配合 mask 给"晕散后落定"感 */
+  .poem-beat[data-layout="radial-mask"] .poem-photo[data-role="center"] {
+    transform: scale(1.06);
+    filter: saturate(0.88);
+  }
+  .poem-beat.visible[data-layout="radial-mask"]
+    .poem-photo[data-role="center"] {
+    transform: scale(1);
+    filter: saturate(1);
+  }
+
+  /* ──────────────────────────────────────────────────────────── */
+  /* layout = anchor-single · beat 04 / 05（单图作锚点）            */
+  /* ──────────────────────────────────────────────────────────── */
+  .poem-beat[data-layout="anchor-single"] .poem-photos {
+    max-width: 480px;
+  }
+  .poem-beat[data-layout="anchor-single"] .poem-photo[data-role="anchor"] {
+    transform: scale(0.95) translateY(8px);
+  }
+  .poem-beat.visible[data-layout="anchor-single"]
+    .poem-photo[data-role="anchor"] {
+    transform: scale(1) translateY(0);
+  }
+
+  /* ──────────────────────────────────────────────────────────── */
+  /* 桌面 baseline · ≥ 960px（无 data-layout 或 fallback layout）   */
+  /* layout-aware 规则用更具体的 [data-layout="..."] 抢回控制权     */
+  /* ──────────────────────────────────────────────────────────── */
   @media (min-width: 960px) {
-    .poem-beat {
+    .poem-beat:not([data-layout="diagonal-gaze"]) {
       grid-template-columns: minmax(0, min(620px, 42vw)) minmax(0, 1fr);
       grid-template-rows: auto;
       gap: 4rem;
       align-content: center;
       justify-items: stretch;
     }
-    .poem-text {
+    .poem-beat:not([data-layout="diagonal-gaze"]) .poem-text {
       max-width: min(620px, 42vw);
       text-align: left;
       grid-column: 1;
     }
-    .poem-photos {
+    .poem-beat:not([data-layout="diagonal-gaze"]) .poem-photos {
       grid-column: 2;
       max-width: none;
     }
   }
 
-  /* —— 移动端：字号收一档 —— */
+  /* ──────────────────────────────────────────────────────────── */
+  /* 移动端 · ≤ 540px（所有 layout 退化为单列堆叠保可读）           */
+  /* ──────────────────────────────────────────────────────────── */
   @media (max-width: 540px) {
     .poem-beat {
       padding: 4rem 1rem;
-      min-height: 100vh; /* mobile 不严格 120vh，避免横向手机过空 */
+      min-height: 100vh;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
     }
     .poem-text {
       font-size: 1.25rem;
       line-height: 1.85;
+      text-align: center;
+      max-width: 100%;
     }
     .poem-photos[data-photo-count="2"] {
-      /* mobile 仍单列堆叠避免照片太小 */
       grid-template-columns: 1fr;
+    }
+    /* parallax-pair / diagonal-gaze 移动端取消 absolute → 普通流式堆叠 */
+    .poem-beat[data-layout="parallax-pair"] .poem-photos,
+    .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
+      position: static;
+      min-height: auto;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    .poem-beat[data-layout="parallax-pair"] .poem-photo,
+    .poem-beat[data-layout="diagonal-gaze"] .poem-photo {
+      position: static;
+      width: 100%;
+      transform: none;
+    }
+    .poem-beat[data-layout="diagonal-gaze"] .poem-text {
+      background: transparent;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      padding: 0;
+    }
+    .poem-beat[data-layout="anchor-single"] .poem-photos {
+      max-width: 100%;
     }
   }
 
-  /* —— prefers-reduced-motion：直接 visible，不动 —— */
+  /* ──────────────────────────────────────────────────────────── */
+  /* prefers-reduced-motion：直接 visible，零 transition / 零 transform */
+  /* ──────────────────────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
-    .poem-beat {
+    .poem-beat,
+    .poem-beat .poem-photo,
+    .poem-beat[data-layout] .poem-photo {
       opacity: 1;
       transform: none;
+      filter: none;
       transition: none;
+      animation: none;
     }
   }
 </style>

@@ -72,11 +72,18 @@ const photoPoemBeats = main.data.beats
   {
     /* —— 12 beats 中前 N 个 photo-poem 渲染 ——
        § 2 整段都在 §0 Cover + §1 Invitation 之下（≥ 2 屏滚动），任何 photo
-       都不在首屏；不传 firstAboveFold，让每张图都走 lazy loading。 */
+       都不在首屏；不传 firstAboveFold，让每张图都走 lazy loading。
+       v1.55：把 layout 字段一路透传到 PoemBeat（schema 已强约束 photo-poem
+       必有 layout），让 data-layout 反射到 DOM 触发 4 套真正不同的空间 CSS。 */
   }
   {
     photoPoemBeats.map((beat) => (
-      <PoemBeat id={beat.id} lines={beat.lines} photos={beat.photos} />
+      <PoemBeat
+        id={beat.id}
+        layout={beat.layout}
+        lines={beat.lines}
+        photos={beat.photos}
+      />
     ))
   }
 

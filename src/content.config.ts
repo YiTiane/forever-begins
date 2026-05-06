@@ -249,6 +249,26 @@ const storyPoemPhoto = z.object({
   height: z.number().int().positive().optional(),
 });
 
+/**
+ * v1.55 新增 · `layout` enum：
+ *   每个 photo-poem beat 的"空间叙事"布局类（DESIGN §2.A 行 770-783 表对应）。
+ *   v1.54 之前组件只有"通用单/双列 grid + 通用 fade-in"，beat 02 的"对视斜线" /
+ *   beat 03 的"radial mask 晕散" / beat 01 的"远近 parallax 推近"等设计契约都没生效。
+ *   v1.55 让 PoemBeat 根据本字段切换 4 套真正不同的 CSS 布局 + per-photo stagger 动画。
+ *   globe / finale beat 不需要 layout（由专属组件渲染）。
+ */
+const photoPoemLayout = z.enum([
+  "parallax-pair", // beat 01：远 + 近，上下错位形成纵深推近感
+  "diagonal-gaze", // beat 02：左上 + 右下，对视斜线，中间留白给文字
+  "radial-mask", // beat 03：单图居中，radial gradient mask 让边缘柔焦"晕散"
+  "anchor-single", // beat 04：单图小框作锚点，scale 0.95→1 settle
+  "vignette", // beat 06：夜色 vignette（v1.55 留 enum 但 batch 2 渲染时再实施 CSS）
+  "overlap", // beat 07：两个半透明图层短暂重合（同上）
+  "reveal", // beat 08：图像从裁切中展开（同上）
+  "wooden", // beat 09：木门质感 + 缝线 SVG（同上）
+  "pearl", // beat 10：珍珠高光闪动（同上）
+]);
+
 const storyPoemBeat = z.object({
   /** 序号字符串，例 '01'..'12'；必须按 DESIGN §2.A 表格顺序。 */
   id: z.string().regex(/^\d{2}$/, "id 形如 '01'..'12'"),
@@ -257,6 +277,12 @@ const storyPoemBeat = z.object({
    * 当前 batch 1 只渲染 photo-poem；globe / finale 由后续 batch 接入对应组件。
    */
   kind: z.enum(["photo-poem", "globe", "finale"]),
+  /**
+   * v1.55：photo-poem 必填空间布局类（DESIGN §2.A 行 770-783 → 9 种 layout）；
+   * globe / finale 不需要（由专属组件渲染）。schema refine 在 beats array 上
+   * 强制 photo-poem 必有 layout、其它 beat 必无 layout。
+   */
+  layout: photoPoemLayout.optional(),
   /** 诗行（中文）。每行一个 string；组件会按行分 `<p>` 渲染并保留断行。 */
   lines: z.array(z.string().min(1)).min(1),
   /** 照片数组；photo-poem beat 通常 1–2 张；globe / finale 可空。 */
@@ -291,6 +317,29 @@ const EXPECTED_BEAT_KINDS = [
   "finale", // 12 · DESIGN §2.C StarCarouselFinale
 ] as const;
 
+/**
+ * v1.55：每个 photo-poem beat 的预期 layout（DESIGN §2.A 行 770-783）。
+ * globe / finale 是 null（layout 字段必须缺）。schema refine 强约束这条契约：
+ * 改 main.json 时 layout 必须严格匹配下列分配，未来 batch 2 加新 layout
+ * 时只需改这张表 + photoPoemLayout enum，组件 CSS 自动获益。
+ */
+const EXPECTED_BEAT_LAYOUTS: readonly (z.infer<
+  typeof photoPoemLayout
+> | null)[] = [
+  "parallax-pair", // 01 · snow_03 + snow_07 远近推近
+  "diagonal-gaze", // 02 · snow_14 + snow_15 对视斜线
+  "radial-mask", // 03 · snow_05 居中柔焦晕散
+  "anchor-single", // 04 · snow_11 日期锚点
+  "anchor-single", // 05 · snow_13 携手 [N] 天 (CountUp 留独立小刀)
+  "vignette", // 06 · snow_08 夜色
+  "overlap", // 07 · snow_09 契合
+  "reveal", // 08 · snow_12 卸下防备
+  "wooden", // 09 · wooden_door_01 缝补
+  "pearl", // 10 · pearl_03 珍珠高光
+  null, // 11 · globe (无 layout)
+  null, // 12 · finale (无 layout)
+];
+
 const storyPoem = defineCollection({
   loader: glob({ pattern: "*.json", base: "./src/content/story-poem" }),
   schema: z.object({
@@ -316,6 +365,18 @@ const storyPoem = defineCollection({
         {
           message:
             "beat kind 必须严格匹配：01-10 photo-poem · 11 globe (§2.B) · 12 finale (§2.C)",
+        },
+      )
+      .refine(
+        (beats) =>
+          beats.every((b, i) => {
+            const expected = EXPECTED_BEAT_LAYOUTS[i];
+            if (expected === null) return b.layout === undefined;
+            return b.layout === expected;
+          }),
+        {
+          message:
+            "beat layout 必须严格匹配 EXPECTED_BEAT_LAYOUTS：01 parallax-pair · 02 diagonal-gaze · 03 radial-mask · 04 anchor-single · 05 anchor-single · 06 vignette · 07 overlap · 08 reveal · 09 wooden · 10 pearl · 11/12 不写 layout",
         },
       ),
   }),
