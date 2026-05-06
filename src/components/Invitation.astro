@@ -1,0 +1,163 @@
+---
+/**
+ * Invitation.astro · §1 请柬 · 倒计时（v0.1 · Phase 2 §1 第一刀）
+ *
+ * DESIGN §4 §1 wireframe：
+ *   ┌───────────────────────────────────────────────┐
+ *   │         Invitation                            │
+ *   │      ╭───────── ─── ── ──╮                    │
+ *   │      │  [part_2  悬浮纸卡  │                    │
+ *   │      │   max-width 600px]  │                    │
+ *   │      ╰─── ── ── ── ── ────╯                    │
+ *   │                                               │
+ *   │   "我们无法判断一个瞬间的价值，                  │
+ *   │      直至它变成回忆。"                            │
+ *   │                                               │
+ *   │       ━━━ 41 天 02 时 17 分 ━━━              │
+ *   └───────────────────────────────────────────────┘
+ *
+ * 视觉要点（DESIGN §4 §1）：
+ *   - 同 §0：邀请函 part_2 也作为悬浮纸卡，**绝不全屏铺满**（max-width: min(600px, 60vw)）
+ *   - 诗句使用霞鹜文楷（.cn-kaishu helper），置于纸卡下方
+ *   - 倒计时 `tabular-nums`（由 `<Countdown>` 子组件用 .latin-mono 实现）
+ *
+ * 本批次范围（§1 第一刀严格收敛 · 与 §0 第一刀同等抽象）：
+ *   ✓ 结构 + 文案 + 倒计时数据流（数据来自 src/content/meta/wedding.json）
+ *   ✓ part_2 通过 `<CdnImage cdnTarget="misc" stem="invitation/part_2">` 渲染
+ *   ✓ Countdown 组件按需 setInterval（IntersectionObserver + visibilitychange）
+ *   ✓ a11y：aria-labelledby section + aria-live countdown
+ *
+ * **不**在本批次做（留给 §1 后续刀）：
+ *   ✗ Mask reveal · 字符级 stagger（DESIGN §1 入场动效；属 Phase 5 motion polish）
+ *   ✗ 火漆封印 motif（DESIGN line 342：§1 火漆封印自绘绿色 SVG · 后续 motif 增强刀）
+ *   ✗ 诗句桌面竖排 writing-mode: vertical-rl（DESIGN §2.3.6 G）
+ *
+ * 数据流：
+ *   - 通过 `getCollection('meta')` 读 `src/content/meta/wedding.json`
+ *   - 取 `wedding.data.date`（ISO 8601 含时区 +08:00）传给 Countdown
+ *   - 一份真值同时被 Base.astro 的 JSON-LD `eventSchema.startDate` 引用
+ *     → DESIGN §15.1 数据接缝唯一原则
+ *
+ * 与 §0 Cover 的 stacking 不耦合：
+ *   - §1 是单独 section，自己的 stacking context（用 isolation: isolate）
+ *   - §0 的 watercolor / particles / parallax 都不延伸到 §1
+ *   - 未来若要 §1 也加水彩纸纹背景，可复用 WatercolorPaper（但调整角落 motif）
+ */
+import { getCollection } from "astro:content";
+import CdnImage from "@/components/CdnImage.astro";
+import Countdown from "@/components/invitation/Countdown.astro";
+
+// 读取 meta collection 单一源（与 Base.astro JSON-LD 一致）
+const metaEntries = await getCollection("meta");
+const wedding = metaEntries.find((e) => e.id === "wedding");
+if (!wedding) {
+  throw new Error(
+    "Invitation.astro: src/content/meta/wedding.json missing — check content collection state",
+  );
+}
+const targetDate = wedding.data.date;
+---
+
+<section class="invitation" aria-labelledby="invitation-heading">
+  {/* —— 章节标题（拉丁体细斜，比 §0 hero 小一档） —— */}
+  <h2 id="invitation-heading" class="section-title latin-italic">Invitation</h2>
+
+  {/* —— 邀请函悬浮纸卡（part_2，同 §0 max-width: min(600px, 60vw)） —— */}
+  <figure class="invitation-card-2">
+    <CdnImage
+      cdnTarget="misc"
+      stem="invitation/part_2"
+      sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
+      alt="婚礼邀请函 part 2 · 杨倚天 与 希尔娜依"
+      priority="auto"
+      widths={[320, 640, 800]}
+      width={800}
+      height={1200}
+    />
+  </figure>
+
+  {/* —— 诗句（霞鹜文楷 · 邀请函下方）—— */}
+  <blockquote class="poem cn-kaishu">
+    <p>我们无法判断一个瞬间的价值，</p>
+    <p>直至它变成回忆。</p>
+  </blockquote>
+
+  {/* —— 倒计时（按需 interval · tabular-nums 不抖）—— */}
+  <Countdown targetDate={targetDate} />
+</section>
+
+<style>
+  .invitation {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    text-align: center;
+    /* 与 §0 同款 stacking 隔离，让 §1 内部 z-index 计算闭合在自己 section 内 */
+    position: relative;
+    isolation: isolate;
+  }
+
+  /* —— 章节标题：Invitation —— */
+  .section-title {
+    font-size: 2rem;
+    line-height: 1.1;
+    color: var(--c-sage);
+    font-weight: 300;
+    margin: 0 0 2rem;
+  }
+
+  /* —— 邀请函卡片（DESIGN §4 §1：part_2 同款悬浮纸卡，与 §0 视觉延续） —— */
+  .invitation-card-2 {
+    margin: 0 auto 3rem;
+    max-width: min(600px, 60vw);
+    box-shadow: var(--shadow-paper);
+  }
+  .invitation-card-2 :global(picture),
+  .invitation-card-2 :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+  }
+
+  @media (max-width: 539px) {
+    .invitation-card-2 {
+      max-width: 80vw;
+    }
+  }
+
+  /* —— 诗句 —— */
+  .poem {
+    font-size: 1.25rem;
+    line-height: 1.85; /* leading-quote · DESIGN §2.3.5 引文行高 */
+    color: var(--c-olive-ink);
+    font-weight: 300;
+    margin: 0 0 3rem;
+    /* blockquote 默认有 margin / quotes，重置 */
+    border: none;
+    quotes: none;
+  }
+  .poem p {
+    margin: 0.25rem 0;
+  }
+
+  @media (min-width: 960px) {
+    .section-title {
+      font-size: 2.25rem;
+    }
+    .poem {
+      font-size: 1.375rem;
+    }
+  }
+
+  @media (max-width: 540px) {
+    .section-title {
+      font-size: 1.75rem;
+      margin: 0 0 1.5rem;
+    }
+    .poem {
+      font-size: 1.125rem;
+      margin: 0 0 2rem;
+    }
+  }
+</style>

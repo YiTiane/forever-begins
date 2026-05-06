@@ -1,0 +1,198 @@
+---
+/**
+ * Countdown.astro · §1 倒计时（v0.1 · Phase 2 §1 第一刀）
+ *
+ * DESIGN §4 §1 视觉要点：
+ *   "倒计时 `tabular-nums`"
+ * seed-text §0/§1 line：
+ *   "距离婚礼还有 天 · 时 · 分 · 秒"
+ *
+ * 设计：
+ *   - 文案：「距离婚礼还有 N 天 · M 时 K 分 S 秒」（中文前缀 + tabular 数字）
+ *   - 数字 spans 用 helper class `.latin-mono`（DESIGN §2.3.8 / global.css）
+ *     → font-feature-settings "tnum" + font-variant-numeric: tabular-nums lining-nums
+ *     更新时数字宽度不抖动
+ *   - 前缀 "距离婚礼还有 / 天 · / 时 / 分 / 秒" 用 cn-sans（默认 Noto Sans SC）
+ *   - aria-live="polite" 让屏幕阅读器读出更新（不打断当前朗读）
+ *
+ * Props：
+ *   - `targetDate` (ISO 8601 含时区，例：'2026-06-14T19:00:00+08:00')
+ *
+ * 性能 / 资源占用：
+ *   - **IntersectionObserver 按需运行**：只在 countdown 元素进入视口时跑 setInterval；
+ *     离开视口（用户向上滚到 Cover 或向下滚到下一章）→ clearInterval，0 CPU
+ *   - **visibilitychange 双层守卫**：tab 切到背景 → pause；切回 → 立刻刷新一次再 resume
+ *   - 每秒 1 次 setInterval；每帧只改 4 个 textContent（数字字符串），无 reflow
+ *
+ * 已过期处理：
+ *   - 婚礼当天 0 时之后 / 婚礼之后访问 → 显示「这一天已经到了」
+ *   - 不显示负数倒计时
+ *
+ * a11y：
+ *   - `aria-live="polite"`：屏幕阅读器在用户停顿时朗读更新
+ *   - `aria-atomic="true"`：每次更新作为一个完整短语朗读，不拼接
+ *   - prefers-reduced-motion：无动画 → 无影响
+ *
+ * 调试：window.__countdown?.value() 看当前剩余秒数（仅启用时存在）。
+ */
+
+interface Props {
+  targetDate: string; // ISO 8601 with timezone, e.g. '2026-06-14T19:00:00+08:00'
+}
+
+const { targetDate } = Astro.props;
+---
+
+<p
+  class="countdown"
+  data-target={targetDate}
+  aria-live="polite"
+  aria-atomic="true"
+>
+  <span class="prefix cn-sans">距离婚礼还有</span>
+  <span class="digits latin-mono">
+    <span class="d">--</span>
+    <span class="unit cn-sans"> 天 · </span>
+    <span class="h">--</span>
+    <span class="unit cn-sans"> 时 </span>
+    <span class="m">--</span>
+    <span class="unit cn-sans"> 分 </span>
+    <span class="s">--</span>
+    <span class="unit cn-sans"> 秒</span>
+  </span>
+</p>
+
+<style>
+  .countdown {
+    margin: 0;
+    color: var(--c-sage-deep);
+    font-weight: 300;
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    letter-spacing: 0;
+    text-align: center;
+  }
+
+  .countdown .prefix {
+    margin-right: 0.5em;
+  }
+
+  .countdown .digits {
+    /* latin-mono 全局类已设 tabular-nums + tnum；这里仅给数字略大权重的视感 */
+    color: var(--c-olive-ink);
+  }
+
+  /* 移动端字号微缩 */
+  @media (max-width: 540px) {
+    .countdown {
+      font-size: 0.9375rem;
+    }
+  }
+</style>
+
+<script>
+  (function setupCountdown() {
+    if (typeof window === "undefined") return;
+
+    const root = document.querySelector<HTMLElement>(".countdown");
+    if (!root) return;
+
+    const target = root.dataset.target;
+    if (!target) return;
+
+    const targetMs = new Date(target).getTime();
+    if (Number.isNaN(targetMs)) return;
+
+    const dEl = root.querySelector<HTMLElement>(".d");
+    const hEl = root.querySelector<HTMLElement>(".h");
+    const mEl = root.querySelector<HTMLElement>(".m");
+    const sEl = root.querySelector<HTMLElement>(".s");
+    if (!dEl || !hEl || !mEl || !sEl) return;
+
+    let intervalId = 0;
+    let inView = false;
+    let tabVisible = !document.hidden;
+
+    function pad2(n: number): string {
+      return n < 10 ? "0" + n : String(n);
+    }
+
+    function tick() {
+      const now = Date.now();
+      const remaining = Math.max(0, targetMs - now);
+
+      if (remaining === 0) {
+        // 婚礼当天 / 已过 — 优雅降级显示
+        root!.classList.add("countdown-arrived");
+        // 整个 .digits 替换成"这一天已经到了"
+        const digits = root!.querySelector<HTMLElement>(".digits");
+        if (digits) {
+          digits.textContent = "这一天已经到了";
+          digits.classList.remove("latin-mono");
+          digits.classList.add("cn-kaishu");
+        }
+        // 停 interval
+        if (intervalId) {
+          window.clearInterval(intervalId);
+          intervalId = 0;
+        }
+        return;
+      }
+
+      const days = Math.floor(remaining / 86400000);
+      const hours = Math.floor((remaining % 86400000) / 3600000);
+      const mins = Math.floor((remaining % 3600000) / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+
+      // 直接 textContent 写值；浏览器会复用 text node，无 reflow（因为文字宽度
+      // 由 tabular-nums 锁定）
+      dEl!.textContent = String(days);
+      hEl!.textContent = pad2(hours);
+      mEl!.textContent = pad2(mins);
+      sEl!.textContent = pad2(secs);
+    }
+
+    function start() {
+      if (intervalId) return; // 已在跑，幂等
+      tick(); // 立刻刷新一次（避免用户看到 "--"）
+      intervalId = window.setInterval(tick, 1000);
+    }
+
+    function stop() {
+      if (!intervalId) return;
+      window.clearInterval(intervalId);
+      intervalId = 0;
+    }
+
+    function evaluate() {
+      // 仅当**视口可见 AND 标签页可见** 才跑 interval
+      if (inView && tabVisible) start();
+      else stop();
+    }
+
+    // IntersectionObserver：进入视口才开始 / 离开就停
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          inView = entry.isIntersecting;
+          evaluate();
+        }
+      },
+      { rootMargin: "0px", threshold: 0 },
+    );
+    io.observe(root);
+
+    // visibilitychange：tab 切后台就停
+    document.addEventListener("visibilitychange", () => {
+      tabVisible = !document.hidden;
+      evaluate();
+    });
+
+    // 调试钩子
+    (
+      window as unknown as { __countdown?: { value: () => number } }
+    ).__countdown = {
+      value: () => Math.max(0, targetMs - Date.now()),
+    };
+  })();
+</script>
