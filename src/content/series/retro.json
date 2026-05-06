@@ -1,0 +1,14 @@
+{
+  "id": "retro",
+  "title": "Retro",
+  "subtitle": "复 古",
+  "caption": "复古胶片的光影。",
+  "cdnTarget": "retro",
+  "photos": [
+    { "stem": "Retro_01", "alt": "复古系列 · 第 1 张" },
+    { "stem": "Retro_02", "alt": "复古系列 · 第 2 张" },
+    { "stem": "Retro_03", "alt": "复古系列 · 第 3 张" },
+    { "stem": "Retro_04", "alt": "复古系列 · 第 4 张" },
+    { "stem": "Retro_05", "alt": "复古系列 · 第 5 张" }
+  ]
+}

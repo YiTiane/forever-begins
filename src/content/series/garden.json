@@ -1,0 +1,14 @@
+{
+  "id": "garden",
+  "title": "Garden",
+  "subtitle": "草 地",
+  "caption": "草原与花的合影。",
+  "cdnTarget": "grassland",
+  "photos": [
+    { "stem": "Grassland_01", "alt": "草地系列 · 第 1 张" },
+    { "stem": "Grassland_02", "alt": "草地系列 · 第 2 张" },
+    { "stem": "Grassland_03", "alt": "草地系列 · 第 3 张" },
+    { "stem": "Grassland_04", "alt": "草地系列 · 第 4 张" },
+    { "stem": "Grassland_05", "alt": "草地系列 · 第 5 张" }
+  ]
+}

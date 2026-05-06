@@ -1,8 +1,15 @@
 /**
- * src/content.config.ts · Astro Content Collections schema（v0.2 · Phase 1 §1.1.16）
+ * src/content.config.ts · Astro Content Collections schema（v0.3 · Phase 1 §1.1.16）
  *
  * **路径**（v0.2 修订）：Astro v6 起强制位于 `src/content.config.ts`（src/ 根目录），
  * **不**在 `src/content/config.ts`（旧 v4 命名会触发 LegacyContentConfigError）。
+ *
+ * **v0.3 新增**：`series.photos[].cdnTarget` 可选**逐张覆写**。
+ * 真正动机：snow 系列 15 张派生品总体积超 jsDelivr 单仓 150MB 红线，
+ * 实际 push 时被拆到了 fb-cdn-snow-a（Snow_01..08）+ fb-cdn-snow-b（Snow_09..15）。
+ * 不引入 photo 级 cdnTarget override 的话，snow.json 必须裂成两个 series 文件
+ * （破坏 DESIGN §3.2 的 "snow.json 单文件" 契约）。
+ * 现在的策略：series-level `cdnTarget` 仍是默认；个别 photo 用 `cdnTarget` 覆写。
  *
  * 五个 collection（DESIGN §12 / PLAN §1.1.17–§1.1.21）：
  *   - `meta`    : 婚礼基本信息（wedding.json：日期 / 地点 / 三坐标系 / 诗句）
@@ -231,6 +238,14 @@ const series = defineCollection({
           stem: stemSchema,
           alt: z.string().min(1),
           caption: z.string().optional(),
+          /**
+           * 可选 · 逐张 cdnTarget 覆写（v0.3 新增）。
+           * 不传 → 沿用 series.cdnTarget；传 → 该 photo 走指定 target。
+           * 真实用例：snow 系列 15 张派生品超 jsDelivr 单仓 150MB 红线，
+           * 实际拆到 fb-cdn-snow-a (Snow_01..08) + fb-cdn-snow-b (Snow_09..15)。
+           * 消费侧（CdnImage）解析 `photo.cdnTarget ?? series.cdnTarget`。
+           */
+          cdnTarget: z.enum(CDN_TARGETS).optional(),
         }),
       )
       .min(1),

@@ -1,0 +1,13 @@
+{
+  "id": "pearl",
+  "title": "Pearl",
+  "subtitle": "珍 珠",
+  "caption": "纯白的主海报，像两颗紧握的珍珠。",
+  "cdnTarget": "pearl",
+  "photos": [
+    { "stem": "Pearl_01", "alt": "珍珠系列 · 第 1 张" },
+    { "stem": "Pearl_02", "alt": "珍珠系列 · 第 2 张" },
+    { "stem": "Pearl_03", "alt": "珍珠系列 · 第 3 张" },
+    { "stem": "Pearl_04", "alt": "珍珠系列 · 主海报" }
+  ]
+}

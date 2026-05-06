@@ -1,0 +1,24 @@
+{
+  "id": "snow",
+  "title": "Snow",
+  "subtitle": "雪 山",
+  "caption": "天山雪地里的我们。",
+  "cdnTarget": "snow-a",
+  "photos": [
+    { "stem": "Snow_01", "alt": "雪山系列 · 第 1 张" },
+    { "stem": "Snow_02", "alt": "雪山系列 · 第 2 张" },
+    { "stem": "Snow_03", "alt": "雪山系列 · 第 3 张" },
+    { "stem": "Snow_04", "alt": "雪山系列 · 第 4 张" },
+    { "stem": "Snow_05", "alt": "雪山系列 · 第 5 张" },
+    { "stem": "Snow_06", "alt": "雪山系列 · 第 6 张" },
+    { "stem": "Snow_07", "alt": "雪山系列 · 第 7 张" },
+    { "stem": "Snow_08", "alt": "雪山系列 · 第 8 张" },
+    { "stem": "Snow_09", "alt": "雪山系列 · 第 9 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_10", "alt": "雪山系列 · 第 10 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_11", "alt": "雪山系列 · 第 11 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_12", "alt": "雪山系列 · 第 12 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_13", "alt": "雪山系列 · 第 13 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_14", "alt": "雪山系列 · 第 14 张", "cdnTarget": "snow-b" },
+    { "stem": "Snow_15", "alt": "雪山系列 · 第 15 张", "cdnTarget": "snow-b" }
+  ]
+}

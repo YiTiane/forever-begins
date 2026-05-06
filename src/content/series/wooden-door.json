@@ -1,0 +1,15 @@
+{
+  "id": "wooden-door",
+  "title": "Wooden Door",
+  "subtitle": "木 门",
+  "caption": "木门旁的时光。",
+  "cdnTarget": "wooden-door",
+  "photos": [
+    { "stem": "Wooden_door_01", "alt": "木门系列 · 第 1 张" },
+    { "stem": "Wooden_door_02", "alt": "木门系列 · 第 2 张" },
+    { "stem": "Wooden_door_03", "alt": "木门系列 · 第 3 张" },
+    { "stem": "Wooden_door_04", "alt": "木门系列 · 第 4 张" },
+    { "stem": "Wooden_door_05", "alt": "木门系列 · 第 5 张" },
+    { "stem": "Wooden_door_06", "alt": "木门系列 · 第 6 张" }
+  ]
+}
