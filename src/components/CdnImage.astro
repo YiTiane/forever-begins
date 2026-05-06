@@ -1,0 +1,121 @@
+---
+/**
+ * CdnImage.astro · 跨境多 CDN 图片组件（v0.1 · Phase 1 §1.1.15）
+ *
+ * 输出 `<picture>` with AVIF/WebP/JPG 三层 srcset；
+ * 主路径 = jsDelivr · 备路径 = Statically · 通过 `data-srcset-alt` / `data-src-alt`
+ * 携带备 CDN srcset，运行时由 `<head>` 内联的 `CdnEarlyProbe.astro` 决定何时切换。
+ *
+ * **构建时为何不直接选 host？**：Astro 组件在构建时渲染，浏览器侧 fetch probe
+ * 不可能在 HTML 生成前完成 → 静态产物只能编译成主 CDN URL，failover 的"决策"
+ * 必须发生在浏览器。所以把 backup srcset 携带在 data-* 属性里，
+ * 让 CdnEarlyProbe 用一次 srcset 重写完成切换（v1.2 选定方案 C + 方案 A 双保险）。
+ *
+ * **API 契约（v1.4 修订 · 与 src/content/series 的 cdnTarget 字段一致）**：
+ *   - `cdnTarget`：`'snow-a' | 'snow-b' | 'grassland' | 'wooden-door' | 'pearl' | 'retro' | 'misc'`
+ *     注意：garden 系列必须传 `'grassland'`，不是 `'garden'`（DESIGN §3.2 命名收敛）
+ *   - `stem`：派生品文件名 stem，**可含子路径**。例：
+ *       'Snow_01'                  (cdnTarget='snow-a')
+ *       'Grassland_03'             (cdnTarget='grassland')
+ *       'cat/berry-portrait'       (cdnTarget='misc')
+ *       'invitation/part_1'        (cdnTarget='misc')
+ *     禁止前后斜杠 · 禁止扩展名 · 禁止尺寸后缀
+ *   - `sizes`：CSS sizes 字符串，例：'(max-width: 768px) 100vw, 80vw'
+ *   - `alt`：a11y 文本，必填
+ *   - `priority`：`'high' | 'low' | 'auto'`，默认 `'auto'`
+ *   - `widths`：派生品宽度数组，默认 [320, 640, 1024, 1600, 2400, 3840]
+ *
+ * **JPG 兜底仅到 1600w**（DESIGN §7.4）—— widths > 1600 不为 JPG 输出，避免 JPG 体积爆炸。
+ *
+ * **不写 onerror 内联属性**：CdnEarlyProbe 已在 document 层 capture 阶段监听所有
+ * img.error，会按 picture 范围切换 srcset；写内联 onerror 会重复触发。
+ *
+ * **派生品命名约定（与 generate-derivatives.ts / push-to-cdn-repos.ts 协议一致）**：
+ *   仓内路径：`<format>/<stem>-<width>.<format>`
+ *   例：`avif/Snow_01-1600.avif` · `webp/cat/berry-portrait-640.webp` · `jpg/invitation/part_1-1024.jpg`
+ *
+ * 调用方约定：
+ *   <CdnImage cdnTarget={series.cdnTarget} stem={photo.stem}
+ *             sizes="(max-width: 768px) 100vw, 80vw"
+ *             alt={photo.alt}
+ *             priority="high" />
+ */
+import { cdnUrl, type CdnTarget } from "@/lib/images/asset-versions";
+
+interface Props {
+  /** CDN 资产仓名（与 src/content/series/*.json 的 cdnTarget 字段一致）。
+   *  对 garden 系列必须传 'grassland'，不是 'garden'（DESIGN §3.2 命名收敛接缝）。 */
+  cdnTarget: CdnTarget;
+  /** 派生品 stem，可含子路径；禁止前后斜杠 / 扩展名 / 尺寸后缀。 */
+  stem: string;
+  /** CSS `sizes` 字符串。例：'(max-width: 768px) 100vw, 80vw' */
+  sizes: string;
+  /** a11y alt 文本，必填。 */
+  alt: string;
+  /** 加载优先级；高优先级用于首屏。 */
+  priority?: "high" | "low" | "auto";
+  /** 派生品宽度数组；默认 [320, 640, 1024, 1600, 2400, 3840]。 */
+  widths?: number[];
+}
+
+const {
+  cdnTarget,
+  stem,
+  sizes,
+  alt,
+  priority = "auto",
+  widths = [320, 640, 1024, 1600, 2400, 3840],
+} = Astro.props;
+
+// JPG fallback 仅到 1600w（DESIGN §7.4：JPG 体积 > 1600 太重）
+const JPG_WIDTHS = widths.filter((w) => w <= 1600);
+
+/** 构建 srcset 字符串：`<url1> 320w, <url2> 640w, ...` */
+function buildSrcset(
+  host: "primary" | "backup",
+  fmt: "avif" | "webp" | "jpg",
+): string {
+  const ws = fmt === "jpg" ? JPG_WIDTHS : widths;
+  return ws
+    .map(
+      (w) => `${cdnUrl(host, cdnTarget, `${fmt}/${stem}-${w}.${fmt}`)} ${w}w`,
+    )
+    .join(", ");
+}
+
+/** JPG 单图兜底 URL（最大 1600w）—— 老浏览器 / picture 不支持时直接落到 <img src> */
+const primaryJpg = cdnUrl("primary", cdnTarget, `jpg/${stem}-1600.jpg`);
+const backupJpg = cdnUrl("backup", cdnTarget, `jpg/${stem}-1600.jpg`);
+
+// loading 由 priority 推导：high → eager · 其余 lazy（auto / low 同 lazy）
+const loading: "eager" | "lazy" = priority === "high" ? "eager" : "lazy";
+---
+
+<picture>
+  {/* AVIF —— 现代浏览器 90%+ 命中（Chrome 85+ / Safari 16.4+） */}
+  <source
+    type="image/avif"
+    srcset={buildSrcset("primary", "avif")}
+    data-srcset-alt={buildSrcset("backup", "avif")}
+    sizes={sizes}
+  />
+
+  {/* WebP —— Safari 14- / 老 Firefox 兜底 */}
+  <source
+    type="image/webp"
+    srcset={buildSrcset("primary", "webp")}
+    data-srcset-alt={buildSrcset("backup", "webp")}
+    sizes={sizes}
+  />
+
+  {/* JPG —— 终极兜底（仅到 1600w · DESIGN §7.4） */}
+  {/* 不写 onerror 属性：CdnEarlyProbe.astro 已在 document 层 capture 监听 */}
+  <img
+    src={primaryJpg}
+    data-src-alt={backupJpg}
+    alt={alt}
+    loading={loading}
+    decoding="async"
+    fetchpriority={priority}
+  />
+</picture>

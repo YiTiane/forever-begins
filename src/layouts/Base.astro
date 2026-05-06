@@ -38,6 +38,7 @@
  * 否则浏览器会重新发起一次跨域请求覆盖 preload 命中。
  */
 import FontFaces from "@/components/FontFaces.astro";
+import CdnEarlyProbe from "@/components/CdnEarlyProbe.astro";
 import { cdnUrl } from "@/lib/images/asset-versions";
 
 // v0.3 §1.1.12：全站样式入口（Tailwind v4 base + reset + tokens + helper class）
@@ -60,6 +61,15 @@ interface Props {
    * 用例：未来 Cover/Story/Cats 等章节如有专属 OG 图可单独覆盖。
    */
   ogImage?: string;
+  /**
+   * 抑制 OG / Twitter card 与 JSON-LD Event schema 输出（v0.5 新增）。
+   * 用于 dev-only 路由（/dev-fonts/）：noindex + sitemap.filter 已防搜索收录，
+   * 但社交分享预览（微信 / Twitter card / Slack unfurl）会**不顾 robots** 直接抓 head。
+   * 此 Prop 让 Base 不再吐 og:* / twitter:* / JSON-LD —— 即便 dev URL 被分享，
+   * 抓不到任何婚礼信息，也不会把开发页伪装成婚礼站。
+   * 真页面（Cover / Story / Cats / Details）保持默认 false，正常出 OG/JSON-LD。
+   */
+  suppressSocialMeta?: boolean;
 }
 
 const {
@@ -68,6 +78,7 @@ const {
   lang = "zh-CN",
   noindex = false,
   ogImage,
+  suppressSocialMeta = false,
 } = Astro.props;
 
 // import.meta.env.BASE_URL 是否带尾斜杠取决于 astro.config.mjs 中 base 的写法
@@ -146,26 +157,33 @@ const eventSchema = {
     />
     <meta name="color-scheme" content="light dark" />
 
-    {/* —— Open Graph（Facebook / 微信 / Linkedin / 通用社交分享）—— */}
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonicalURL} />
-    <meta property="og:image" content={finalOgImage} />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="既见君子，云胡不喜。 · 杨倚天 & 希尔娜依 · 二〇二六年六月十四日"
-    />
-    <meta property="og:locale" content="zh_CN" />
-    <meta property="og:site_name" content="Forever Begins · 永恒之始" />
+    {
+      /* —— Open Graph + Twitter Card + JSON-LD（v0.5：suppressSocialMeta=true 时整组跳过）—— */
+    }
+    {
+      !suppressSocialMeta && (
+        <>
+          <meta property="og:type" content="website" />
+          <meta property="og:title" content={title} />
+          <meta property="og:description" content={description} />
+          <meta property="og:url" content={canonicalURL} />
+          <meta property="og:image" content={finalOgImage} />
+          <meta property="og:image:width" content="1200" />
+          <meta property="og:image:height" content="630" />
+          <meta
+            property="og:image:alt"
+            content="既见君子，云胡不喜。 · 杨倚天 & 希尔娜依 · 二〇二六年六月十四日"
+          />
+          <meta property="og:locale" content="zh_CN" />
+          <meta property="og:site_name" content="Forever Begins · 永恒之始" />
 
-    {/* —— Twitter Card —— */}
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={finalOgImage} />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:title" content={title} />
+          <meta name="twitter:description" content={description} />
+          <meta name="twitter:image" content={finalOgImage} />
+        </>
+      )
+    }
 
     {/* —— 字体单一源 + 2 条 preload（v0.2 base-aware）—— */}
     <FontFaces />
@@ -194,9 +212,24 @@ const eventSchema = {
     <link rel="alternate icon" href={`${base}/favicon.ico`} />
 
     {
-      /* —— JSON-LD Event schema · 让 Google / Apple / 微博 / 企业微信抓婚礼信息 —— */
+      /* —— CDN 早期探测（v0.5 §1.1.15 上车）：
+         主路径（jsDelivr）健康时零开销；故障时一次切全页 srcset 到 backup。
+         即使本页无 <CdnImage>（如 dev-fonts），probe 仍是单次 HEAD HEAD，无害。 */
     }
-    <script type="application/ld+json" set:html={JSON.stringify(eventSchema)} />
+    <CdnEarlyProbe />
+
+    {
+      /* —— JSON-LD Event schema · 让 Google / Apple / 微博 / 企业微信抓婚礼信息 ——
+         （v0.5：suppressSocialMeta=true 时跳过；与 OG/Twitter 同档抑制） */
+    }
+    {
+      !suppressSocialMeta && (
+        <script
+          type="application/ld+json"
+          set:html={JSON.stringify(eventSchema)}
+        />
+      )
+    }
   </head>
   <body>
     <slot />

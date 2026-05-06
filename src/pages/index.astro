@@ -15,8 +15,9 @@
  *   - letter-spacing >= 0
  *   - 排版常量后续会进 tokens.css；当前用静态 rem 占位
  */
-import Base from '@/layouts/Base.astro';
+import Base from "@/layouts/Base.astro";
 ---
+
 <Base>
   <main class="cover-min">
     <p class="welcome">Welcome</p>
@@ -45,7 +46,7 @@ import Base from '@/layouts/Base.astro';
 
     /* 仅用 Cormorant Italic（preload #1） */
     .welcome {
-      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-family: "Cormorant Garamond", Georgia, serif;
       font-style: italic;
       font-weight: 300;
       font-size: 1.5rem;
@@ -54,11 +55,11 @@ import Base from '@/layouts/Base.astro';
       margin: 0 0 1rem;
     }
     .hero {
-      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-family: "Cormorant Garamond", Georgia, serif;
       font-style: italic;
       font-weight: 300;
-      font-size: 5rem;        /* 静态 rem，不绑 viewport */
-      letter-spacing: 0;       /* 不用负值 */
+      font-size: 5rem; /* 静态 rem，不绑 viewport */
+      letter-spacing: 0; /* 不用负值 */
       line-height: 1.1;
       color: #5a6b47;
       margin: 0 0 3rem;
@@ -67,9 +68,9 @@ import Base from '@/layouts/Base.astro';
     /* 仅用 Noto Serif SC Light（preload #2） */
     .meta,
     .poem {
-      font-family: 'Noto Serif SC', '宋体', serif;
+      font-family: "Noto Serif SC", "宋体", serif;
       font-weight: 300;
-      letter-spacing: 0;  /* 项目全局约束：letter-spacing = 0；空气感交给字号、行高、版心 */
+      letter-spacing: 0; /* 项目全局约束：letter-spacing = 0；空气感交给字号、行高、版心 */
     }
     .meta {
       margin: 0 0 4rem;
@@ -86,9 +87,15 @@ import Base from '@/layouts/Base.astro';
     }
 
     @media (max-width: 540px) {
-      .hero { font-size: 3.5rem; }
-      .meta p { font-size: 1rem; }
-      .poem { font-size: 1.25rem; }
+      .hero {
+        font-size: 3.5rem;
+      }
+      .meta p {
+        font-size: 1rem;
+      }
+      .poem {
+        font-size: 1.25rem;
+      }
     }
   </style>
 </Base>

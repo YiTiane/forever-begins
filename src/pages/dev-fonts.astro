@@ -22,37 +22,45 @@
  * 排版约束：本冒烟页保留较大字号是为了肉眼判别字体差异；不要把这里的
  *   font-size: clamp(_, _vw, _) 或负 letter-spacing 模式带回真 Cover/Story。
  */
-import Base from '@/layouts/Base.astro';
+import Base from "@/layouts/Base.astro";
 ---
+
 <Base
   title="Forever Begins · Font Smoke Test (dev)"
   description="8 font families smoke test — dev-only route, not for production root"
   noindex={true}
+  suppressSocialMeta={true}
 >
   <main class="font-smoke">
     <h1 class="dev-hero">Forever Begins · Font Smoke</h1>
     <p class="dev-note">
-      Dev-only route. Each section below uses one font family.
-      Verify in DevTools → Network that the corresponding <code>.woff2</code> loads.
+      Dev-only route. Each section below uses one font family. Verify in
+      DevTools → Network that the corresponding <code>.woff2</code> loads.
     </p>
 
     <section class="demo">
       <h2>① Cormorant Garamond Italic (variable)</h2>
-      <p style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 300;">
+      <p
+        style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 300;"
+      >
         Welcome · Forever Begins · Invitation
       </p>
     </section>
 
     <section class="demo">
       <h2>② Cormorant Garamond Roman (variable)</h2>
-      <p style="font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 400;">
+      <p
+        style="font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 400;"
+      >
         Henceforth, our story begins. The Day · The Family.
       </p>
     </section>
 
     <section class="demo">
       <h2>③ Inter (variable)</h2>
-      <p style="font-family: 'Inter', system-ui, sans-serif; font-feature-settings: 'tnum';">
+      <p
+        style="font-family: 'Inter', system-ui, sans-serif; font-feature-settings: 'tnum';"
+      >
         2026-06-14 · 19:00 · 10,755 km · 2,654 days together
       </p>
     </section>
@@ -73,7 +81,9 @@ import Base from '@/layouts/Base.astro';
 
     <section class="demo">
       <h2>⑥ Noto Sans SC Light (300)</h2>
-      <p style="font-family: 'Noto Sans SC', '黑体', sans-serif; font-weight: 300;">
+      <p
+        style="font-family: 'Noto Sans SC', '黑体', sans-serif; font-weight: 300;"
+      >
         距离婚礼还有 41 天 · 02 时 17 分 33 秒
       </p>
     </section>
@@ -93,9 +103,9 @@ import Base from '@/layouts/Base.astro';
         — 杨倚天 &amp; 希尔娜依 —
       </p>
       <p class="dev-note tiny">
-        ⚠️ optional 模式：此字体若 100ms 内未到达即永远 fallback。
-        生产 §6 入视口前由 prewarm-mashan.ts 主动 FontFace API load。
-        此页不做预热 → 当前看到的可能是 fallback（楷体）。
+        ⚠️ optional 模式：此字体若 100ms 内未到达即永远 fallback。 生产 §6
+        入视口前由 prewarm-mashan.ts 主动 FontFace API load。 此页不做预热 →
+        当前看到的可能是 fallback（楷体）。
       </p>
     </section>
   </main>
@@ -110,16 +120,16 @@ import Base from '@/layouts/Base.astro';
       line-height: 1.7;
     }
     .dev-hero {
-      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-family: "Cormorant Garamond", Georgia, serif;
       font-style: italic;
       font-weight: 300;
-      font-size: 3rem;       /* 静态 rem，符合项目 UI 约束 */
+      font-size: 3rem; /* 静态 rem，符合项目 UI 约束 */
       letter-spacing: 0;
       margin: 0 0 0.5rem;
       color: #5a6b47;
     }
     .dev-note {
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: "Inter", system-ui, sans-serif;
       font-size: 0.875rem;
       color: #7b8a6a;
       margin: 0 0 2rem;
@@ -135,10 +145,10 @@ import Base from '@/layouts/Base.astro';
     }
     .demo h2 {
       font-size: 0.75rem;
-      letter-spacing: 0;     /* v2.20 全局约束：letter-spacing = 0；区分小标用大写 + 字色 */
+      letter-spacing: 0; /* v2.20 全局约束：letter-spacing = 0；区分小标用大写 + 字色 */
       color: #7b8a6a;
       text-transform: uppercase;
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: "Inter", system-ui, sans-serif;
       font-weight: 500;
       margin: 0 0 0.75rem;
     }
@@ -147,7 +157,7 @@ import Base from '@/layouts/Base.astro';
       margin: 0;
     }
     code {
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: "Inter", system-ui, sans-serif;
       font-size: 0.85em;
       background: #ece4d3;
       padding: 0 0.3em;

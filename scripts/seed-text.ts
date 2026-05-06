@@ -155,4 +155,4 @@ export const SEED_TEXT = [
   THE_DAY,
   CLOSING,
   UI,
-].join('\n');
+].join("\n");

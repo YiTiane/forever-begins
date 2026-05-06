@@ -18,24 +18,36 @@
  *   - 自动：subset-fonts.sh 运行前会先调用本脚本（保证 chars 同步）
  */
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { SEED_TEXT } from './seed-text.ts';
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { SEED_TEXT } from "./seed-text.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..');
-const SRC_ROOT = path.join(REPO_ROOT, 'src');
-const OUT_TXT = path.join(__dirname, '.subset-chars.txt');
-const OUT_JSON = path.join(__dirname, '.subset-chars.json');
+const REPO_ROOT = path.resolve(__dirname, "..");
+const SRC_ROOT = path.join(REPO_ROOT, "src");
+const OUT_TXT = path.join(__dirname, ".subset-chars.txt");
+const OUT_JSON = path.join(__dirname, ".subset-chars.json");
 
-const SCAN_EXTS = new Set(['.astro', '.tsx', '.ts', '.jsx', '.js', '.json', '.md', '.mdx']);
+const SCAN_EXTS = new Set([
+  ".astro",
+  ".tsx",
+  ".ts",
+  ".jsx",
+  ".js",
+  ".json",
+  ".md",
+  ".mdx",
+]);
 
 /** 兜底标点 + 数字。即便 src/ 没出现也保证 subset 含。 */
 const PUNCT_AND_DIGITS = (() => {
-  const halfWidth = '0123456789' + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' + ' ,.;:!?\'"()-_/\\@#$%&*+=[]{}<>|~`^';
+  const halfWidth =
+    "0123456789" +
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+    " ,.;:!?'\"()-_/\\@#$%&*+=[]{}<>|~`^";
   // 用 codepoint 数组避免源文件里的 curly quote 被误解析
-  const fullWidthDigits = '０１２３４５６７８９〇一二三四五六七八九十两';
+  const fullWidthDigits = "０１２３４５６７８９〇一二三四五六七八九十两";
   const fullWidthPunct = String.fromCodePoint(
     0xff0c, // ，
     0x3002, // 。
@@ -64,8 +76,8 @@ const PUNCT_AND_DIGITS = (() => {
     0x3009, // 〉
   );
   const fullWidth = fullWidthDigits + fullWidthPunct;
-  const romanNumerals = 'IVX' + 'iⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ';
-  const misc = '·❀❦✦❧✿•◦●○↓→←↑✓✗⚠️⭐❤︎♡';
+  const romanNumerals = "IVX" + "iⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ";
+  const misc = "·❀❦✦❧✿•◦●○↓→←↑✓✗⚠️⭐❤︎♡";
   return halfWidth + fullWidth + romanNumerals + misc;
 })();
 
@@ -77,10 +89,19 @@ async function* walk(dir: string): AsyncGenerator<string> {
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+    if (
+      entry.name.startsWith(".") ||
+      entry.name === "node_modules" ||
+      entry.name === "dist"
+    )
+      continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
-    else if (entry.isFile() && SCAN_EXTS.has(path.extname(entry.name).toLowerCase())) yield full;
+    else if (
+      entry.isFile() &&
+      SCAN_EXTS.has(path.extname(entry.name).toLowerCase())
+    )
+      yield full;
   }
 }
 
@@ -94,7 +115,7 @@ async function main(): Promise<void> {
   // ① 扫 src/
   let scannedFiles = 0;
   for await (const file of walk(SRC_ROOT)) {
-    const text = await fs.readFile(file, 'utf-8');
+    const text = await fs.readFile(file, "utf-8");
     for (const ch of text) buckets.fromSrc!.add(ch);
     scannedFiles++;
   }
@@ -111,16 +132,16 @@ async function main(): Promise<void> {
     for (const ch of set) {
       // 跳过控制字符 / 替代区 / 行结束
       const cp = ch.codePointAt(0)!;
-      if (cp < 0x20) continue;                        // 控制字符
-      if (cp >= 0xd800 && cp <= 0xdfff) continue;    // surrogate
-      if (cp === 0xfeff) continue;                    // BOM
+      if (cp < 0x20) continue; // 控制字符
+      if (cp >= 0xd800 && cp <= 0xdfff) continue; // surrogate
+      if (cp === 0xfeff) continue; // BOM
       all.add(ch);
     }
   }
 
   // 排序输出（按 codepoint，便于 diff）
   const sorted = [...all].sort((a, b) => a.codePointAt(0)! - b.codePointAt(0)!);
-  await fs.writeFile(OUT_TXT, sorted.join('\n') + '\n', 'utf-8');
+  await fs.writeFile(OUT_TXT, sorted.join("\n") + "\n", "utf-8");
 
   // 分类统计（用于审计）
   const stats = {
@@ -132,15 +153,15 @@ async function main(): Promise<void> {
     },
     byScript: {
       ascii: 0,
-      latin1Sup: 0,        // U+0080–U+00FF
-      cjkUnified: 0,       // U+4E00–U+9FFF
-      cjkExtA: 0,          // U+3400–U+4DBF
-      cjkExtB: 0,          // U+20000+
+      latin1Sup: 0, // U+0080–U+00FF
+      cjkUnified: 0, // U+4E00–U+9FFF
+      cjkExtA: 0, // U+3400–U+4DBF
+      cjkExtB: 0, // U+20000+
       bopomofo: 0,
       hiragana: 0,
       katakana: 0,
-      cjkPunct: 0,         // U+3000–U+303F
-      fullwidth: 0,        // U+FF00–U+FFEF
+      cjkPunct: 0, // U+3000–U+303F
+      fullwidth: 0, // U+FF00–U+FFEF
       symbols: 0,
       other: 0,
     },
@@ -164,7 +185,7 @@ async function main(): Promise<void> {
     else stats.byScript.other++;
   }
 
-  await fs.writeFile(OUT_JSON, JSON.stringify(stats, null, 2), 'utf-8');
+  await fs.writeFile(OUT_JSON, JSON.stringify(stats, null, 2), "utf-8");
 
   console.log(`[extract-text] scanned ${scannedFiles} files in src/`);
   console.log(`[extract-text] unique chars: ${all.size}`);
@@ -172,7 +193,9 @@ async function main(): Promise<void> {
   console.log(`  · CJK 统一:     ${stats.byScript.cjkUnified}`);
   console.log(`  · CJK 标点:     ${stats.byScript.cjkPunct}`);
   console.log(`  · 全角:         ${stats.byScript.fullwidth}`);
-  console.log(`  · 其他符号:     ${stats.byScript.symbols + stats.byScript.other}`);
+  console.log(
+    `  · 其他符号:     ${stats.byScript.symbols + stats.byScript.other}`,
+  );
   console.log(`[extract-text] wrote ${path.relative(REPO_ROOT, OUT_TXT)}`);
   console.log(`[extract-text] stats ${path.relative(REPO_ROOT, OUT_JSON)}`);
 }

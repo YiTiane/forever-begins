@@ -1,0 +1,110 @@
+---
+/**
+ * CdnEarlyProbe.astro · `<head>` 内联 CDN 健康探测（v0.1 · Phase 1 §1.1.15）
+ *
+ * 由 Base.astro 在 `<head>` 末尾内联渲染（早于 <body> 与 <picture> 解析）；
+ * 主路径（jsDelivr）健康时零额外开销，故障时一次性切换全页 srcset 到 backup。
+ *
+ * 三层防御：
+ *   1. **probe**：HTTP HEAD 探测主 CDN，失败 → `triggerGlobalFallback`
+ *   2. **<img onerror>（capture 监听）**：单图加载失败时只切换该 <picture>，不波及其他图
+ *   3. **picture sources 同步重写**：浏览器优先级是 source > img，重写时 source 必须先于 img
+ *
+ * 关键防错（v1.3 / v1.5 / v2.5 / v2.7 / v2.8 沿用）：
+ *   - 用 AbortController + setTimeout（不用 AbortSignal.timeout，iOS 12 / 老 WebView 不支持）
+ *   - try/catch 包构造，AbortController 不存在时直接走全局 fallback
+ *   - `applyCdnFallback` 可重入：所有 [data-srcset-alt] / [data-src-alt] 一次性消费
+ *   - DOM ready：probe 可能比 <body> 还早完成，先存 `fallbackApplied` 标记，
+ *     等 DOMContentLoaded 再 apply
+ *   - probeUrl 经 `cdnUrl(host, 'misc', 'probe.png')` define:vars 注入，
+ *     永远不允许硬编码 @vX.X.X
+ */
+import { cdnUrl } from "@/lib/images/asset-versions";
+
+// 构建时常量；运行时通过 define:vars 注入到 inline script
+const probeUrl = cdnUrl("primary", "misc", "probe.png");
+---
+
+<script is:inline define:vars={{ probeUrl }}>
+  (function () {
+    var fallbackApplied = false;
+
+    /**
+     * 把 root 内所有 <source> 与 <img> 一起切到备 CDN。
+     * 可重入（多次调用幂等）：所有 [data-srcset-alt] / [data-src-alt] 一次性消费。
+     */
+    function applyCdnFallback(scope) {
+      var root = scope || document;
+      // <source srcset> 必须先于 <img> 重写——picture 选择优先级以 source 为先
+      root.querySelectorAll("source[data-srcset-alt]").forEach(function (s) {
+        s.setAttribute("srcset", s.getAttribute("data-srcset-alt"));
+        s.removeAttribute("data-srcset-alt");
+      });
+      root.querySelectorAll("img[data-src-alt]").forEach(function (img) {
+        img.setAttribute("src", img.getAttribute("data-src-alt"));
+        img.removeAttribute("data-src-alt");
+      });
+    }
+
+    /**
+     * 全局触发：probe 失败时整页一次性切换。
+     * 注意 DOM 时序——probe 可能比 <body> 还早完成，要等 DOMContentLoaded。
+     */
+    function triggerGlobalFallback() {
+      if (fallbackApplied) return;
+      fallbackApplied = true;
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () {
+          applyCdnFallback();
+        });
+      } else {
+        applyCdnFallback();
+      }
+    }
+
+    /**
+     * 单图兜底：任何 <img> 加载失败时，**只切换它所在的 picture**，
+     * 不影响其他还能正常加载的图片。capture 阶段才能捕获到 <img> 的 error 事件。
+     */
+    document.addEventListener(
+      "error",
+      function (e) {
+        var img = e.target;
+        if (!img || img.tagName !== "IMG" || !img.hasAttribute("data-src-alt"))
+          return;
+        var pic = img.closest("picture");
+        if (pic) applyCdnFallback(pic);
+        else applyCdnFallback(img.parentNode || document);
+      },
+      /* useCapture */ true,
+    );
+
+    /**
+     * 主 CDN 健康探测。AbortController + setTimeout（兼容 iOS 12 / 老 WebView）。
+     * probeUrl 由 Astro define:vars 注入，已包含 ASSET_VERSIONS['misc'] 当前 tag。
+     */
+    try {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () {
+        ctrl.abort();
+      }, 2000);
+      fetch(probeUrl, {
+        method: "HEAD",
+        cache: "no-store",
+        signal: ctrl.signal,
+      })
+        .then(function (r) {
+          clearTimeout(timer);
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          // 主 CDN 健康——但单图仍可能 404，靠 onerror capture 兜底
+        })
+        .catch(function () {
+          clearTimeout(timer);
+          triggerGlobalFallback();
+        });
+    } catch (e) {
+      // AbortController 都不支持的极端环境（IE 等）：直接走全局 fallback
+      triggerGlobalFallback();
+    }
+  })();
+</script>
