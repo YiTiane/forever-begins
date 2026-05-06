@@ -25,7 +25,11 @@ export const ASSET_VERSIONS = {
   "wooden-door": "v1.0.0",
   pearl: "v1.0.0",
   retro: "v1.0.0",
-  misc: "v1.0.0",
+  // v1.1.0：invitation 派生品按真实输出宽度命名（part_1-{320,640,800}.{avif,webp,jpg}），
+  // 取代了 v1.0.0 的 -1024/-1600/-2400/-3840（实际 800w 同一文件，谎报宽度）。
+  // 其他 6 仓内容与 v1.0.0 完全一致，仅 tag-only marker；故 asset-versions 保持 v1.0.0。
+  // 详见 archive `e86ee9b` push:cdn 修 + main `d211593` Cover P2 修。
+  misc: "v1.1.0",
 } as const;
 
 export type CdnTarget = keyof typeof ASSET_VERSIONS;

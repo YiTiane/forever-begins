@@ -1,18 +1,17 @@
 ---
 /**
- * Cover.astro · §0 序幕 · 邀请（v0.2 · Phase 2 §0 第一刀 + 上轮 P2 修复）
+ * Cover.astro · §0 序幕 · 邀请（v0.3 · Phase 2 §0 第一刀 P2 收口完成）
  *
- * v0.2 审计 P2 修：
- *   ① **srcset 不再谎报宽度**（v1.39 → v1.40）：邀请函 part_1 源图 800×1200，
- *      旧 widths={[320, 640, 1024, 1600, 2400, 3840]} 让 srcset 包含 1024+/3840w 但
- *      misc@v1.0.0 的 -1024.avif/-1600.avif/-2400.avif/-3840.avif 实际都是 800w 同一文件，
- *      浏览器在 4K Retina 下选 -3840 拿到 800w 位图 → 糊。
- *      **现 widths={[320, 640]}**：仅列出 misc@v1.0.0 真实存在的、未谎报宽度的两挡；
- *      4K Retina 选最大 640w（依然 < 源宽 800，无放大）。
- *      ⏳ **misc 重发 v1.1.0 后**（archive 已本地重生成 part_1-{320,640,800}.{avif,webp,jpg}），
- *         可把 widths 扩展为 [320, 640, 800] + bump asset-versions.ts misc → v1.1.0，
- *         真正喂到 800w 给 4K Retina。**这一步需要用户在 archive 跑 push:cdn**。
- *   ② **CLS = 0**：传入源图固有 width=800 / height=1200 → CdnImage v0.3 渲染
+ * v0.3（v1.42）：misc@v1.1.0 已 push（archive `e86ee9b` push:cdn 跑成功，所有 7 仓拿到
+ *   v1.1.0 tag），800w 真宽度派生品就位 → widths 从 [320, 640] 扩到 **[320, 640, 800]**，
+ *   4K Retina 设备选 800w 拿到真 800w 位图（< 源宽 800w，无放大）。
+ *
+ * v0.2（v1.40）历史决策（保留作 audit trail）：
+ *   ① srcset 不再谎报宽度：邀请函 part_1 源图 800×1200，旧 widths=[320..3840] 在
+ *      misc@v1.0.0 下让 -1024/-1600/-2400/-3840 都是 800w 同一文件 → 谎报；
+ *      v0.2 收敛到 [320, 640]（misc@v1.0.0 真实未谎报的两挡）；
+ *      v0.3 misc@v1.1.0 后扩到 [320, 640, 800]，3 挡都对应真实派生品。
+ *   ② CLS = 0：传入源图固有 width=800 / height=1200 → CdnImage v0.3 渲染
  *      `<img width="800" height="1200">` → 浏览器配合 CSS height: auto 自动推
  *      `aspect-ratio: 2/3`，在图片解码完成前就 reserve 版心；下方 welcome/hero/meta
  *      不会因 image decode 而 reflow。
@@ -41,7 +40,9 @@ import CdnImage from "@/components/CdnImage.astro";
 ---
 
 <section class="cover" aria-label="邀请">
-  {/* —— 邀请函悬浮纸卡（v0.2：仅图，无 parallax / particles · CLS = 0） —— */}
+  {
+    /* —— 邀请函悬浮纸卡（v0.3：misc@v1.1.0 后 widths 扩到 [320,640,800] · CLS = 0） —— */
+  }
   <figure class="invitation-card">
     <CdnImage
       cdnTarget="misc"
@@ -49,7 +50,7 @@ import CdnImage from "@/components/CdnImage.astro";
       sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
       alt="婚礼邀请函 · 杨倚天 与 希尔娜依"
       priority="high"
-      widths={[320, 640]}
+      widths={[320, 640, 800]}
       width={800}
       height={1200}
     />
