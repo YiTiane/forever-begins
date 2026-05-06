@@ -1,5 +1,5 @@
 /**
- * src/content.config.ts · Astro Content Collections schema（v0.3 · Phase 1 §1.1.16）
+ * src/content.config.ts · Astro Content Collections schema（v0.4 · v1.54 + storyPoem 头注释收口）
  *
  * **路径**（v0.2 修订）：Astro v6 起强制位于 `src/content.config.ts`（src/ 根目录），
  * **不**在 `src/content/config.ts`（旧 v4 命名会触发 LegacyContentConfigError）。
@@ -11,23 +11,34 @@
  * （破坏 DESIGN §3.2 的 "snow.json 单文件" 契约）。
  * 现在的策略：series-level `cdnTarget` 仍是默认；个别 photo 用 `cdnTarget` 覆写。
  *
- * 五个 collection（DESIGN §12 / PLAN §1.1.17–§1.1.21）：
- *   - `meta`    : 婚礼基本信息（wedding.json：日期 / 地点 / 三坐标系 / 诗句）
- *   - `story`   : 故事锚点（anchor.json：2019-01-27 重庆西南大学）
- *   - `journey` : 地理叙事（long-distance.json：乌鲁木齐 ↔ 墨尔本；可选 cities.json 5 城归档）
- *   - `cats`    : 三只猫家庭（family.json：Berry / 荔枝 / 小宝）
- *   - `series`  : 5 photo series（snow / garden / wooden-door / pearl / retro，每个含 cdnTarget + photos[]）
+ * **v0.4 新增**（v1.53 PLAN · v1.54 头注释回填）：`storyPoem` collection。
+ * §2 第一章爱情独白长卷的 12 个 beat 数据 + photo 绑定（DESIGN §4 §2.A）。
+ * 与 `story` 分两个 collection 而非合并：anchor.json 是三段式锚点（date / place /
+ * caption），main.json 是 12 beats × {photos, lines}，shape 完全不同；
+ * z.union 合并会让两边类型都被 narrow 检测拖下水。
+ *
+ * **六个 collection**（DESIGN §12 / PLAN §1.1.17–§1.1.21 + v1.53）：
+ *   - `meta`      : 婚礼基本信息（wedding.json：日期 / 地点 / 三坐标系 / 诗句）
+ *   - `story`     : 故事锚点（anchor.json：2019-01-27 重庆西南大学）
+ *   - `storyPoem` : §2 爱情独白长卷（main.json：12 beats × poem lines + photos）⭐ v1.53 新增
+ *   - `journey`   : 地理叙事（long-distance.json：乌鲁木齐 ↔ 墨尔本；可选 cities.json 5 城归档）
+ *   - `cats`      : 三只猫家庭（family.json：Berry / 荔枝 / 小宝）
+ *   - `series`    : 5 photo series（snow / garden / wooden-door / pearl / retro）
  *
  * 设计要点：
  *   - 用 `glob({ pattern, base })` loader（Astro v5+ 现代 API · Astro 6.2.2 兼容）
  *   - 严 schema：必填字段直接 z.string() / z.number()；可选字段 z.optional()
- *   - **`series.cdnTarget` 是 enum**（DESIGN §3.2 命名收敛唯一接缝），与 src/lib/images/asset-versions.ts 的 7 个 target 一一对应
+ *   - **`series.cdnTarget` / `storyPoem.beats[].photos[].cdnTarget` 是 enum**
+ *     （DESIGN §3.2 命名收敛唯一接缝），与 src/lib/images/asset-versions.ts 的 7 个 target 一一对应
  *   - **`meta` 只 glob `wedding.json`**（couple.json 是私有联系方式，不入构建产物，DESIGN §12）
  *   - **三坐标系 coords**（DESIGN v2.16 / PLAN §1.1.17）：wgs84 必填实数，gcj02/bd09 可空
  *     null —— Phase 6 由 `scripts/expand-coords.ts` 一次性算出
- *   - **共享 `stemSchema`**（v0.2 收紧）：cats / series 两处都引用同一个 schema，
+ *   - **共享 `stemSchema`**（v0.2 收紧）：cats / series / storyPoem 三处都引用同一个 schema，
  *     强制禁止扩展名（.jpg/.png/.avif/...）与尾随 `-<digits>` 尺寸后缀，
  *     避免错误 stem 进入 content 后被 CdnImage 拼出 `avif/Snow_01.jpg-640.avif` 静默 404
+ *   - **storyPoem 12-beat 严约束**（v1.54 P3 #1）：beats.length(12) +
+ *     refine id 依次 '01'..'12' + refine kind 严格匹配 photo-poem×10 / globe / finale。
+ *     任何编辑 main.json 时丢失 / 重排 / 错 kind 都被 zod 拦在 build 前。
  *
  * v1.21+ 收敛：`china-cities.json` 不进主仓 src/content/journey/（PLAN §1.1.21b 验收）；
  * `cities.json` 名称保留可空——若未来 §1.1.19 仅填 long-distance.json，schema 用 union refine
@@ -254,13 +265,59 @@ const storyPoemBeat = z.object({
   note: z.string().optional(),
 });
 
+/**
+ * 12-beat 严约束（v1.54 P3 #1 修）：
+ *   v0.1 schema 只写 `.min(1)`，丢失 / 重复 / 错序 / 错 kind 都会通过 content load。
+ *   v0.2 加 `.length(12)` + 三层 `.refine()` 把 DESIGN §2.A 行 770–783 表的：
+ *     - 数量恰好 12
+ *     - id 严格依次 '01'..'12'
+ *     - 01–10 必须是 photo-poem · 11 必须是 globe · 12 必须是 finale
+ *   写进 schema —— 任何后续 batch 编辑 main.json 时都被 zod 拦在 build 前。
+ *   未来 batch 3/4 接入 GlobeDistanceScene / StarCarouselFinale 时也能从 schema
+ *   读到清晰的 kind 契约，不必另查 DESIGN。
+ */
+const EXPECTED_BEAT_KINDS = [
+  "photo-poem", // 01
+  "photo-poem", // 02
+  "photo-poem", // 03
+  "photo-poem", // 04
+  "photo-poem", // 05
+  "photo-poem", // 06
+  "photo-poem", // 07
+  "photo-poem", // 08
+  "photo-poem", // 09
+  "photo-poem", // 10
+  "globe", // 11 · DESIGN §2.B GlobeDistanceScene
+  "finale", // 12 · DESIGN §2.C StarCarouselFinale
+] as const;
+
 const storyPoem = defineCollection({
   loader: glob({ pattern: "*.json", base: "./src/content/story-poem" }),
   schema: z.object({
     /** 故事锚点日期（与 src/content/story/anchor.json `date` 同源 · DESIGN §15.1）。 */
     anchor_date: z.string().min(1),
-    /** 12 个 beat（含 globe / finale 占位 entry）。 */
-    beats: z.array(storyPoemBeat).min(1),
+    /**
+     * 必须恰好 12 个 beat（DESIGN §2.A 行 770–783 表）：
+     * id 依次 '01'..'12'，kind 依次 photo-poem×10 → globe → finale。
+     */
+    beats: z
+      .array(storyPoemBeat)
+      .length(12, "beats 必须恰好 12 个（DESIGN §2.A 表 770-783）")
+      .refine(
+        (beats) =>
+          beats.every((b, i) => b.id === String(i + 1).padStart(2, "0")),
+        {
+          message:
+            "beats[i].id 必须依次为 '01'..'12'（按 DESIGN §2.A 表顺序，不允许跳号）",
+        },
+      )
+      .refine(
+        (beats) => beats.every((b, i) => b.kind === EXPECTED_BEAT_KINDS[i]),
+        {
+          message:
+            "beat kind 必须严格匹配：01-10 photo-poem · 11 globe (§2.B) · 12 finale (§2.C)",
+        },
+      ),
   }),
 });
 

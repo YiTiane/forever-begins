@@ -1,6 +1,14 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.1 · Phase 2 §2 batch 1 · DESIGN §4 §2.A）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.2 · v1.54 修 v1.53 P2 #2 双图布局 selector）
+ *
+ * v0.2 修：v0.1 把 `data-photo-count` 挂在 `<section class="poem-beat">` 上，
+ * 但 CSS 选择器写的是 `.poem-photos[data-photo-count="2"]` —— 永远匹配不上。
+ * 结果 beat 01 (Snow_03/07 双图远近) / beat 02 (Snow_14/15 对视斜线) 的
+ * "双图错位双列"视觉契约从未生效，全部渲染成单列堆叠（DESIGN §2.A 行 772-773）。
+ * v0.2 把 data-photo-count 挂在 `.poem-photos` 本身（语义上也更对位），
+ * 同时把不再用到的 .poem-beat 上的 data-photo-count 删掉避免误导。
+ *
  *
  * 单一职责：渲染 storyPoem.beats[i] —— 一段诗 + 0..N 张照片，进入视口时整体淡入。
  *
@@ -67,12 +75,7 @@ const headingId = `beat-${id}-heading`;
 const firstLine = lines[0] ?? "";
 ---
 
-<section
-  class="poem-beat"
-  data-beat-id={id}
-  data-photo-count={photos.length}
-  aria-labelledby={headingId}
->
+<section class="poem-beat" data-beat-id={id} aria-labelledby={headingId}>
   {/* 不可见 heading：给 AT 一个清晰的章节进入声明，不污染视觉 */}
   <h3 id={headingId} class="sr-only">
     第 {id} 段 · {firstLine}
@@ -83,10 +86,20 @@ const firstLine = lines[0] ?? "";
     {lines.map((line) => <p>{line}</p>)}
   </div>
 
-  {/* —— 照片层：CdnImage 列；layout 由 CSS Grid 控制 —— */}
+  {
+    /* —— 照片层：CdnImage 列；layout 由 CSS Grid 控制 ——
+       v1.54（P2 #2 修）：data-photo-count 必须挂在 .poem-photos 本身，CSS
+       选择器 `.poem-photos[data-photo-count="2"]` 才能匹配上让双图错位双列生效；
+       v0.1 误挂在 .poem-beat 上，导致 beat 01 (Snow_03/07) / beat 02 (Snow_14/15)
+       的"双图对视"视觉契约从未生效，渲染成单列堆叠。 */
+  }
   {
     photos.length > 0 && (
-      <div class="poem-photos" data-roles={photos.map((p) => p.role).join(",")}>
+      <div
+        class="poem-photos"
+        data-photo-count={photos.length}
+        data-roles={photos.map((p) => p.role).join(",")}
+      >
         {photos.map((photo) => (
           <figure class="poem-photo" data-role={photo.role}>
             <CdnImage

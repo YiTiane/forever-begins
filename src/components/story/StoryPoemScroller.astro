@@ -1,12 +1,17 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.1 · Phase 2 §2 batch 1 · DESIGN §4 §2.A）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.2 · v1.54 修 v1.53 P2 #1 占位泄漏）
+ *
+ * v0.2 修：删除 v0.1 渲染的 deferred-beats 可见占位（"§2.B · globe · beat 11
+ * · 后续 batch 实装" 之类的工程标记）。aria-hidden 只对 AT 隐藏，对所有视觉访客
+ * 仍显形 — 这不该出现在婚礼站。改为：beats 11/12 数据保留在 main.json（schema
+ * 已严约束 11=globe / 12=finale），但**不渲染任何 DOM**；后续 batch 3/4 直接
+ * 在 § —— 后续 batch 挂点 —— 注释处插入 GlobeDistanceScene / StarCarouselFinale。
  *
  * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，
- * 按 batch 1 范围渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整），
- * globe / finale 占位（不渲染 PoemBeat，只插一行注释 div 标记后续刀位）。
+ * 按 batch 范围渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整）。
  *
- * batch 1 落地范围（**严格收敛**）：
+ * batch 1 落地范围（**严格收敛** · 与 §0/§1 第一刀同等抽象）：
  *   ✓ 渲染 BEATS_TO_RENDER (默认 4) 个 photo-poem beat 用 `<PoemBeat>`
  *   ✓ 单个 IntersectionObserver 观察所有 .poem-beat，进入视口加 .visible
  *   ✓ rootMargin "-15%" → 进入 ~85vh 处才触发，避免一进 §2 顶就全亮
@@ -49,44 +54,38 @@ const photoPoemBeats = main.data.beats
   .filter((b) => b.kind === "photo-poem")
   .slice(0, maxBeats);
 
-// globe / finale 占位标记（用于审计 + 后续刀定位）
-const deferredBeats = main.data.beats.filter(
-  (b) => b.kind === "globe" || b.kind === "finale",
-);
+/*
+ * v1.54（v1.53 P2 #1 修）：删除可见的 deferred-beats 占位区。v1.53 把
+ * "§2.B · globe · beat 11 · 后续 batch 实装" 渲染成 `<p>` 留在公开页面，aria-hidden
+ * 只对 AT 隐藏，对所有视觉访客（包括婚礼宾客）仍显形 — 这不该出现在婚礼站。
+ *
+ * 现在策略：beats 11/12 数据仍保留在 main.json（schema 已严约束 beat 11=globe / 12=finale）
+ * 让未来 batch 3/4 直接挂 GlobeDistanceScene / StarCarouselFinale 时就能读到位置；
+ * 但**不渲染任何 DOM**。挂点定位从"渲染极淡灰小字"改为"读源码注释 + JSON beat ids"。
+ */
 ---
 
 <section class="story-poem" aria-labelledby="story-poem-heading">
   {/* 章节标题（拉丁体细斜，与 §1 'Invitation' 同档） */}
   <h2 id="story-poem-heading" class="section-title latin-italic">Our Story</h2>
 
-  {/* —— 12 beats 中前 N 个 photo-poem 渲染 ——
+  {
+    /* —— 12 beats 中前 N 个 photo-poem 渲染 ——
        § 2 整段都在 §0 Cover + §1 Invitation 之下（≥ 2 屏滚动），任何 photo
-       都不在首屏；不传 firstAboveFold，让每张图都走 lazy loading。 */}
+       都不在首屏；不传 firstAboveFold，让每张图都走 lazy loading。 */
+  }
   {
     photoPoemBeats.map((beat) => (
       <PoemBeat id={beat.id} lines={beat.lines} photos={beat.photos} />
     ))
   }
 
-  {/* —— globe / finale 占位（batch 1 不实施，留位让后续刀知道挂点） —— */}
+  {/* —— 后续 batch 挂点（v1.54 之后不再渲染可见占位） —— */}
   {
-    deferredBeats.length > 0 && (
-      <div class="deferred-beats" aria-hidden="true">
-        {deferredBeats.map((beat) => (
-          <div
-            class="deferred-beat"
-            data-kind={beat.kind}
-            data-beat-id={beat.id}
-          >
-            {/* 注释式占位：渲染极小标记，未来 batch 在此插对应组件 */}
-            <p class="deferred-marker latin-roman">
-              §2.{beat.kind === "globe" ? "B" : "C"} · {beat.kind} · beat{" "}
-              {beat.id} · 后续 batch 实装
-            </p>
-          </div>
-        ))}
-      </div>
-    )
+    /* batch 3 · §2.B GlobeDistanceScene 将插在这里，对应 main.json beats[10]（id="11" kind="globe"）*/
+  }
+  {
+    /* batch 4 · §2.C StarCarouselFinale 将插在这里，对应 main.json beats[11]（id="12" kind="finale"）*/
   }
 </section>
 
@@ -120,24 +119,6 @@ const deferredBeats = main.data.beats.filter(
       font-size: 1.75rem;
       margin: 0 auto 1.5rem;
     }
-  }
-
-  /* —— 占位区：batch 1 仅留极淡灰文字标记，便于审计找到挂点 —— */
-  .deferred-beats {
-    max-width: 720px;
-    margin: 4rem auto 2rem;
-    padding: 0 1.5rem;
-    text-align: center;
-  }
-  .deferred-beat + .deferred-beat {
-    margin-top: 1rem;
-  }
-  .deferred-marker {
-    margin: 0;
-    color: var(--c-sage-deep);
-    opacity: 0.4;
-    font-size: 0.875rem;
-    font-style: italic;
   }
 </style>
 
