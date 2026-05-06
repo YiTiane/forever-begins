@@ -1,0 +1,175 @@
+---
+/**
+ * InvitationParallax.astro · §0 Cover · 邀请函视差与倾斜（v0.1 · Phase 2 §0 第三刀）
+ *
+ * 把 .invitation-card 整张卡作为单层视差对象：
+ *   - 桌面：鼠标在 .cover 区域内移动 → 卡片随鼠标轻微 translate3d + rotate
+ *   - Android（不需 permission）：deviceorientation 事件 → tilt 转 translate
+ *   - iOS：DeviceOrientationEvent 需要 user-gesture 触发的 requestPermission()——本刀**留白**，
+ *     不做隐式静默失败之外的任何事；**v1.47 后续刀**会加一个"📱 enable tilt" UI 按钮处理 iOS 权限
+ *
+ * DESIGN §4 §0 视觉要点上限：
+ *   - 整张卡片本身位移 **≤ 12 px** —— 避免清晰度被位移模糊
+ *   - 视觉规格里没明说旋转幅度，本组件取 **≤ 1.5°**（横向鼠标位置驱动的轻微倾斜，
+ *     给纸卡"在风里轻晃"的感觉，不破坏邀请函对称感）
+ *
+ * a11y / 性能：
+ *   - **prefers-reduced-motion: reduce → setupParallax() 顶部 return**：不绑事件、不入 rAF；
+ *     卡片保持 transform: none 的初始静态
+ *   - GPU 路径：用 `translate3d(x, y, 0) rotate(z)` + `will-change: transform`，触发硬件合成层；
+ *     不触发 layout / paint，只走 composite 阶段
+ *   - lerp 平滑（每帧 +8% 趋近 target），消除 mousemove 高频抖动
+ *   - 静止时停 rAF：到达 target 后下一帧检测 atRest 即停 rAF；下次输入恢复
+ *   - rAF 自然 60 FPS 上限；visibilitychange tab 隐藏时 pointermove 不触发，不用额外节流
+ *
+ * 与 .cover 的几何关系：
+ *   - 监听 .cover 上的 pointermove / pointerleave —— 鼠标离开 Cover 区域后回到 0,0
+ *   - 不做指针拦截（pointer-events 不动 .cover；canvas 自带 pointer-events: none）
+ *
+ * 调试：window.__invitationParallax?.target() 看当前目标偏移；reduced-motion 模式下不存在。
+ */
+---
+
+<script>
+  (function setupInvitationParallax() {
+    if (typeof window === "undefined") return;
+
+    // a11y 守卫：reduced-motion 完全静态
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (reducedMotion) return;
+
+    const cover = document.querySelector<HTMLElement>(".cover");
+    const card = document.querySelector<HTMLElement>(".invitation-card");
+    if (!cover || !card) return;
+
+    // DESIGN §4 §0 上限
+    const MAX_TRANSLATE = 12; // px
+    const MAX_ROTATE = 1.5; // deg
+    const LERP = 0.08; // 每帧趋近 target 的比例（0..1）
+    const REST_EPSILON = 0.05; // 当 |target - current| < EPS 视为已到位
+
+    let targetX = 0;
+    let targetY = 0;
+    let targetRz = 0;
+    let curX = 0;
+    let curY = 0;
+    let curRz = 0;
+    let rafId = 0;
+    let engaged = false; // 是否还有输入信号（mouse over / orientation 持续）
+
+    // 让浏览器为该元素分配独立合成层（GPU 加速 transform）
+    card.style.willChange = "transform";
+
+    function applyTransform() {
+      card!.style.transform = `translate3d(${curX.toFixed(2)}px, ${curY.toFixed(2)}px, 0) rotate(${curRz.toFixed(3)}deg)`;
+    }
+
+    function frame() {
+      curX += (targetX - curX) * LERP;
+      curY += (targetY - curY) * LERP;
+      curRz += (targetRz - curRz) * LERP;
+
+      applyTransform();
+
+      const atRest =
+        Math.abs(targetX - curX) < REST_EPSILON &&
+        Math.abs(targetY - curY) < REST_EPSILON &&
+        Math.abs(targetRz - curRz) < REST_EPSILON / 10;
+
+      if (atRest && !engaged) {
+        rafId = 0; // 暂停 rAF；下次输入触发 ensureFrame() 重启
+        return;
+      }
+      rafId = requestAnimationFrame(frame);
+    }
+
+    function ensureFrame() {
+      if (!rafId) rafId = requestAnimationFrame(frame);
+    }
+
+    // —— 鼠标视差（pointermove 在 .cover 内）——
+    function onPointerMove(e: PointerEvent) {
+      // 仅响应 mouse / pen；touch 移动会过 pointermove 但同时也走 deviceorientation——
+      // 让两路同时叠加可能感觉太重。简化：仅 mouse / pen 响应这条路径。
+      if (e.pointerType !== "mouse" && e.pointerType !== "pen") return;
+
+      const rect = cover!.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      // 归一化到 [-0.5, 0.5]
+      const nx = (e.clientX - cx) / rect.width;
+      const ny = (e.clientY - cy) / rect.height;
+
+      // ±0.5 → ±1.0 因子（覆盖整个 cover 区域时达到 ±MAX_TRANSLATE）
+      targetX = clampPx(nx * 2 * MAX_TRANSLATE);
+      targetY = clampPx(ny * 2 * MAX_TRANSLATE);
+      targetRz = clampDeg(nx * 2 * MAX_ROTATE);
+
+      engaged = true;
+      ensureFrame();
+    }
+
+    function onPointerLeave() {
+      targetX = 0;
+      targetY = 0;
+      targetRz = 0;
+      engaged = false;
+      ensureFrame();
+    }
+
+    cover.addEventListener("pointermove", onPointerMove, { passive: true });
+    cover.addEventListener("pointerleave", onPointerLeave, { passive: true });
+
+    // —— Android device-orientation（不需 permission）——
+    // iOS 13+ 上 DeviceOrientationEvent 有静态方法 requestPermission；
+    // 我们检测它存在就**不**自动监听（因为没有 permission 不会触发事件，且自动 prompt
+    // 需要 user-gesture，本刀不做 UI button）；Android / 桌面上没有此静态方法，
+    // 直接监听即可。
+    const orientationCtor = window.DeviceOrientationEvent;
+    const needsPermission =
+      typeof orientationCtor !== "undefined" &&
+      typeof (
+        orientationCtor as unknown as {
+          requestPermission?: () => Promise<string>;
+        }
+      ).requestPermission === "function";
+
+    function onOrientation(e: DeviceOrientationEvent) {
+      const gamma = e.gamma ?? 0; // 左右倾斜 [-90, 90]
+      const beta = e.beta ?? 0; // 前后倾斜 [-180, 180]
+      // 把 ±15° 物理倾斜映射到 ±MAX_TRANSLATE px——日常持机的倾斜范围
+      targetX = clampPx((gamma / 15) * MAX_TRANSLATE);
+      targetY = clampPx((beta / 15) * MAX_TRANSLATE);
+      targetRz = clampDeg((gamma / 15) * MAX_ROTATE);
+      engaged = true;
+      ensureFrame();
+    }
+
+    if (typeof orientationCtor !== "undefined" && !needsPermission) {
+      // Android / 老 iOS：直接绑
+      window.addEventListener("deviceorientation", onOrientation, {
+        passive: true,
+      });
+    }
+    // iOS 13+：留 v1.47 加 UI button + requestPermission()——这里不绑
+
+    // —— 工具 ——
+    function clampPx(v: number): number {
+      return Math.max(-MAX_TRANSLATE, Math.min(MAX_TRANSLATE, v));
+    }
+    function clampDeg(v: number): number {
+      return Math.max(-MAX_ROTATE, Math.min(MAX_ROTATE, v));
+    }
+
+    // 调试钩子
+    (
+      window as unknown as {
+        __invitationParallax?: { target: () => [number, number, number] };
+      }
+    ).__invitationParallax = {
+      target: () => [targetX, targetY, targetRz],
+    };
+  })();
+</script>
