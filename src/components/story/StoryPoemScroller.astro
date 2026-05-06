@@ -1,0 +1,191 @@
+---
+/**
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.1 · Phase 2 §2 batch 1 · DESIGN §4 §2.A）
+ *
+ * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，
+ * 按 batch 1 范围渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整），
+ * globe / finale 占位（不渲染 PoemBeat，只插一行注释 div 标记后续刀位）。
+ *
+ * batch 1 落地范围（**严格收敛**）：
+ *   ✓ 渲染 BEATS_TO_RENDER (默认 4) 个 photo-poem beat 用 `<PoemBeat>`
+ *   ✓ 单个 IntersectionObserver 观察所有 .poem-beat，进入视口加 .visible
+ *   ✓ rootMargin "-15%" → 进入 ~85vh 处才触发，避免一进 §2 顶就全亮
+ *   ✓ 视口外 unobserve(entry.target) 解绑（一次性触发，避免 hover 抖动）
+ *   ✓ visibilitychange 不需要（IO 自动暂停）
+ *   ✓ a11y：`<section aria-labelledby="story-poem-heading">` + h2 'Our Story' latin-italic
+ *   ✓ stacking 隔离：position: relative + isolation: isolate（与 §0/§1 同款）
+ *
+ * **NOT in batch 1**（明确留 §2 后续刀，避免一刀混太多）：
+ *   ✗ globe (beat 11) → 等 R3F + Three.js + 水彩贴图地球到位（独立刀）
+ *   ✗ finale (beat 12) → 等 StarCarouselFinale Shader Dissolve 到位（独立刀）
+ *   ✗ 后 6 个 photo-poem beat (05-10) → 等 batch 2 视觉收口前 4 个再扩
+ *   ✗ 章节级 sticky scroll-jacking / 文字 stagger / 照片 layer parallax（motion polish）
+ *
+ * 数据流（DESIGN §15.1 数据接缝唯一原则）：
+ *   - getCollection('storyPoem') → main.json
+ *   - 取 entry.data.beats，filter kind === 'photo-poem'，slice(0, N)
+ *   - anchor_date 当前未消费（beat 05 [N] 天 CountUp 留独立小刀）
+ */
+import { getCollection } from "astro:content";
+import PoemBeat from "@/components/story/PoemBeat.astro";
+
+interface Props {
+  /** 渲染前 N 个 photo-poem beat（batch 1 默认 4，未来批次可上调）。 */
+  maxBeats?: number;
+}
+
+const { maxBeats = 4 } = Astro.props;
+
+const storyPoemEntries = await getCollection("storyPoem");
+const main = storyPoemEntries.find((e) => e.id === "main");
+if (!main) {
+  throw new Error(
+    "StoryPoemScroller.astro: src/content/story-poem/main.json missing — check content collection state",
+  );
+}
+
+// 仅渲染 photo-poem 类型的 beat，前 maxBeats 个
+const photoPoemBeats = main.data.beats
+  .filter((b) => b.kind === "photo-poem")
+  .slice(0, maxBeats);
+
+// globe / finale 占位标记（用于审计 + 后续刀定位）
+const deferredBeats = main.data.beats.filter(
+  (b) => b.kind === "globe" || b.kind === "finale",
+);
+---
+
+<section class="story-poem" aria-labelledby="story-poem-heading">
+  {/* 章节标题（拉丁体细斜，与 §1 'Invitation' 同档） */}
+  <h2 id="story-poem-heading" class="section-title latin-italic">Our Story</h2>
+
+  {/* —— 12 beats 中前 N 个 photo-poem 渲染 ——
+       § 2 整段都在 §0 Cover + §1 Invitation 之下（≥ 2 屏滚动），任何 photo
+       都不在首屏；不传 firstAboveFold，让每张图都走 lazy loading。 */}
+  {
+    photoPoemBeats.map((beat) => (
+      <PoemBeat id={beat.id} lines={beat.lines} photos={beat.photos} />
+    ))
+  }
+
+  {/* —— globe / finale 占位（batch 1 不实施，留位让后续刀知道挂点） —— */}
+  {
+    deferredBeats.length > 0 && (
+      <div class="deferred-beats" aria-hidden="true">
+        {deferredBeats.map((beat) => (
+          <div
+            class="deferred-beat"
+            data-kind={beat.kind}
+            data-beat-id={beat.id}
+          >
+            {/* 注释式占位：渲染极小标记，未来 batch 在此插对应组件 */}
+            <p class="deferred-marker latin-roman">
+              §2.{beat.kind === "globe" ? "B" : "C"} · {beat.kind} · beat{" "}
+              {beat.id} · 后续 batch 实装
+            </p>
+          </div>
+        ))}
+      </div>
+    )
+  }
+</section>
+
+<style>
+  .story-poem {
+    /* 与 §0/§1 同款 stacking 隔离，让 §2 内部 z-index 计算闭合 */
+    position: relative;
+    isolation: isolate;
+    /* 章节自带版心；PoemBeat 内部再各自 max-width: 1280px 居中 */
+    width: 100%;
+    padding: 4rem 0 2rem;
+  }
+
+  .section-title {
+    font-size: 2rem;
+    line-height: 1.1;
+    color: var(--c-sage);
+    font-weight: 300;
+    margin: 0 auto 2rem;
+    text-align: center;
+  }
+
+  @media (min-width: 960px) {
+    .section-title {
+      font-size: 2.25rem;
+    }
+  }
+
+  @media (max-width: 540px) {
+    .section-title {
+      font-size: 1.75rem;
+      margin: 0 auto 1.5rem;
+    }
+  }
+
+  /* —— 占位区：batch 1 仅留极淡灰文字标记，便于审计找到挂点 —— */
+  .deferred-beats {
+    max-width: 720px;
+    margin: 4rem auto 2rem;
+    padding: 0 1.5rem;
+    text-align: center;
+  }
+  .deferred-beat + .deferred-beat {
+    margin-top: 1rem;
+  }
+  .deferred-marker {
+    margin: 0;
+    color: var(--c-sage-deep);
+    opacity: 0.4;
+    font-size: 0.875rem;
+    font-style: italic;
+  }
+</style>
+
+<script>
+  (function setupStoryPoemScroller() {
+    if (typeof window === "undefined") return;
+
+    const beats = document.querySelectorAll<HTMLElement>(".poem-beat");
+    if (beats.length === 0) return;
+
+    // prefers-reduced-motion：直接全部 visible，跳过 IO（也避免空跑 IO 资源）
+    const prefersReduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (prefersReduced) {
+      beats.forEach((b) => b.classList.add("visible"));
+      return;
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("visible");
+            // 一次性触发，立即解绑（不会因为 hover / 反复滚动重复 transition）
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      {
+        // 进入视口约 15% 后才触发，让用户先看到一点 beat 再淡入
+        rootMargin: "-15% 0px -15% 0px",
+        threshold: 0,
+      },
+    );
+
+    beats.forEach((b) => io.observe(b));
+
+    // 调试钩子：window.__storyPoem.list() 看哪些 beat 已 visible
+    (
+      window as unknown as {
+        __storyPoem?: { list: () => string[] };
+      }
+    ).__storyPoem = {
+      list: () =>
+        Array.from(document.querySelectorAll<HTMLElement>(".poem-beat.visible"))
+          .map((e) => e.dataset.beatId ?? "?")
+          .sort(),
+    };
+  })();
+</script>

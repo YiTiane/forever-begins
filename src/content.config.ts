@@ -209,6 +209,62 @@ const cats = defineCollection({
 });
 
 // ─────────────────────────────────────────────────────────────────
+// story-poem · §2 第一章爱情独白长卷（DESIGN §4 §2.A · v2.16 主导）
+//
+// 为什么单独一个 collection：
+//   - `story` collection 的 schema 是 anchor.json 的 { date, place, caption } —— 三段式锚点；
+//   - story-poem.json 是 12 beats 数组，每个 beat 含若干 photo + 多行 poem，结构完全不同；
+//   - 用 z.union 合并会让两边类型都被 narrow 检测拖下水。分两个 collection 更干净。
+//
+// 一个 entry 一份 main.json（也可未来扩多份；glob 全 *.json）。
+// ─────────────────────────────────────────────────────────────────
+const storyPoemPhoto = z.object({
+  /** 派生品 stem，例：'Snow_03' / 'Wooden_door_01'。共用 stemSchema 防错。 */
+  stem: stemSchema,
+  /** 资产仓 target；DESIGN §3.2 命名收敛唯一接缝。 */
+  cdnTarget: z.enum(CDN_TARGETS),
+  alt: z.string().min(1),
+  /**
+   * 渲染角色提示（可选）。例：'far' / 'near' / 'top-left' / 'bottom-right' / 'portrait'。
+   * 仅供组件做 layout 分流（不会进 alt / aria）。未来 layout decision 可严格化为 enum。
+   */
+  role: z.string().optional(),
+  /**
+   * 源图原始像素（CLS 几何预留 · CdnImage v0.3 width/height props 直传）。
+   * 都填或都不填；其中一个填一个空 → CdnImage 构建期 throw（一致性 by 调用方）。
+   * batch 1 用合理默认（3:2 横 / 2:3 竖）；后续 batch 可按真源图调整。
+   */
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+
+const storyPoemBeat = z.object({
+  /** 序号字符串，例 '01'..'12'；必须按 DESIGN §2.A 表格顺序。 */
+  id: z.string().regex(/^\d{2}$/, "id 形如 '01'..'12'"),
+  /**
+   * `photo-poem` (绝大多数 beats) | `globe` (beat 11 唯一) | `finale` (beat 12)。
+   * 当前 batch 1 只渲染 photo-poem；globe / finale 由后续 batch 接入对应组件。
+   */
+  kind: z.enum(["photo-poem", "globe", "finale"]),
+  /** 诗行（中文）。每行一个 string；组件会按行分 `<p>` 渲染并保留断行。 */
+  lines: z.array(z.string().min(1)).min(1),
+  /** 照片数组；photo-poem beat 通常 1–2 张；globe / finale 可空。 */
+  photos: z.array(storyPoemPhoto).default([]),
+  /** 设计师布局/动效注解（不渲染，留给未来 motion polish 刀参考）。 */
+  note: z.string().optional(),
+});
+
+const storyPoem = defineCollection({
+  loader: glob({ pattern: "*.json", base: "./src/content/story-poem" }),
+  schema: z.object({
+    /** 故事锚点日期（与 src/content/story/anchor.json `date` 同源 · DESIGN §15.1）。 */
+    anchor_date: z.string().min(1),
+    /** 12 个 beat（含 globe / finale 占位 entry）。 */
+    beats: z.array(storyPoemBeat).min(1),
+  }),
+});
+
+// ─────────────────────────────────────────────────────────────────
 // series · 5 photo series · DESIGN §3.2 命名收敛
 // 每个 series 显式声明 cdnTarget（不允许从 series.id 推导仓名）
 // ─────────────────────────────────────────────────────────────────
@@ -252,4 +308,4 @@ const series = defineCollection({
   }),
 });
 
-export const collections = { meta, story, journey, cats, series };
+export const collections = { meta, story, storyPoem, journey, cats, series };

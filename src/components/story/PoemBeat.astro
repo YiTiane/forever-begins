@@ -1,0 +1,235 @@
+---
+/**
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.1 · Phase 2 §2 batch 1 · DESIGN §4 §2.A）
+ *
+ * 单一职责：渲染 storyPoem.beats[i] —— 一段诗 + 0..N 张照片，进入视口时整体淡入。
+ *
+ * 视觉契约（DESIGN §4 §2.A 桌面 wireframe）：
+ *   ┌───────────────────────────────────────────────────────────────┐
+ *   │  左/中：诗性文字长卷                         右/背景：照片场    │
+ *   │  我们都相信爱情，                         Snow_03 / Snow_07   │
+ *   │  这种相信，源于第一次对视。                  轻浮起 / 慢推近      │
+ *   └───────────────────────────────────────────────────────────────┘
+ *
+ * batch 1 落地范围（**严格收敛**，第一刀模式）：
+ *   ✓ 每个 beat = `<section>`，min-height: 120vh（DESIGN §2.A 行 763）
+ *   ✓ 桌面：CSS Grid 双列 [text 42vw max 620px | photos 1fr]，居中堆叠
+ *   ✓ 移动端 (<540px)：单列堆叠（文字 → 照片）
+ *   ✓ 文字：思源宋体 (cn-song)，行行分 `<p>` 保留断行
+ *   ✓ 照片：CdnImage v0.3，widths={[320,640,1024,1600,2400]}（snow / wooden-door / pearl 系列实际派生品宽度），width/height 走 CLS 几何预留
+ *   ✓ IntersectionObserver 进入视口 → `.visible` 切换 → opacity 0→1 + translateY 12px→0 缓入
+ *   ✓ prefers-reduced-motion: 直接 visible（不加 transition / 不加 translate）
+ *   ✓ a11y：每个 beat 用 `aria-labelledby`（指向第一行 poem 作为可访问标题）
+ *
+ * **NOT in batch 1**（明确留 §2 后续刀，避免混批失焦）：
+ *   ✗ 多张照片不同 layer/parallax（DESIGN §2.A 行 772–783 的 "一远一近 / 对视斜线 / radial mask")
+ *   ✗ 文字字符级 stagger / blur enter（Phase 5 motion polish）
+ *   ✗ beat 05 [N] 天 CountUp（DESIGN §2.D · 留独立小刀）
+ *   ✗ beat 09 缝线 SVG path / beat 10 珍珠高光闪动（motion polish 刀）
+ *   ✗ kind="globe" / kind="finale" 渲染 → 见上层 StoryPoemScroller 占位
+ *
+ * 性能：
+ *   - 每个 beat 一个 IntersectionObserver entry；模板顶层 setup 复用同一个 IO
+ *     （由父 StoryPoemScroller 的 script 统一观察 .poem-beat）
+ *   - 照片首屏外 lazy；首批 beat 01 视觉上仍需 ≥ 1 屏滚动才进入，全部 lazy 即可
+ *   - 不创建任何长生命周期 timer / rAF；纯 CSS transition driven by IO toggle
+ */
+import CdnImage from "@/components/CdnImage.astro";
+
+interface BeatPhoto {
+  stem: string;
+  cdnTarget:
+    | "snow-a"
+    | "snow-b"
+    | "grassland"
+    | "wooden-door"
+    | "pearl"
+    | "retro"
+    | "misc";
+  alt: string;
+  role?: string;
+  width?: number;
+  height?: number;
+}
+
+interface Props {
+  id: string; // '01'..'12'
+  lines: string[];
+  photos: BeatPhoto[];
+  /** 第一帧首屏内（极少数：仅 §2 第 01 个 beat 紧邻 §1）→ priority 'high'；其它 'auto' lazy。 */
+  firstAboveFold?: boolean;
+}
+
+const { id, lines, photos, firstAboveFold = false } = Astro.props;
+
+// 取第一行作为 aria-labelledby 的 fallback heading（不可见 visually）
+const headingId = `beat-${id}-heading`;
+const firstLine = lines[0] ?? "";
+---
+
+<section
+  class="poem-beat"
+  data-beat-id={id}
+  data-photo-count={photos.length}
+  aria-labelledby={headingId}
+>
+  {/* 不可见 heading：给 AT 一个清晰的章节进入声明，不污染视觉 */}
+  <h3 id={headingId} class="sr-only">
+    第 {id} 段 · {firstLine}
+  </h3>
+
+  {/* —— 文字列：思源宋体，逐行 <p> —— */}
+  <div class="poem-text cn-song">
+    {lines.map((line) => <p>{line}</p>)}
+  </div>
+
+  {/* —— 照片层：CdnImage 列；layout 由 CSS Grid 控制 —— */}
+  {
+    photos.length > 0 && (
+      <div class="poem-photos" data-roles={photos.map((p) => p.role).join(",")}>
+        {photos.map((photo) => (
+          <figure class="poem-photo" data-role={photo.role}>
+            <CdnImage
+              cdnTarget={photo.cdnTarget}
+              stem={photo.stem}
+              alt={photo.alt}
+              priority={firstAboveFold ? "high" : "auto"}
+              widths={[320, 640, 1024, 1600, 2400]}
+              sizes="(min-width: 960px) 38vw, (min-width: 540px) 60vw, 90vw"
+              width={photo.width}
+              height={photo.height}
+            />
+          </figure>
+        ))}
+      </div>
+    )
+  }
+</section>
+
+<style>
+  /* —— 单个 beat 容器：min-height 120vh 给滚动节奏（DESIGN §2.A 行 763）—— */
+  .poem-beat {
+    min-height: 120vh;
+    padding: 6rem 1.5rem;
+    display: grid;
+    /* 桌面：text(min(42vw, 620px)) + photos(1fr)；居中靠 grid-column 与 max-width */
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    gap: 2rem;
+    align-content: center;
+    justify-items: center;
+    max-width: 1280px;
+    margin: 0 auto;
+    /* IO fade-in 初态 */
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 700ms ease-out,
+      transform 700ms ease-out;
+    will-change: opacity, transform;
+  }
+
+  .poem-beat.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* sr-only 兜底（避免依赖 Tailwind 检测时机；与 Countdown 同款规则） */
+  .poem-beat :global(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* —— 文字列 —— */
+  .poem-text {
+    /* DESIGN §2.A 文字列宽 min(42vw, 620px) */
+    max-width: min(620px, 42vw);
+    width: 100%;
+    color: var(--c-olive-ink);
+    font-weight: 300;
+    font-size: 1.5rem;
+    line-height: 1.95; /* leading-quote · 长卷气息 */
+    text-align: center;
+  }
+  .poem-text p {
+    margin: 0.35em 0;
+  }
+
+  /* —— 照片层 —— */
+  .poem-photos {
+    display: grid;
+    gap: 1.25rem;
+    width: 100%;
+    max-width: 720px;
+    /* 默认单列；多张照片由 grid-template-columns 决定 */
+    grid-template-columns: 1fr;
+  }
+  /* 两张照片：错位双列（far/near、portrait pair） */
+  .poem-photos[data-photo-count="2"] {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .poem-photo {
+    margin: 0;
+    box-shadow: var(--shadow-paper);
+  }
+  .poem-photo :global(picture),
+  .poem-photo :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+  }
+
+  /* —— 桌面：双列 layout（≥ 960px）—— */
+  @media (min-width: 960px) {
+    .poem-beat {
+      grid-template-columns: minmax(0, min(620px, 42vw)) minmax(0, 1fr);
+      grid-template-rows: auto;
+      gap: 4rem;
+      align-content: center;
+      justify-items: stretch;
+    }
+    .poem-text {
+      max-width: min(620px, 42vw);
+      text-align: left;
+      grid-column: 1;
+    }
+    .poem-photos {
+      grid-column: 2;
+      max-width: none;
+    }
+  }
+
+  /* —— 移动端：字号收一档 —— */
+  @media (max-width: 540px) {
+    .poem-beat {
+      padding: 4rem 1rem;
+      min-height: 100vh; /* mobile 不严格 120vh，避免横向手机过空 */
+    }
+    .poem-text {
+      font-size: 1.25rem;
+      line-height: 1.85;
+    }
+    .poem-photos[data-photo-count="2"] {
+      /* mobile 仍单列堆叠避免照片太小 */
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* —— prefers-reduced-motion：直接 visible，不动 —— */
+  @media (prefers-reduced-motion: reduce) {
+    .poem-beat {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>

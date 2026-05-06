@@ -1,0 +1,199 @@
+{
+  "anchor_date": "2019-01-27",
+  "beats": [
+    {
+      "id": "01",
+      "kind": "photo-poem",
+      "lines": ["我们都相信爱情，", "这种相信，源于第一次对视。"],
+      "photos": [
+        {
+          "stem": "Snow_03",
+          "cdnTarget": "snow-a",
+          "alt": "雪山系列 · 远景",
+          "role": "far",
+          "width": 3000,
+          "height": 2000
+        },
+        {
+          "stem": "Snow_07",
+          "cdnTarget": "snow-a",
+          "alt": "雪山系列 · 近景",
+          "role": "near",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "两张雪山图一远一近，低速 parallax，像记忆被慢慢推近"
+    },
+    {
+      "id": "02",
+      "kind": "photo-poem",
+      "lines": ["那一刻，", "我们在彼此的眼里闪着光，"],
+      "photos": [
+        {
+          "stem": "Snow_14",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 女生独身像",
+          "role": "top-left",
+          "width": 2000,
+          "height": 3000
+        },
+        {
+          "stem": "Snow_15",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 男生独身像",
+          "role": "bottom-right",
+          "width": 2000,
+          "height": 3000
+        }
+      ],
+      "note": "女生独身像左上、男生独身像右下，形成对视斜线；中间留给文字"
+    },
+    {
+      "id": "03",
+      "kind": "photo-poem",
+      "lines": ["一种说不清的宿命感，", "在心底晕散开来。"],
+      "photos": [
+        {
+          "stem": "Snow_05",
+          "cdnTarget": "snow-a",
+          "alt": "雪山系列 · 居中柔焦",
+          "role": "center",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "单图居中偏后，柔焦边缘 + radial mask，像晕散"
+    },
+    {
+      "id": "04",
+      "kind": "photo-poem",
+      "lines": ["我们的故事始于 2019 年 1 月 27 日，"],
+      "photos": [
+        {
+          "stem": "Snow_11",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 日期锚点",
+          "role": "anchor",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "日期数字 CountUp 前，照片先出现为锚点"
+    },
+    {
+      "id": "05",
+      "kind": "photo-poem",
+      "lines": ["不知不觉，已携手走过 [N] 天。"],
+      "photos": [
+        {
+          "stem": "Snow_13",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 携手",
+          "role": "anchor",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "[N] 实时计算 (DESIGN §2.D daysTogether)；数字与照片轻微同步放大"
+    },
+    {
+      "id": "06",
+      "kind": "photo-poem",
+      "lines": ["每一天互道晚安时，", "我们都以为，", "自己不会比今天更爱你。"],
+      "photos": [
+        {
+          "stem": "Snow_08",
+          "cdnTarget": "snow-a",
+          "alt": "雪山系列 · 夜色",
+          "role": "vignette",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "夜色感 vignette，文字逐行亮起"
+    },
+    {
+      "id": "07",
+      "kind": "photo-poem",
+      "lines": ["两个契合的灵魂，"],
+      "photos": [
+        {
+          "stem": "Snow_09",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 契合",
+          "role": "overlap",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "两个半透明图层短暂重合，暗示契合"
+    },
+    {
+      "id": "08",
+      "kind": "photo-poem",
+      "lines": ["在爱情里，做着最真实的自己。"],
+      "photos": [
+        {
+          "stem": "Snow_12",
+          "cdnTarget": "snow-b",
+          "alt": "雪山系列 · 卸下防备",
+          "role": "reveal",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "图像从裁切中展开，像卸下防备"
+    },
+    {
+      "id": "09",
+      "kind": "photo-poem",
+      "lines": [
+        "两个容易被世界刺破的小孩，",
+        "互相缝缝补补，",
+        "在彼此的爱中学会了如何爱自己。"
+      ],
+      "photos": [
+        {
+          "stem": "Wooden_door_01",
+          "cdnTarget": "wooden-door",
+          "alt": "木门系列 · 缝补",
+          "role": "wooden",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "木门质感增强，照片边缘有细微缝线式 SVG path"
+    },
+    {
+      "id": "10",
+      "kind": "photo-poem",
+      "lines": ["抱紧你时，", "世界莺莺燕燕。"],
+      "photos": [
+        {
+          "stem": "Pearl_03",
+          "cdnTarget": "pearl",
+          "alt": "珍珠系列 · 高光",
+          "role": "pearl",
+          "width": 3000,
+          "height": 2000
+        }
+      ],
+      "note": "珍珠高光与文字同步闪动，但保持克制"
+    },
+    {
+      "id": "11",
+      "kind": "globe",
+      "lines": ["松开刹那，", "才见已过万重山。"],
+      "photos": [],
+      "note": "触发唯一 3D 地球高潮 (DESIGN §2.B GlobeDistanceScene)；batch 1 留占位"
+    },
+    {
+      "id": "12",
+      "kind": "finale",
+      "lines": ["还好我们有牢牢抱紧。", "幸好最终是你。"],
+      "photos": [],
+      "note": "进入星空照片走马灯 (DESIGN §2.C StarCarouselFinale)，最后定格 Pearl_04；batch 1 留占位"
+    }
+  ]
+}
