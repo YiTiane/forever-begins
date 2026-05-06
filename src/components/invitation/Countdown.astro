@@ -1,6 +1,17 @@
 ---
 /**
- * Countdown.astro · §1 倒计时（v0.2 · v1.51 a11y / 命名收口）
+ * Countdown.astro · §1 倒计时（v0.3 · v1.52 P3 arrived lifecycle 修）
+ *
+ * v0.3 修 v1.51 审计 P3：
+ *   "arrived path schedules one extra interval"
+ *   场景：页面在已过婚礼日期时打开 → IO 进入视口 → start() → tick() →
+ *   showArrived()。此刻 intervalId 仍是 0，showArrived 自带的 clearInterval
+ *   分支跳过；start() 接着仍执行 `setInterval(tick, 1000)` —— 多调度一次，
+ *   下一秒 tick() 才会真正清。视觉看不到，但与 "arrived 后立刻 0 CPU" 承诺不符。
+ *
+ *   修法：新增模块级 `arrived` 标志。showArrived() 置 true；start() 在
+ *   `tick()` 前后都检查 arrived，命中即返回；evaluate() 也守一道。这样
+ *   IO callback / visibilitychange 在 arrived 后任何抖动都不会再 schedule。
  *
  * v0.2 修 v1.50 审计三处：
  *   - **P2 #1（a11y 噪声）**：v0.1 在根 `.countdown` 上写
@@ -171,6 +182,11 @@ const { targetDate } = Astro.props;
     let intervalId = 0;
     let inView = false;
     let tabVisible = !document.hidden;
+    // v0.3 (audit P3 fix): arrived 终态标志。一旦置 true，start()/evaluate()
+    // 都不再调度 setInterval —— 修掉 v0.2 在「页面进入视口时已经过期」场景下
+    // tick() 进 arrived 分支时 intervalId 还是 0、清不掉，紧接着 start() 仍
+    // schedule 一秒后再次跑 tick 才停的"多调一次"小生命周期 bug。
+    let arrived = false;
     // 上一次 sr-status 已朗读的 (天, 时) 状态；初始 -1 → 第一次 tick 必触发
     let lastDays = -1;
     let lastHours = -1;
@@ -182,12 +198,14 @@ const { targetDate } = Astro.props;
     function showArrived() {
       // P2 #2: 一次性把 visible-shell 内所有节点替换为整句 cn-kaishu，
       // 不再保留 .prefix「距离婚礼还有」+ .digits 的拼接病句。
+      // P3 (v0.3): 置 arrived=true 阻止后续任何 start() 再 schedule。
+      arrived = true;
       root!.classList.add("countdown-arrived");
       visibleShell!.replaceChildren();
-      const arrived = document.createElement("span");
-      arrived.className = "arrived cn-kaishu";
-      arrived.textContent = "这一天已经到了";
-      visibleShell!.appendChild(arrived);
+      const arrived_span = document.createElement("span");
+      arrived_span.className = "arrived cn-kaishu";
+      arrived_span.textContent = "这一天已经到了";
+      visibleShell!.appendChild(arrived_span);
       // sr-status：AT 朗读一次完整短句（aria-live polite 自动播报）
       if (srEl) {
         srEl.textContent = "婚礼这一天已经到了";
@@ -229,8 +247,12 @@ const { targetDate } = Astro.props;
     }
 
     function start() {
+      if (arrived) return; // v0.3 (P3): arrived 后不再 schedule（即使 tick() 自己已置位）
       if (intervalId) return; // 已在跑，幂等
       tick(); // 立刻刷新一次（避免用户看到 "--"）
+      // tick() 内部可能刚把 arrived 置为 true（页面在已过期时刚进视口）；
+      // 此时不能再 schedule，否则会多一秒空转才被清。
+      if (arrived) return;
       intervalId = window.setInterval(tick, 1000);
     }
 
@@ -241,6 +263,11 @@ const { targetDate } = Astro.props;
     }
 
     function evaluate() {
+      // arrived 后任何视口/标签页变化都不应再开 interval（P3 防御）
+      if (arrived) {
+        stop();
+        return;
+      }
       // 仅当**视口可见 AND 标签页可见** 才跑 interval
       if (inView && tabVisible) start();
       else stop();
