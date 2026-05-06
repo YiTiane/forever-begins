@@ -1,8 +1,15 @@
 ---
 /**
- * Cover.astro · §0 序幕 · 邀请（v0.5 · Phase 2 §0 第三刀：parallax + 第二刀粒子层级显式化）
+ * Cover.astro · §0 序幕 · 邀请（v0.6 · Phase 2 §0 第四刀：水彩纸纹 + 角落 motif）
  *
- * v0.5（v1.46）：
+ * v0.6（v1.48）：接入 `<WatercolorPaper />` —— DESIGN §4 §0 "水彩纸纹延展" 收尾刀：
+ *   - 4% 灰度噪点（feTurbulence procedural · 0 JS · GPU 一次光栅）
+ *   - 左上 MimosaSprig（含羞草花球） + 右下 OliveBranch（橄榄枝，镜像版）形成对角呼应
+ *   - **CSS 排除规则扩展**：`.cover > *:not(.mimosa-petals):not(.watercolor-paper)` 把内容抬到 z-index: 1；
+ *     watercolor-paper 与 mimosa-petals 同 z-index: 0 装饰层（document order: watercolor 在前 →
+ *     粒子画在 watercolor 上 → 文本与邀请函画在二者之上）
+ *
+ * v0.5（v1.46/v1.47）：
  *   ① **修 v1.45 审计 P2（粒子层级未显式安全）**：v0.4 假设 `.cover { position: relative; }`
  *      + canvas `z-index: 0` 就够 → 但 CSS 规范里，positioned 子（z-index: 0）
  *      会**画在** non-positioned in-flow 兄弟之上（stacking 层级 6 > 3-5）。
@@ -44,9 +51,9 @@
  * §0 各刀实施进度：
  *   ✓ 第一刀（v0.2 / v0.3, v1.39–v1.42）：CdnImage runtime gate + srcset 真宽度 + CLS = 0
  *   ✓ 第二刀（v0.4, v1.45）：含羞草花瓣 Canvas 粒子（MimosaPetals.astro）
- *   ✓ **第三刀（v0.5, v1.46）：mouse parallax + Android device-orientation（InvitationParallax.astro）**
- *   ⏳ iOS device-orientation 权限流程（留 v1.47，需要 UI button + requestPermission）
- *   ✗ 第四刀：水彩纸纹背景 + Mimosa / Olive Branch SVG motif（最后一刀）
+ *   ✓ 第三刀（v0.5, v1.46–v1.47）：mouse parallax + Android device-orientation（InvitationParallax.astro · v1.47 修 idle rAF lifecycle）
+ *   ✓ **第四刀（v0.6, v1.48）：水彩纸纹背景 + 角落 Mimosa/Olive Branch motif（WatercolorPaper.astro · §0 视觉 ✓ done）**
+ *   ⏳ iOS device-orientation 权限流程（独立小刀，留第四刀后单独跑）
  *
  * 视觉要点（DESIGN §4 §0 核心）：
  *   - 邀请函**作为悬浮纸卡居中**，max-width: min(600px, 60vw)；
@@ -60,16 +67,22 @@
  *   sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
  */
 import CdnImage from "@/components/CdnImage.astro";
+import WatercolorPaper from "@/components/cover/WatercolorPaper.astro";
 import MimosaPetals from "@/components/cover/MimosaPetals.astro";
 import InvitationParallax from "@/components/cover/InvitationParallax.astro";
 ---
 
 <section class="cover" aria-label="邀请">
+  {
+    /* —— 水彩纸纹背景 + 角落 motif（v0.6 第四刀 · 静态层 · 4% 灰度噪点 · 含羞草 + 橄榄枝） —— */
+  }
+  <WatercolorPaper />
+
   {/* —— 含羞草花瓣 Canvas 粒子（v0.4 第二刀 · 自带 reduced-motion 守卫） —— */}
   <MimosaPetals />
 
   {
-    /* —— 邀请函视差与倾斜（v0.5 第三刀 · mouse + Android 倾斜 · iOS 留 v1.47） —— */
+    /* —— 邀请函视差与倾斜（v0.5 第三刀 · mouse + Android 倾斜 · iOS 留独立刀） —— */
   }
   <InvitationParallax />
 
@@ -117,9 +130,10 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     isolation: isolate;
   }
 
-  /* v0.5：所有非粒子直接子元素显式抬到 z-index: 1，画在 canvas 之上。
-     用 :not(.mimosa-petals) 而非每个子元素分别加规则——保持新增章节时自动覆盖。 */
-  .cover > *:not(.mimosa-petals) {
+  /* v0.6：所有非装饰直接子元素显式抬到 z-index: 1，画在 watercolor / canvas 之上。
+     v0.5 起用 :not() 排除 .mimosa-petals；v0.6 新增 .watercolor-paper 装饰层。
+     未来若新增装饰层（例如 §0 雪花 / 烟花），追加 :not(.new-decoration) 即可。 */
+  .cover > *:not(.mimosa-petals):not(.watercolor-paper) {
     position: relative;
     z-index: 1;
   }

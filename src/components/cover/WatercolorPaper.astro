@@ -1,0 +1,117 @@
+---
+/**
+ * WatercolorPaper.astro · §0 Cover 背景层（v0.1 · Phase 2 §0 第四刀）
+ *
+ * 职责（DESIGN §4 §0 视觉要点）：
+ *   "背景由"水彩纸纹延展"承担——`--c-paper` + 4% 灰度噪点 +
+ *    边缘水彩 motif 装饰（Mimosa / Olive Branch SVG），让画面饱满
+ *    但不依赖邀请函本身放大"
+ *
+ * 实现拆解：
+ *   ① **纸张底色**：不重复设置（Body 已经 `--bg = var(--color-paper)`）；
+ *      WatercolorPaper 只**叠加**纹理与角落 motif，不负责打底
+ *   ② **4% 灰度噪点**：内联 SVG `<filter>` 用 `feTurbulence` 生成程序化噪声 →
+ *      `feColorMatrix` 转灰度并降到 ~4% alpha → `<rect>` 全屏 fill
+ *      (浏览器一次性 GPU 光栅化，没有 JS 成本)
+ *   ③ **角落 motif** ×2：左上 MimosaSprig（含羞草小花球）·
+ *      右下 OliveBranch（橄榄枝镜像版），形成对角呼应
+ *
+ * 与其它 Cover 装饰层的关系：
+ *   - 全部归入 `aria-hidden="true" + pointer-events: none`（纯装饰）
+ *   - 在 Cover 的 stacking context 内，z-index: 0（与 .mimosa-petals 同层），
+ *     由 document order 让粒子画在 watercolor 之上
+ *   - 内容（邀请函卡 + 文本）由 `.cover > *:not(.mimosa-petals):not(.watercolor-paper)`
+ *     抬到 z-index: 1，永远在装饰层上方
+ *
+ * 性能：
+ *   - feTurbulence 是 GPU 滤镜，首次 paint 后浏览器会缓存光栅结果；
+ *     resize 时重绘（接受成本，远低于 JS 重新生成噪声 PNG）
+ *   - 整体 SVG ~1 KB inline；无外部资源，无字体依赖，无 hydrate JS
+ *
+ * a11y：
+ *   - 整层 aria-hidden（纯装饰，屏幕阅读器跳过）
+ *   - prefers-reduced-motion 不影响（这是静态图层，没有动画）
+ *   - prefers-contrast: more 时浏览器 UA 加重，本组件不主动 boost（如果实测有
+ *     可读性问题，未来加 `@media (prefers-contrast: more) { .watercolor-paper { display: none } }`）
+ */
+import MimosaSprig from "@/components/motifs/MimosaSprig.astro";
+import OliveBranch from "@/components/motifs/OliveBranch.astro";
+---
+
+<div class="watercolor-paper" aria-hidden="true">
+  {/* —— 4% 灰度噪点（procedural via feTurbulence） —— */}
+  <svg
+    class="watercolor-noise"
+    preserveAspectRatio="xMidYMid slice"
+    viewBox="0 0 100 100"
+    role="presentation"
+  >
+    <defs>
+      <filter id="paperGrain" x="0%" y="0%" width="100%" height="100%">
+        {/* baseFrequency 越高 = 颗粒越细；0.9 给"纸面磨砂"感 */}
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.9"
+          numOctaves="2"
+          seed="3"></feTurbulence>
+        {/* 转灰度并把整体 alpha 拍到 4%（DESIGN §4 §0 比例） */}
+        <feColorMatrix
+          values="0 0 0 0 0
+                  0 0 0 0 0
+                  0 0 0 0 0
+                  0 0 0 0.04 0"
+        ></feColorMatrix>
+      </filter>
+    </defs>
+    <rect width="100%" height="100%" filter="url(#paperGrain)"></rect>
+  </svg>
+
+  {/* —— 左上：含羞草小花球 —— */}
+  <MimosaSprig class="motif-tl" size={72} opacity={0.7} />
+
+  {/* —— 右下：橄榄枝（镜像）—— */}
+  <OliveBranch class="motif-br" size={84} opacity={0.6} flip={true} />
+</div>
+
+<style>
+  .watercolor-paper {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+    /* 不写 background —— body 已经 var(--bg) 了，不重复 */
+  }
+
+  .watercolor-noise {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 角落 motif 定位：8pt grid 留白，避免贴边
+     mobile 留 16px / 桌面 24px—— */
+  :global(.motif-tl) {
+    position: absolute;
+    top: 1.5rem;
+    left: 1rem;
+  }
+  :global(.motif-br) {
+    position: absolute;
+    bottom: 2rem;
+    right: 1rem;
+  }
+
+  @media (max-width: 539px) {
+    /* 小屏 motif 缩到 ~70%，给中央邀请函更多视觉空间 */
+    :global(.motif-tl),
+    :global(.motif-br) {
+      transform: scale(0.7);
+      transform-origin: top left;
+    }
+    :global(.motif-br) {
+      transform-origin: bottom right;
+    }
+  }
+</style>

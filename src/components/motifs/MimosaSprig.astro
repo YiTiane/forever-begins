@@ -1,0 +1,82 @@
+---
+/**
+ * MimosaSprig.astro · 含羞草小花球（DESIGN §2.4 motif library · v0.1）
+ *
+ * 用途（DESIGN §2.4）：章节序号旁、按钮装饰、Cover/Invitation 角落点缀。
+ *
+ * 视觉设计（v0.1，几何抽象风 · 后续可换更细的手绘 SVG）：
+ *   - 主笔触绿（var(--c-sage)）的细弯茎
+ *   - 茎顶端含羞草黄（var(--c-mimosa)）小球簇 ×3 主球 + 4 卫星 → "毛茸茸花球" 抽象
+ *   - 茎中段两片 sage 椭圆叶 → 平衡构图
+ *
+ * Props：
+ *   - `size`：渲染像素 width/height（保持 1:1 viewBox 80×80）
+ *   - `class`：自定义 className，调用方做 absolute 定位用
+ *   - `opacity`：整体透明度（默认 0.7，"水彩淡淡浮于纸面" 感）
+ *   - `aria`：默认 `aria-hidden="true"`（装饰性）；如果作为有语义 icon，调用方传 aria-label
+ *
+ * 颜色用 token：var(--c-sage) / var(--c-mimosa)。
+ *   - 这里**用 token 而非 hex** 是因为 SVG 在 DOM 内，能解析 CSS var
+ *   - 夜读模式下色板会切换，motif 自然跟随
+ */
+
+interface Props {
+  size?: number;
+  class?: string;
+  opacity?: number;
+}
+
+const { size = 60, class: className, opacity = 0.7 } = Astro.props;
+---
+
+<svg
+  class:list={["motif", "motif-mimosa", className]}
+  viewBox="0 0 80 80"
+  width={size}
+  height={size}
+  aria-hidden="true"
+  style={`opacity:${opacity}`}
+  role="presentation"
+>
+  {/* —— 茎（主茎 + 分枝）—— */}
+  <g
+    fill="none"
+    stroke="var(--c-sage)"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  >
+    <path d="M 38 70 Q 36 50 33 30"></path>
+    <path d="M 36 50 Q 42 46 48 42"></path>
+  </g>
+
+  {/* —— 含羞草花簇（主簇）—— */}
+  <g fill="var(--c-mimosa)">
+    <circle cx="33" cy="30" r="3.2"></circle>
+    <circle cx="29" cy="27" r="2.6"></circle>
+    <circle cx="37" cy="27" r="2.6"></circle>
+    <circle cx="31" cy="33" r="2.4"></circle>
+    <circle cx="35" cy="33" r="2.4"></circle>
+    <circle cx="33" cy="24" r="2.0" opacity="0.85"></circle>
+  </g>
+
+  {/* —— 含羞草花簇（侧簇 · 略小）—— */}
+  <g fill="var(--c-mimosa)" opacity="0.85">
+    <circle cx="48" cy="42" r="2.6"></circle>
+    <circle cx="51" cy="40" r="2.0"></circle>
+    <circle cx="46" cy="40" r="2.0"></circle>
+  </g>
+
+  {/* —— 叶 ×2 ——*/}
+  <g fill="var(--c-sage)" opacity="0.55">
+    <ellipse cx="42" cy="58" rx="6" ry="2" transform="rotate(35 42 58)"
+    ></ellipse>
+    <ellipse cx="32" cy="62" rx="5" ry="1.7" transform="rotate(-30 32 62)"
+    ></ellipse>
+  </g>
+</svg>
+
+<style>
+  .motif {
+    display: block;
+  }
+</style>

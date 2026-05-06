@@ -1,0 +1,85 @@
+---
+/**
+ * OliveBranch.astro · 橄榄枝（DESIGN §2.4 motif library · v0.1）
+ *
+ * 用途（DESIGN §2.4）：分割线（替代 `<hr>`）、Cover/Invitation 角落点缀、章节装饰。
+ *
+ * 视觉设计（v0.1，几何抽象风）：
+ *   - 一道斜下的弯茎（var(--c-sage-deep)）
+ *   - 沿茎 4 对叶（var(--c-sage)），每对左右对称、形态略有差异 → "活的、不工整" 的水彩感
+ *   - 叶用 ellipse + rotate；尖端用渐细的 stroke-width
+ *
+ * Props 同 MimosaSprig（size / class / opacity）。
+ *
+ * 翻转：橄榄枝常出现在镜像位置（例如 Cover top-left + top-right 一对）。
+ *   `flip` Prop 让 motif 水平镜像，调用方在另一侧不必再写第二个组件。
+ */
+
+interface Props {
+  size?: number;
+  class?: string;
+  opacity?: number;
+  flip?: boolean;
+}
+
+const {
+  size = 60,
+  class: className,
+  opacity = 0.65,
+  flip = false,
+} = Astro.props;
+---
+
+<svg
+  class:list={["motif", "motif-olive", className, flip && "flipped"]}
+  viewBox="0 0 80 80"
+  width={size}
+  height={size}
+  aria-hidden="true"
+  style={`opacity:${opacity}`}
+  role="presentation"
+>
+  {/* —— 主茎：从右上到左下的弯曲 stroke —— */}
+  <path
+    d="M 70 12 Q 50 28 38 50 Q 30 62 22 70"
+    fill="none"
+    stroke="var(--c-sage-deep)"
+    stroke-width="1.5"
+    stroke-linecap="round"></path>
+
+  {/* —— 叶 4 对（上下渐次）—— */}
+  <g fill="var(--c-sage)" opacity="0.85">
+    {/* 第一对（顶端，最小） */}
+    <ellipse cx="60" cy="20" rx="4" ry="1.4" transform="rotate(-32 60 20)"
+    ></ellipse>
+    <ellipse cx="64" cy="22" rx="4" ry="1.4" transform="rotate(38 64 22)"
+    ></ellipse>
+
+    {/* 第二对 */}
+    <ellipse cx="48" cy="32" rx="5" ry="1.7" transform="rotate(-30 48 32)"
+    ></ellipse>
+    <ellipse cx="54" cy="32" rx="5" ry="1.7" transform="rotate(35 54 32)"
+    ></ellipse>
+
+    {/* 第三对（中间，最大） */}
+    <ellipse cx="38" cy="46" rx="6" ry="2" transform="rotate(-28 38 46)"
+    ></ellipse>
+    <ellipse cx="44" cy="46" rx="6" ry="2" transform="rotate(34 44 46)"
+    ></ellipse>
+
+    {/* 第四对 */}
+    <ellipse cx="28" cy="60" rx="5" ry="1.7" transform="rotate(-30 28 60)"
+    ></ellipse>
+    <ellipse cx="34" cy="60" rx="5" ry="1.7" transform="rotate(36 34 60)"
+    ></ellipse>
+  </g>
+</svg>
+
+<style>
+  .motif {
+    display: block;
+  }
+  .flipped {
+    transform: scaleX(-1);
+  }
+</style>
