@@ -1,35 +1,52 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.2 · v1.54 修 v1.53 P2 #1 占位泄漏）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.4 · v1.57 scroll-event driven + 头注释收口）
  *
- * v0.2 修：删除 v0.1 渲染的 deferred-beats 可见占位（"§2.B · globe · beat 11
- * · 后续 batch 实装" 之类的工程标记）。aria-hidden 只对 AT 隐藏，对所有视觉访客
- * 仍显形 — 这不该出现在婚礼站。改为：beats 11/12 数据保留在 main.json（schema
- * 已严约束 11=globe / 12=finale），但**不渲染任何 DOM**；后续 batch 3/4 直接
- * 在 § —— 后续 batch 挂点 —— 注释处插入 GlobeDistanceScene / StarCarouselFinale。
+ * v0.4 修 v1.56 审计 P2 #2 + P3：
+ *   - **P2 #2（rAF 常驻空跑）**：v1.56 / v0.3 inView 时每帧
+ *     `requestAnimationFrame(tick)` 无条件再调度，访客在 stage 上停下来读时 rAF 仍
+ *     60Hz 空跑、与 §0 Parallax / §1 Countdown 的"idle 0 CPU"承诺不一致。v0.4 把
+ *     rAF 改为 **scroll / resize 事件驱动**：单帧 dirty flag `rafScheduled`，
+ *     scroll/resize 事件触发时 `requestAnimationFrame(flushUpdate)` 一次；flush 完
+ *     帧后 dirty=false，无新事件就不再 schedule。滚动停 → 0 rAF / 0 CPU。同时配
+ *     ResizeObserver 监 `.poem-beat` 自身高度变化（图片懒加载、字体回流），保证
+ *     布局 shift 也能触发更新。
+ *   - **P3（头注释 stale）**：v0.2 注释还在描述 v1.54 的"一次性 IO + .visible +
+ *     unobserve"行为，与 v1.56 起的 sticky stage + scroll-progress driven
+ *     choreography 已脱节。v0.4 重写头注释，描述真实运行机制：rAF flush / phase
+ *     变量 / IO + scroll + RO 三条触发路径 / debug hook。
  *
- * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，
- * 按 batch 范围渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整）。
+ * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，按 batch 范围
+ * 渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整）；beats 11/12（globe/
+ * finale）数据保留 schema 但不渲染 DOM —— 后续 batch 在 JSX 注释挂点处插入对应组件。
  *
- * batch 1 落地范围（**严格收敛** · 与 §0/§1 第一刀同等抽象）：
- *   ✓ 渲染 BEATS_TO_RENDER (默认 4) 个 photo-poem beat 用 `<PoemBeat>`
- *   ✓ 单个 IntersectionObserver 观察所有 .poem-beat，进入视口加 .visible
- *   ✓ rootMargin "-15%" → 进入 ~85vh 处才触发，避免一进 §2 顶就全亮
- *   ✓ 视口外 unobserve(entry.target) 解绑（一次性触发，避免 hover 抖动）
- *   ✓ visibilitychange 不需要（IO 自动暂停）
- *   ✓ a11y：`<section aria-labelledby="story-poem-heading">` + h2 'Our Story' latin-italic
+ * 当前批次 §2 落地范围（v1.57）：
+ *   ✓ 渲染前 maxBeats (默认 4) 个 photo-poem beat 用 `<PoemBeat>`，每个是 sticky
+ *     cinematic stage（外层 scroll spacer + 内层 100vh sticky 舞台）
+ *   ✓ 文字 + 照片 baseline opacity 1，整个 stage 任意停留点都看得到完整 composed 帧
+ *     （v1.57 P2 #1 修 v1.56 broken visual frame）
+ *   ✓ 单 IO 报告 in/out；scroll / resize / ResizeObserver 三路事件统一进
+ *     scheduleUpdate；单帧 dirty flag 防多次 rAF；写 4 个 CSS 变量到 beat 元素：
+ *     `--p` / `--p-photo-1` / `--p-photo-2` / `--p-text`（PoemBeat 的 layout CSS
+ *     用 calc(var(--p)) 表达 transform / mask-radius / scale / filter）
+ *   ✓ prefers-reduced-motion → 不绑事件、不跑 rAF，直接给所有 beat 写 --p:1 终态
+ *   ✓ a11y：`<section aria-labelledby="story-poem-heading">` + h2 'Our Story'
+ *     latin-italic
  *   ✓ stacking 隔离：position: relative + isolation: isolate（与 §0/§1 同款）
  *
- * **NOT in batch 1**（明确留 §2 后续刀，避免一刀混太多）：
+ * **NOT in current batch**（明确留 §2 后续刀）：
  *   ✗ globe (beat 11) → 等 R3F + Three.js + 水彩贴图地球到位（独立刀）
  *   ✗ finale (beat 12) → 等 StarCarouselFinale Shader Dissolve 到位（独立刀）
- *   ✗ 后 6 个 photo-poem beat (05-10) → 等 batch 2 视觉收口前 4 个再扩
- *   ✗ 章节级 sticky scroll-jacking / 文字 stagger / 照片 layer parallax（motion polish）
+ *   ✗ 后 6 个 photo-poem beat (05-10) → batch 1-3 视觉收口后再 lift maxBeats
+ *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
  * 数据流（DESIGN §15.1 数据接缝唯一原则）：
  *   - getCollection('storyPoem') → main.json
  *   - 取 entry.data.beats，filter kind === 'photo-poem'，slice(0, N)
  *   - anchor_date 当前未消费（beat 05 [N] 天 CountUp 留独立小刀）
+ *
+ * 调试：window.__storyPoem.progress() / .list() / .active() —— 看进度 / 全部 beat /
+ *   当前 inView beats。
  */
 import { getCollection } from "astro:content";
 import PoemBeat from "@/components/story/PoemBeat.astro";
@@ -131,24 +148,30 @@ const photoPoemBeats = main.data.beats
 
 <script>
   /*
-   * v1.56（v1.55 P2 #1+#2 修）·  scroll-progress driven choreography
+   * v1.57（v1.56 P2 #2 修）· scroll-event driven · idle 0 CPU
    *
-   *   v1.55 之前是 "一次 IO 触发 .visible + 一次 CSS transition" 的 one-shot reveal。
-   *   v1.56 让每个 beat 在 sticky stage 被钉住时，根据"已滚多少 / 总可滚多少"算出
-   *   归一化进度 p ∈ [0, 1]，把 p 与三个分阶段变量写到 beat 元素的 CSS 自定义属性上：
+   *   v1.56 用"inView 时每帧 rAF tick"驱动 scroll-progress，访客在 stage 上停下来读
+   *   时 rAF 仍 60Hz 空跑、与 §0 Parallax / §1 Countdown 的 idle 0 CPU 承诺不一致。
+   *   v1.57 改为 **scroll / resize / ResizeObserver 事件驱动**：
+   *
+   *     1. IO 监所有 beat 是否在视口；进视口加入 inViewBeats Set，离开移除
+   *     2. window scroll / resize 事件 → scheduleUpdate() 单帧 dirty flag rAF flush
+   *     3. ResizeObserver 监 .poem-beat offsetHeight（图片懒加载、字体回流的兜底）
+   *     4. flushUpdate() 只对 inViewBeats 中的 beat 写 CSS 变量；非视口 beat 不算
+   *     5. flush 完帧 dirty=false；无新事件就不再 schedule
+   *
+   *   写到 beat 元素的 4 个 CSS 自定义属性（PoemBeat 的 layout CSS 直接消费）：
    *     --p           主进度（线性 0→1）
-   *     --p-photo-1   phase-1（0..0.35 段映射到 0→1，之后保持 1）
-   *     --p-photo-2   phase-2（0.35..0.7 段映射到 0→1）
-   *     --p-text      phase-3（0.55..0.9 段映射到 0→1）
-   *   PoemBeat 的 layout CSS 全用 calc(var(--p)) 表达 transform / mask / opacity，
-   *   每帧 rAF 重写 → CSS calc 即时反映 → 真正的 scroll-driven choreography。
+   *     --p-photo-1   phase-1（0..0.35 段映射 0→1）
+   *     --p-photo-2   phase-2（0.35..0.7 段映射 0→1）
+   *     --p-text      phase-3（0.55..0.9 段映射 0→1）
    *
-   * 性能：
-   *   - rAF 仅在 IO 报告 beat 进视口时跑；离开 viewport → cancelAnimationFrame
-   *   - 单帧只 read 一次 getBoundingClientRect + write 4 个 CSS 变量到 beat（成本恒定）
-   *   - prefers-reduced-motion → 不跑 rAF，所有变量直接写 1（PoemBeat 同时也有 CSS 兜底）
+   *   性能：
+   *     - 滚动停 → 0 rAF 调度 / 0 CPU
+   *     - 单帧只 read 一次 getBoundingClientRect + write 4 个 CSS 变量（成本恒定）
+   *     - prefers-reduced-motion → 不绑事件，写 --p:1 终态后即返回
    *
-   * 调试：window.__storyPoem.progress() 看每个 beat 当前 --p / 子阶段值
+   *   调试：window.__storyPoem.progress() / .list() / .active()
    */
   (function setupStoryPoemScroller() {
     if (typeof window === "undefined") return;
@@ -162,7 +185,6 @@ const photoPoemBeats = main.data.beats
       return n < 0 ? 0 : n > 1 ? 1 : n;
     }
 
-    // 把 phase 变量统一写在 beat 元素上（CSS calc 直接读到）。
     function writeProgress(beat: HTMLElement, p: number): void {
       const pPhoto1 = clamp01(p / 0.35);
       const pPhoto2 = clamp01((p - 0.35) / 0.35);
@@ -173,7 +195,16 @@ const photoPoemBeats = main.data.beats
       beat.style.setProperty("--p-text", String(pText));
     }
 
-    // prefers-reduced-motion：跳过 rAF，所有 beat 直接显示完整 composed 帧。
+    function computeProgress(beat: HTMLElement): number {
+      const rect = beat.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const scrollable = beat.offsetHeight - vh;
+      if (scrollable <= 0) return 1;
+      const scrolled = -rect.top;
+      return clamp01(scrolled / scrollable);
+    }
+
+    // prefers-reduced-motion：写终态后退出；不绑事件、不跑 rAF。
     const prefersReduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -182,82 +213,60 @@ const photoPoemBeats = main.data.beats
       return;
     }
 
-    // 每个 beat 一份 tracker：rAF id + inView flag + 计算函数。
-    type Tracker = {
-      beat: HTMLElement;
-      rafId: number;
-      inView: boolean;
-    };
-    const trackers = new Map<HTMLElement, Tracker>();
+    // 当前在视口的 beat（只对这些 beat 算 progress；非视口 beat 不算）。
+    const inViewBeats = new Set<HTMLElement>();
 
-    function computeProgress(beat: HTMLElement): number {
-      // outer .poem-beat 高度 = scroll spacer；inner .poem-stage 是 sticky 100vh。
-      // 当 beat.top = 0（刚滚到 stage 顶）→ p=0
-      // 当 beat.bottom = vh（刚要离开 stage）→ p=1
-      // 总可滚距离 = beat.height - vh
-      const rect = beat.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const scrollable = beat.offsetHeight - vh;
-      if (scrollable <= 0) return 1; // beat 比 vh 还矮：直接给 final 帧
-      const scrolled = -rect.top; // 顶部滚出视口的距离
-      return clamp01(scrolled / scrollable);
+    // 单帧 dirty flag：scroll / resize / RO 事件多次触发时 coalesce 为一次 rAF flush。
+    let rafScheduled = false;
+
+    function flushUpdate(): void {
+      rafScheduled = false;
+      for (const beat of inViewBeats) {
+        writeProgress(beat, computeProgress(beat));
+      }
     }
 
-    function tick(beat: HTMLElement): void {
-      const t = trackers.get(beat);
-      if (!t) return;
-      t.rafId = 0;
-      if (!t.inView) return;
-      writeProgress(beat, computeProgress(beat));
-      t.rafId = window.requestAnimationFrame(() => tick(beat));
+    function scheduleUpdate(): void {
+      if (rafScheduled) return;
+      rafScheduled = true;
+      window.requestAnimationFrame(flushUpdate);
     }
 
-    function ensureRunning(beat: HTMLElement): void {
-      const t = trackers.get(beat);
-      if (!t || t.rafId !== 0 || !t.inView) return;
-      t.rafId = window.requestAnimationFrame(() => tick(beat));
-    }
-
-    function stop(beat: HTMLElement): void {
-      const t = trackers.get(beat);
-      if (!t || t.rafId === 0) return;
-      window.cancelAnimationFrame(t.rafId);
-      t.rafId = 0;
-    }
-
-    // 单 IO 监听全部 beat；进视口 → tracker.inView=true → ensureRunning；
-    // 离视口 → tracker.inView=false → stop。多个 threshold 让边界更精细。
+    // IO：仅决定 inView 集合；不再驱动 rAF 自循环。
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const beat = entry.target as HTMLElement;
-          const t = trackers.get(beat);
-          if (!t) continue;
-          t.inView = entry.isIntersecting;
-          if (t.inView) {
-            // 进入视口立刻先写一次（避免第一帧还显示初始 --p:0）
+          if (entry.isIntersecting) {
+            inViewBeats.add(beat);
+            // 进入视口立刻写一次，避免显示初始 --p:0 的"未渲染帧"
             writeProgress(beat, computeProgress(beat));
-            ensureRunning(beat);
           } else {
-            stop(beat);
-            // 离开视口写一次终态：在视口上方时 p=1（已滚过），在视口下方时 p=0（未到达）
-            // computeProgress 在两种情况下分别返回 1 / 0，符合预期，无需额外分支。
+            inViewBeats.delete(beat);
+            // 离开视口最后写一次终态（视口上方 p=1 / 视口下方 p=0）
+            writeProgress(beat, computeProgress(beat));
           }
         }
       },
       {
-        // 上下都给一点 margin，让 stage 进 / 出视口时有"准备帧"
         rootMargin: "10% 0px 10% 0px",
         threshold: [0, 0.05, 0.95, 1],
       },
     );
+    beats.forEach((beat) => io.observe(beat));
 
-    beats.forEach((beat) => {
-      trackers.set(beat, { beat, rafId: 0, inView: false });
-      io.observe(beat);
-    });
+    // scroll / resize 事件驱动 scheduleUpdate：访客滚动 / 调整窗口才触发 rAF。
+    // 滚动停 → 没有事件 → 没有 rAF 调度 → 0 CPU（与 §0 Parallax / §1 Countdown 同策略）。
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
 
-    // 调试钩子：window.__storyPoem.progress() / .list()
+    // ResizeObserver：图片懒加载完成 / 字体回流改变 .poem-beat offsetHeight 时
+    // computeProgress 的分母会变，scrolled 也可能漂；用 RO 兜一道，保证布局 shift
+    // 不会让进度卡在错误值。
+    const ro = new ResizeObserver(() => scheduleUpdate());
+    beats.forEach((beat) => ro.observe(beat));
+
+    // 调试钩子：window.__storyPoem.progress() / .list() / .active()
     (
       window as unknown as {
         __storyPoem?: {
@@ -266,6 +275,7 @@ const photoPoemBeats = main.data.beats
             { p: number; p1: number; p2: number; pt: number }
           >;
           list: () => string[];
+          active: () => string[];
         };
       }
     ).__storyPoem = {
@@ -286,9 +296,10 @@ const photoPoemBeats = main.data.beats
         });
         return out;
       },
-      list: () =>
-        Array.from(document.querySelectorAll<HTMLElement>(".poem-beat"))
-          .map((e) => e.dataset.beatId ?? "?")
+      list: () => beats.map((b) => b.dataset.beatId ?? "?"),
+      active: () =>
+        Array.from(inViewBeats)
+          .map((b) => b.dataset.beatId ?? "?")
           .sort(),
     };
   })();

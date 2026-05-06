@@ -1,6 +1,25 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.4 · v1.56 cinematic stage + scroll-progress choreography）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.5 · v1.57 复合帧重构 + 始终可见基线）
+ *
+ * v0.5 修 v1.56 审计 P2 #1（"sticky stage 仍产生 broken visual frames：text 跟 photo 被
+ *      grid align-self start/end 拆到 100vh 两端"）：
+ *
+ *   v0.4 的 radial-mask / anchor-single 用 `grid-template-rows: 1fr auto` + 一边
+ *   `align-self: start`、另一边 `align-self: end`，结果 stage 顶部和中间出现大片空白，
+ *   text 与 photo 不在同一画面里；diagonal-gaze / parallax-pair 又把 text/photo 的
+ *   `opacity` 绑到 `--p-text` / `--p-photo-1/2`，访客在中段进度时可能看到 stage 内只有
+ *   照片在场、文字 opacity 还是 0 的"残缺帧"。
+ *
+ *   v0.5 关键原则改为：
+ *     - 文字 / 照片 baseline `opacity: 1` —— **始终可见**，不再 gate 在 progress 后段才
+ *       fade in。任意停留点都看到 text + photo 同画面。
+ *     - 各 layout 的 stage 用 `flex column` 或 `grid` align-content: center，让 text +
+ *       photos **紧凑居中堆叠**，二者贴近留白；不让任何一方靠到 100vh 视口边缘。
+ *     - parallax-pair 把 photos 列卡死在 `min(70vh, 540px)`，确保 absolute 子元素始终
+ *       在 box 内闭合；text 列 `align-self: center` 与 photos 列同高对齐。
+ *     - 入场感由 transform / scale / mask 等"位置 / 形态"层小幅 settle 表达，每帧
+ *       都看得到完整内容，只是"还没完全归位"。
  *
  * v0.4 修 v1.55 审计 P2 #1（"diagonal gaze 不是稳定的 story frame · 滚动会切碎构图"）+
  *      P2 #2（"动画仍是 one-shot reveal，不是 scroll-driven choreography"）：
@@ -283,29 +302,53 @@ const firstLine = lines[0] ?? "";
   }
 
   /* ────────────────────────────────────────────────────────────── */
+  /* v1.57 视觉契约总则（修 v1.56 P2 #1 "broken visual frames"）：    */
+  /*                                                                */
+  /* 关键原则：每个 sticky stage 在**任何**滚动停留点都必须显示完整   */
+  /*   composed 帧（text + photo 同画面），而不是 align-self start/   */
+  /*   end 把 text/photo 拆到 100vh 两端造成大片空白。               */
+  /*                                                                */
+  /*   - 文字 / 照片 baseline opacity 始终为 1（不再 gate 在 --p-text  */
+  /*     < 1 时彻底不可见）；scroll-progress 只驱动 transform / mask   */
+  /*     / scale / filter 等"位置 / 形态"层属性。                    */
+  /*   - 各 layout 的 stage 用 flex column / grid auto-rows 把 text   */
+  /*     + photos 紧凑居中堆叠，整体 align-content: center；100vh    */
+  /*     里只让二者贴近留白，不再让任何一方靠到视口边缘。             */
+  /*   - 入场感由位置 / 缩放小幅 settle 表达（更克制、不再用透明度  */
+  /*     bin/out 来"奖励"完整滚完才看到内容）。                        */
+  /* ────────────────────────────────────────────────────────────── */
+
+  /* ────────────────────────────────────────────────────────────── */
   /* layout = parallax-pair · beat 01                                  */
-  /* 视觉契约：text 左 / 双图右上下错位重叠 → 单视口看完"远近构图"     */
-  /* choreography：远近沿 Y 轴向中心 settle（--p 0→1）                 */
+  /* 视觉契约：text 左列居中 + 双图右列上下错位重叠（70vh 卡死高度）   */
+  /* 任意停留点：text + 双图必同视口；photos 列内部 absolute 不外溢    */
+  /* choreography：远近沿 Y 轴向中心小幅 settle（--p 0→1）             */
   /* ────────────────────────────────────────────────────────────── */
   @media (min-width: 720px) {
     .poem-beat[data-layout="parallax-pair"] .poem-stage {
-      grid-template-columns: minmax(0, min(620px, 42vw)) minmax(0, 1fr);
+      grid-template-columns: minmax(0, min(540px, 40vw)) minmax(0, 1fr);
       gap: 3rem;
+      align-items: center; /* 关键：text & photos 都垂直居中而非分到两端 */
     }
     .poem-beat[data-layout="parallax-pair"] .poem-text {
       grid-column: 1;
       align-self: center;
-      justify-self: center;
+      justify-self: end;
       text-align: left;
       z-index: 2;
-      opacity: var(--p-text, 0);
+      /* baseline 始终可见；--p 0→1 微 translateX 收正给 settle 感 */
+      opacity: 1;
+      transform: translateX(calc((1 - var(--p, 0)) * -8px));
     }
     .poem-beat[data-layout="parallax-pair"] .poem-photos {
       grid-column: 2;
       position: relative;
+      align-self: center;
       width: 100%;
       max-width: none;
-      height: 80vh;
+      /* 卡死高度 70vh：保证 photos 与 text 不撑出 100vh 视口外；
+         absolute 子元素都在此 box 内闭合 */
+      height: min(70vh, 540px);
       grid-template-columns: 1fr;
       gap: 0;
       z-index: 1;
@@ -315,9 +358,10 @@ const firstLine = lines[0] ?? "";
       top: 0;
       right: 0;
       width: 56%;
+      opacity: 1;
       filter: saturate(0.92);
-      transform: translateY(calc((1 - var(--p, 0)) * -22%))
-        scale(calc(0.94 + var(--p, 0) * 0.06));
+      transform: translateY(calc((1 - var(--p, 0)) * -14%))
+        scale(calc(0.96 + var(--p, 0) * 0.04));
     }
     .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
       position: absolute;
@@ -325,15 +369,17 @@ const firstLine = lines[0] ?? "";
       left: 0;
       width: 64%;
       z-index: 1;
-      transform: translateY(calc((1 - var(--p, 0)) * 22%))
-        scale(calc(0.94 + var(--p, 0) * 0.06));
+      opacity: 1;
+      transform: translateY(calc((1 - var(--p, 0)) * 14%))
+        scale(calc(0.96 + var(--p, 0) * 0.04));
     }
   }
 
   /* ────────────────────────────────────────────────────────────── */
   /* layout = diagonal-gaze · beat 02                                  */
-  /* 视觉契约：左上 + 右下 + 文字居中 backdrop-blur，单视口对视轴      */
-  /* choreography：3 phases · top-left → bottom-right → text          */
+  /* 视觉契约：左上 + 右下两人像 + 中间文字 backdrop-blur 浮起          */
+  /* 任意停留点：所有元素 opacity 始终 1；choreography 只驱动位移。     */
+  /* 入场动作：照片从 ±15% 位置 settle 到 (0,0)；文字 translateY 6→0px  */
   /* ────────────────────────────────────────────────────────────── */
   @media (min-width: 720px) {
     .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
@@ -349,12 +395,13 @@ const firstLine = lines[0] ?? "";
       text-align: center;
       z-index: 2;
       padding: 1.5rem 1.75rem;
-      background: rgba(245, 240, 230, 0.55);
+      background: rgba(245, 240, 230, 0.7);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border-radius: var(--radius-sm);
-      opacity: var(--p-text, 0);
-      transform: scale(calc(0.96 + var(--p-text, 0) * 0.04));
+      /* baseline 始终可见；只用 translateY 给 settle */
+      opacity: 1;
+      transform: translateY(calc((1 - var(--p, 0)) * 6px));
     }
     .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
       grid-area: 1 / 1;
@@ -371,10 +418,12 @@ const firstLine = lines[0] ?? "";
       top: 4%;
       left: 4%;
       width: clamp(220px, 30%, 360px);
-      opacity: var(--p-photo-1, 0);
+      opacity: 1;
+      /* 双图都用 --p（线性）：低进度时已在视口内只是略偏移；不再用 stage
+         头部空白让用户疑惑"是不是没加载" */
       transform: translate(
-        calc((1 - var(--p-photo-1, 0)) * -25%),
-        calc((1 - var(--p-photo-1, 0)) * -25%)
+        calc((1 - var(--p, 0)) * -15%),
+        calc((1 - var(--p, 0)) * -15%)
       );
     }
     .poem-beat[data-layout="diagonal-gaze"]
@@ -383,29 +432,33 @@ const firstLine = lines[0] ?? "";
       bottom: 4%;
       right: 4%;
       width: clamp(220px, 30%, 360px);
-      opacity: var(--p-photo-2, 0);
+      opacity: 1;
       transform: translate(
-        calc((1 - var(--p-photo-2, 0)) * 25%),
-        calc((1 - var(--p-photo-2, 0)) * 25%)
+        calc((1 - var(--p, 0)) * 15%),
+        calc((1 - var(--p, 0)) * 15%)
       );
     }
   }
 
   /* ────────────────────────────────────────────────────────────── */
   /* layout = radial-mask · beat 03                                    */
-  /* 视觉契约：单图居中边缘晕散 + 文字下方                             */
+  /* 视觉契约：单图居中边缘晕散 + 文字紧贴下方（同视口紧凑构图）       */
+  /* 任意停留点：text + photo 同时可见；不再上下 1fr 拆开              */
   /* choreography：mask 同步外扩 + scale settle + saturate 渐回 1     */
   /* ────────────────────────────────────────────────────────────── */
   .poem-beat[data-layout="radial-mask"] .poem-stage {
-    grid-template-rows: 1fr auto;
-    gap: 1.5rem;
+    /* flex column 比 grid 1fr/auto 更稳：内容自然居中 + gap 紧凑 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
   }
   .poem-beat[data-layout="radial-mask"] .poem-photos {
-    align-self: end;
-    max-width: 720px;
+    max-width: 540px;
+    width: 100%;
   }
   .poem-beat[data-layout="radial-mask"] .poem-photo[data-role="center"] {
-    /* mask 内圈 30→55%，外圈 60→95%；--p 0→1 同步扩散给"晕散开来"语义 */
     --mask-inner: calc(30% + var(--p, 0) * 25%);
     --mask-outer: calc(60% + var(--p, 0) * 35%);
     -webkit-mask-image: radial-gradient(
@@ -418,37 +471,45 @@ const firstLine = lines[0] ?? "";
       rgba(0, 0, 0, 1) var(--mask-inner),
       rgba(0, 0, 0, 0) var(--mask-outer)
     );
-    box-shadow: none; /* 边缘已被 mask 渐变 ate 掉，paper shadow 失意义 */
-    transform: scale(calc(1.08 - var(--p, 0) * 0.08));
-    filter: saturate(calc(0.85 + var(--p, 0) * 0.15));
+    box-shadow: none;
+    opacity: 1;
+    transform: scale(calc(1.06 - var(--p, 0) * 0.06));
+    filter: saturate(calc(0.88 + var(--p, 0) * 0.12));
   }
   .poem-beat[data-layout="radial-mask"] .poem-text {
-    align-self: start;
-    opacity: var(--p-text, 0);
+    /* baseline 1；--p 0→1 微 translateY 收正 */
+    opacity: 1;
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+    max-width: min(540px, 70vw);
   }
 
   /* ────────────────────────────────────────────────────────────── */
   /* layout = anchor-single · beat 04 / 05                             */
-  /* 视觉契约：单图小框 + 文字定格                                     */
-  /* choreography：图 scale 0.92→1 + opacity 0→1；text 后浮起          */
+  /* 视觉契约：单图小框 + 文字紧贴下方（同视口紧凑构图）               */
+  /* 任意停留点：text + photo 同时可见；不再上下 1fr 拆开              */
+  /* choreography：图 scale 0.94→1 + 微 translateY；text 微浮起        */
   /* ────────────────────────────────────────────────────────────── */
   .poem-beat[data-layout="anchor-single"] .poem-stage {
-    grid-template-rows: 1fr auto;
-    gap: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.75rem;
   }
   .poem-beat[data-layout="anchor-single"] .poem-photos {
-    align-self: end;
-    max-width: 480px;
+    max-width: 460px;
+    width: 100%;
   }
   .poem-beat[data-layout="anchor-single"] .poem-photo[data-role="anchor"] {
-    /* --p 0→0.5 阶段内做完入场（之后保持 1）：用 min(1, var(--p) * 2) 软上限 */
-    opacity: clamp(0, calc(var(--p, 0) * 2), 1);
-    transform: scale(calc(0.92 + clamp(0, var(--p, 0) * 2, 1) * 0.08))
-      translateY(calc((1 - clamp(0, var(--p, 0) * 2, 1)) * 8px));
+    /* baseline 1；scale + translateY 用 --p 给"锚点 settle"语义 */
+    opacity: 1;
+    transform: scale(calc(0.94 + var(--p, 0) * 0.06))
+      translateY(calc((1 - var(--p, 0)) * 6px));
   }
   .poem-beat[data-layout="anchor-single"] .poem-text {
-    align-self: start;
-    opacity: var(--p-text, 0);
+    opacity: 1;
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+    max-width: min(460px, 70vw);
   }
 
   /* ────────────────────────────────────────────────────────────── */
