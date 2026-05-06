@@ -1,6 +1,13 @@
 ---
 /**
- * Cover.astro · §0 序幕 · 邀请（v0.3 · Phase 2 §0 第一刀 P2 收口完成）
+ * Cover.astro · §0 序幕 · 邀请（v0.4 · Phase 2 §0 第二刀：含羞草粒子接入）
+ *
+ * v0.4（v1.45）：接入 `<MimosaPetals />` 含羞草花瓣 Canvas 粒子层（DESIGN §4 §0
+ *   "含羞草花瓣 Canvas 粒子从顶部缓缓下落（轻量，可关）"）。粒子组件自带
+ *   `prefers-reduced-motion: reduce` 守卫 + 桌面 ≤ 50 / 移动 ≤ 25 性能预算，
+ *   `pointer-events: none` 不拦点击，`aria-hidden="true"` a11y 跳过。
+ *   .cover 加 `position: relative` 锚定 absolute 子元素；粒子层 z-index: 0，
+ *   邀请函卡片 + 文本走 normal flow 在 z 层之上，不被粒子遮挡。
  *
  * v0.3（v1.42）：misc@v1.1.0 已 push（archive `e86ee9b` push:cdn 跑成功，所有 7 仓拿到
  *   v1.1.0 tag），800w 真宽度派生品就位 → widths 从 [320, 640] 扩到 **[320, 640, 800]**，
@@ -37,9 +44,13 @@
  *   sizes="(min-width: 960px) 600px, (min-width: 540px) 60vw, 80vw"
  */
 import CdnImage from "@/components/CdnImage.astro";
+import MimosaPetals from "@/components/cover/MimosaPetals.astro";
 ---
 
 <section class="cover" aria-label="邀请">
+  {/* —— 含羞草花瓣 Canvas 粒子（v0.4 第二刀 · 自带 reduced-motion 守卫） —— */}
+  <MimosaPetals />
+
   {
     /* —— 邀请函悬浮纸卡（v0.3：misc@v1.1.0 后 widths 扩到 [320,640,800] · CLS = 0） —— */
   }
@@ -75,6 +86,9 @@ import CdnImage from "@/components/CdnImage.astro";
     margin: 0 auto;
     padding: 4rem 1.5rem 6rem;
     text-align: center;
+    /* v0.4：position: relative 锚定 MimosaPetals canvas 的 absolute inset:0；
+       inline-block stacking context 让 z-index: 0 canvas 落在 normal flow 内容下方 */
+    position: relative;
   }
 
   /* —— 邀请函悬浮纸卡（DESIGN §4 §0 视觉要点：max-width: min(600px, 60vw)） —— */

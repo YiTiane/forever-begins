@@ -1,0 +1,240 @@
+---
+/**
+ * MimosaPetals.astro · §0 Cover · 含羞草花瓣 Canvas 粒子（v0.1 · Phase 2 §0 第二刀）
+ *
+ * 职责（最小批次 · 严格收敛）：
+ *   ① 在 Cover 区域内绘制极轻的"含羞草花瓣从顶部缓缓下落"装饰
+ *   ② **a11y 守卫**：`prefers-reduced-motion: reduce` 时直接 return，不创建任何粒子
+ *   ③ **性能预算**：60 FPS · 桌面 ≤ 50 粒子 · 移动端（<540px）≤ 25 粒子 ·
+ *      requestAnimationFrame 自然限制；script 体积 < 2 KB minified
+ *   ④ **不阻塞首屏**：`<canvas>` 元素由 SSR 渲染（占位空），脚本走 Astro 默认 module 路径
+ *      （Vite 处理后 defer 加载），首屏字体 / 邀请函图片 / 文本不被等待
+ *
+ * **不**在本批次做（DESIGN §4 §0 后续刀）：
+ *   ✗ Mouse parallax / device-orientation 倾斜（第三刀）
+ *   ✗ 水彩纸纹背景 + Mimosa SVG motif 边缘装饰（第四刀）
+ *   ✗ 粒子从邀请函卡片"溢出"上方（仅做整页落花，不触发 canvas-clip 复杂裁切）
+ *
+ * 视觉规格：
+ *   - 颜色：`#E6C76B`（DESIGN §2.2 mimosa 含羞草黄；这里用 hex 字面量而非 var(--c-mimosa)
+ *     是因为 inline canvas 取色需要在 script 上下文里——Canvas 2D 不直接读 CSS var）
+ *   - 形状：4–8 px 圆点（小花瓣抽象），轻微旋转 + 透明度脉冲
+ *   - 物理：vy ∈ [20, 40] px/s 缓慢下落；vx 用 sin(t * ωi) 制造侧向飘移（amplitude 8 px）
+ *   - 生命周期：从 -10 px (top) spawn → fall → y > height + 10 时 recycle 到顶端
+ *   - 透明度：spawn 后 0 → 0.7 渐显 1 s；y > height - 80 时 0.7 → 0 渐隐
+ *
+ * 与 Cover 的几何关系：
+ *   - <canvas class="mimosa-petals"> 由消费者放进 .cover { position: relative } 容器内
+ *   - canvas 用 `position: absolute; inset: 0` 填满 .cover 整个矩形
+ *   - `pointer-events: none` 不拦点击；`aria-hidden="true"` 屏幕阅读器跳过
+ *   - `z-index: 0`：低于文本（默认 z-index: auto，stacking context 父级 .cover 的子元素，
+ *     文本走 normal flow 在 z 层之上；canvas 不挡视图）
+ *
+ * DPR-aware 渲染：
+ *   - 内部 buffer 尺寸 = CSS 尺寸 × devicePixelRatio
+ *   - context.scale(dpr, dpr) 让坐标用 CSS 像素计，绘制不糊
+ *   - resize 时重建 buffer
+ *
+ * 调试：在控制台读 `window.__mimosaPetals?.count` 可看当前粒子数（启用了的话）；
+ *      reduced-motion 模式下 window.__mimosaPetals 不存在。
+ */
+---
+
+<canvas class="mimosa-petals" aria-hidden="true"></canvas>
+
+<style>
+  .mimosa-petals {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+</style>
+
+<script>
+  // 类型局部声明，不依赖外部模块
+  interface Petal {
+    x: number;
+    y: number;
+    vyBase: number; // 基础垂直速度 (px/s)
+    swayAmp: number; // 侧向飘移幅度 (px)
+    swayFreq: number; // 侧向飘移频率 (rad/s)
+    swayPhase: number; // 飘移相位
+    size: number; // 半径 (CSS px)
+    rotation: number;
+    rotationSpeed: number; // rad/s
+    fadeIn: number; // 0..1，渐显进度
+    born: number; // performance.now() 时刻
+  }
+
+  (function setupMimosaPetals() {
+    if (typeof window === "undefined") return;
+
+    // a11y 守卫：reduced-motion 用户根本不创建粒子层
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (reducedMotion) return;
+
+    const canvas = document.querySelector<HTMLCanvasElement>(".mimosa-petals");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
+
+    const isMobile = window.matchMedia("(max-width: 539px)").matches;
+    const MAX_PETALS = isMobile ? 25 : 50;
+    const SPAWN_INTERVAL_MS = 600; // 平均每 600ms 加一片，达到 MAX 后停止
+    const COLOR = "#E6C76B"; // DESIGN §2.2 --c-mimosa
+    const FADE_IN_DURATION_MS = 1000;
+    const FADE_OUT_BAND = 80; // 离底部 80 px 内开始渐隐
+
+    let cssWidth = 0;
+    let cssHeight = 0;
+    let dpr = 1;
+
+    function resize() {
+      const rect = canvas!.getBoundingClientRect();
+      cssWidth = Math.max(1, rect.width);
+      cssHeight = Math.max(1, rect.height);
+      dpr = Math.min(window.devicePixelRatio || 1, 2); // 上限 2 防止超高 DPR 设备渲染过重
+      canvas!.width = Math.floor(cssWidth * dpr);
+      canvas!.height = Math.floor(cssHeight * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0); // 用 CSS 像素坐标绘制
+    }
+
+    function makePetal(initialAtTop = false): Petal {
+      // 大部分新粒子从顶部 spawn；resize 后第一波允许全屏分布，给一个"已经飘了一会"的感觉
+      const x = Math.random() * cssWidth;
+      const y = initialAtTop ? -10 - Math.random() * 60 : -10;
+      return {
+        x,
+        y,
+        vyBase: 20 + Math.random() * 20, // 20–40 px/s
+        swayAmp: 4 + Math.random() * 4, // 4–8 px
+        swayFreq: 0.4 + Math.random() * 0.6, // 0.4–1.0 rad/s（约 4–10 秒/周期）
+        swayPhase: Math.random() * Math.PI * 2,
+        size: 2 + Math.random() * 2, // 半径 2–4 px（直径 4–8 px）
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.5, // ±0.25 rad/s
+        fadeIn: 0,
+        born: performance.now(),
+      };
+    }
+
+    const petals: Petal[] = [];
+    let lastSpawn = 0;
+    let lastFrame = performance.now();
+    let rafId = 0;
+
+    function tick(now: number) {
+      const dt = Math.min((now - lastFrame) / 1000, 0.05); // dt 秒，上限 50ms 防 tab 切换后大跳
+      lastFrame = now;
+
+      // spawn 节奏
+      if (petals.length < MAX_PETALS && now - lastSpawn > SPAWN_INTERVAL_MS) {
+        petals.push(makePetal());
+        lastSpawn = now;
+      }
+
+      // 清屏（透明，不写背景）
+      ctx!.clearRect(0, 0, cssWidth, cssHeight);
+
+      // 遍历更新 + 绘制
+      for (let i = petals.length - 1; i >= 0; i--) {
+        const p = petals[i]!;
+        // 更新位置
+        p.y += p.vyBase * dt;
+        const sway = Math.sin(p.swayPhase + (now / 1000) * p.swayFreq);
+        p.x += sway * p.swayAmp * dt;
+        p.rotation += p.rotationSpeed * dt;
+
+        // 渐显
+        if (p.fadeIn < 1) {
+          p.fadeIn = Math.min(1, (now - p.born) / FADE_IN_DURATION_MS);
+        }
+
+        // 渐隐 + 回收（出底）
+        let opacity = p.fadeIn * 0.7;
+        if (p.y > cssHeight - FADE_OUT_BAND) {
+          const fadeOut = Math.max(
+            0,
+            (cssHeight + 10 - p.y) / (FADE_OUT_BAND + 10),
+          );
+          opacity *= fadeOut;
+        }
+        if (p.y > cssHeight + 10) {
+          // recycle：回到顶部，重置生命
+          p.x = Math.random() * cssWidth;
+          p.y = -10;
+          p.fadeIn = 0;
+          p.born = now;
+          continue;
+        }
+
+        // 绘制：黄色圆点 · 旋转无视觉差异（圆形对称），但保留以备未来换形状
+        ctx!.save();
+        ctx!.translate(p.x, p.y);
+        ctx!.rotate(p.rotation);
+        ctx!.globalAlpha = opacity;
+        ctx!.fillStyle = COLOR;
+        ctx!.beginPath();
+        ctx!.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx!.fill();
+        ctx!.restore();
+      }
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function start() {
+      resize();
+      // 初始喷一波（10 片均匀分布顶部，给"已经下了一会"的视感）
+      const seed = Math.min(10, MAX_PETALS);
+      for (let i = 0; i < seed; i++) petals.push(makePetal(true));
+      lastFrame = performance.now();
+      lastSpawn = performance.now();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // 节流 resize
+    let resizeTimer: number | null = null;
+    function onResize() {
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        resize();
+        resizeTimer = null;
+      }, 200);
+    }
+    window.addEventListener("resize", onResize, { passive: true });
+
+    // 标签页隐藏时停止动画（节约 CPU / 电池）
+    function onVisibility() {
+      if (document.hidden) {
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+      } else if (!rafId) {
+        lastFrame = performance.now();
+        rafId = requestAnimationFrame(tick);
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+
+    // 调试钩子（不影响生产 · 仅在 console 可见）
+    (
+      window as unknown as { __mimosaPetals?: { count: () => number } }
+    ).__mimosaPetals = {
+      count: () => petals.length,
+    };
+
+    // DOM ready 后启动；如已 ready 则立刻启动
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start, { once: true });
+    } else {
+      start();
+    }
+  })();
+</script>
