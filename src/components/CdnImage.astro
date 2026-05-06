@@ -1,6 +1,6 @@
 ---
 /**
- * CdnImage.astro · 跨境多 CDN 图片组件（v0.1 · Phase 1 §1.1.15）
+ * CdnImage.astro · 跨境多 CDN 图片组件（v0.2 · Phase 1 §1.1.15）
  *
  * 输出 `<picture>` with AVIF/WebP/JPG 三层 srcset；
  * 主路径 = jsDelivr · 备路径 = Statically · 通过 `data-srcset-alt` / `data-src-alt`
@@ -26,6 +26,9 @@
  *   - `widths`：派生品宽度数组，默认 [320, 640, 1024, 1600, 2400, 3840]
  *
  * **JPG 兜底仅到 1600w**（DESIGN §7.4）—— widths > 1600 不为 JPG 输出，避免 JPG 体积爆炸。
+ * `<img src>` / `data-src-alt` 单图兜底用 `Math.max(...JPG_WIDTHS)` 而**不是固定 1600**，
+ * 这样调用方传 `widths={[320, 640, 1024]}` 时 src 也会指向真实存在的派生品（v0.2 修订）。
+ * 若 widths 中无任何 ≤ 1600 的值，**构建期直接 throw**——把错误暴露在调用方，不让上线后 404。
  *
  * **不写 onerror 内联属性**：CdnEarlyProbe 已在 document 层 capture 阶段监听所有
  * img.error，会按 picture 范围切换 srcset；写内联 onerror 会重复触发。
@@ -70,6 +73,23 @@ const {
 // JPG fallback 仅到 1600w（DESIGN §7.4：JPG 体积 > 1600 太重）
 const JPG_WIDTHS = widths.filter((w) => w <= 1600);
 
+// v0.2 fail-fast：若调用方传入的 widths 中**没有任何** ≤ 1600 的值，
+// JPG fallback 就无法生成。**构建期** throw 让错误暴露在调用方而不是上线后 404。
+// 例：误传 `widths={[2000, 3000]}` 或 `widths={[]}` 都在这里被捕。
+if (JPG_WIDTHS.length === 0) {
+  throw new Error(
+    `<CdnImage cdnTarget="${cdnTarget}" stem="${stem}">: ` +
+      `widths 中无任何 ≤ 1600 的值，无法生成 JPG fallback。\n` +
+      `  传入的 widths: [${widths.join(", ")}]\n` +
+      `  DESIGN §7.4 要求 JPG fallback 仅到 1600w；请把至少一个 ≤ 1600 的宽度加入 widths` +
+      `（默认含 320 / 640 / 1024 / 1600）。`,
+  );
+}
+
+// JPG 单图兜底取 JPG_WIDTHS 中的最大值（v0.2 修订：之前固定 1600 在自定义 widths 时
+// 会请求一个 srcset 契约外的资产 → 派生品未生成时 404）。
+const JPG_FALLBACK_WIDTH = Math.max(...JPG_WIDTHS);
+
 /** 构建 srcset 字符串：`<url1> 320w, <url2> 640w, ...` */
 function buildSrcset(
   host: "primary" | "backup",
@@ -83,9 +103,17 @@ function buildSrcset(
     .join(", ");
 }
 
-/** JPG 单图兜底 URL（最大 1600w）—— 老浏览器 / picture 不支持时直接落到 <img src> */
-const primaryJpg = cdnUrl("primary", cdnTarget, `jpg/${stem}-1600.jpg`);
-const backupJpg = cdnUrl("backup", cdnTarget, `jpg/${stem}-1600.jpg`);
+/** JPG 单图兜底 URL —— 取 JPG_WIDTHS 中的最大值（≤ 1600 且在 srcset 契约内） */
+const primaryJpg = cdnUrl(
+  "primary",
+  cdnTarget,
+  `jpg/${stem}-${JPG_FALLBACK_WIDTH}.jpg`,
+);
+const backupJpg = cdnUrl(
+  "backup",
+  cdnTarget,
+  `jpg/${stem}-${JPG_FALLBACK_WIDTH}.jpg`,
+);
 
 // loading 由 priority 推导：high → eager · 其余 lazy（auto / low 同 lazy）
 const loading: "eager" | "lazy" = priority === "high" ? "eager" : "lazy";

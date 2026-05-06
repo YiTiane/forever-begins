@@ -1,5 +1,8 @@
 /**
- * src/content/config.ts · Astro Content Collections schema（v0.1 · Phase 1 §1.1.16）
+ * src/content.config.ts · Astro Content Collections schema（v0.2 · Phase 1 §1.1.16）
+ *
+ * **路径**（v0.2 修订）：Astro v6 起强制位于 `src/content.config.ts`（src/ 根目录），
+ * **不**在 `src/content/config.ts`（旧 v4 命名会触发 LegacyContentConfigError）。
  *
  * 五个 collection（DESIGN §12 / PLAN §1.1.17–§1.1.21）：
  *   - `meta`    : 婚礼基本信息（wedding.json：日期 / 地点 / 三坐标系 / 诗句）
@@ -15,6 +18,9 @@
  *   - **`meta` 只 glob `wedding.json`**（couple.json 是私有联系方式，不入构建产物，DESIGN §12）
  *   - **三坐标系 coords**（DESIGN v2.16 / PLAN §1.1.17）：wgs84 必填实数，gcj02/bd09 可空
  *     null —— Phase 6 由 `scripts/expand-coords.ts` 一次性算出
+ *   - **共享 `stemSchema`**（v0.2 收紧）：cats / series 两处都引用同一个 schema，
+ *     强制禁止扩展名（.jpg/.png/.avif/...）与尾随 `-<digits>` 尺寸后缀，
+ *     避免错误 stem 进入 content 后被 CdnImage 拼出 `avif/Snow_01.jpg-640.avif` 静默 404
  *
  * v1.21+ 收敛：`china-cities.json` 不进主仓 src/content/journey/（PLAN §1.1.21b 验收）；
  * `cities.json` 名称保留可空——若未来 §1.1.19 仅填 long-distance.json，schema 用 union refine
@@ -44,6 +50,38 @@ const nullableCoord = z.object({
   lng: z.number().nullable(),
   lat: z.number().nullable(),
 });
+
+/**
+ * 派生品 stem 共享 schema（v0.2 收紧 · cats / series 两处共用）。
+ *
+ * 命名约定（与 generate-derivatives.ts / push-to-cdn-repos.ts 协议一致）：
+ *   - 仓内派生品路径 = `<format>/<stem>-<width>.<format>`（如 `avif/Snow_01-1600.avif`）
+ *   - **stem 是构造 URL 的中间段**，所以禁止以下三类容易拼错的内容：
+ *     ① 前后斜杠（`/cat/foo` 或 `cat/foo/`）→ 让 cdnUrl 拼出 `//` 双斜杠
+ *     ② 图片扩展名（`.jpg` / `.png` / `.avif` 等）→ 拼出 `avif/Snow_01.jpg-640.avif` 双扩展
+ *     ③ 尾随 `-<数字>` 尺寸后缀（`-320` / `-1600` 等）→ 拼出 `avif/Snow_01-1600-640.avif` 嵌套尺寸
+ *   - **子路径允许**：`cat/berry-portrait` / `invitation/part_1` 是合法 stem（misc 仓的子目录）
+ *
+ * 这些违反在 content collection 加载阶段就被 zod 拦截 → 错误 stem 永远到不了 CdnImage，
+ * 因此不会出现 dist 上 200 OK 但拼错 URL 的"静默 404"。
+ */
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|avif|webp|heic|heif|tiff?|gif|bmp)$/i;
+const SIZE_SUFFIX = /-\d+$/;
+
+const stemSchema = z
+  .string()
+  .min(1, "stem 必填")
+  .refine((s) => !s.startsWith("/") && !s.endsWith("/"), {
+    message: "stem 禁止前后斜杠（中间用 / 表示子路径是允许的）",
+  })
+  .refine((s) => !IMAGE_EXTENSIONS.test(s), {
+    message:
+      "stem 禁止图片扩展名（.jpg / .png / .avif / .webp / .heic / ...）；扩展由 CdnImage 按 format 拼接",
+  })
+  .refine((s) => !SIZE_SUFFIX.test(s), {
+    message:
+      "stem 禁止尾随 -<数字> 尺寸后缀（-320 / -640 / -1024 / -1600 / -2400 / -3840）；尺寸由 CdnImage 按 widths 拼接",
+  });
 
 // ─────────────────────────────────────────────────────────────────
 // meta · 婚礼基本信息
@@ -137,11 +175,8 @@ const journey = defineCollection({
 // cats · 三只猫家庭档案
 // ─────────────────────────────────────────────────────────────────
 const photoRef = z.object({
-  /** 派生品 stem（不含扩展名 / 尺寸），例：'cat/berry-portrait' */
-  stem: z
-    .string()
-    .min(1)
-    .regex(/^[^/].*[^/]$/, "stem 禁止前后斜杠"),
+  /** 派生品 stem，例：'cat/berry-portrait'。禁止扩展名 / 尺寸后缀（见 stemSchema 注释）。 */
+  stem: stemSchema,
   alt: z.string().min(1),
   caption: z.string().optional(),
 });
@@ -192,11 +227,8 @@ const series = defineCollection({
       .array(
         z.object({
           /** 原始文件 stem，例：'Snow_01' / 'Grassland_03' / 'Pearl_04'。
-           *  禁止前后斜杠 · 禁止扩展名 · 禁止尺寸后缀。 */
-          stem: z
-            .string()
-            .min(1)
-            .regex(/^[^/].*[^/]$/, "stem 禁止前后斜杠"),
+           *  共用 stemSchema：禁止前后斜杠 / 扩展名 / -<数字> 尺寸后缀。 */
+          stem: stemSchema,
           alt: z.string().min(1),
           caption: z.string().optional(),
         }),
