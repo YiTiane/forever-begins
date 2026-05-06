@@ -1,6 +1,6 @@
 ---
 /**
- * InvitationParallax.astro · §0 Cover · 邀请函视差与倾斜（v0.1 · Phase 2 §0 第三刀）
+ * InvitationParallax.astro · §0 Cover · 邀请函视差与倾斜（v0.2 · v1.47 修 v1.46 P2 lifecycle）
  *
  * 把 .invitation-card 整张卡作为单层视差对象：
  *   - 桌面：鼠标在 .cover 区域内移动 → 卡片随鼠标轻微 translate3d + rotate
@@ -19,7 +19,12 @@
  *   - GPU 路径：用 `translate3d(x, y, 0) rotate(z)` + `will-change: transform`，触发硬件合成层；
  *     不触发 layout / paint，只走 composite 阶段
  *   - lerp 平滑（每帧 +8% 趋近 target），消除 mousemove 高频抖动
- *   - 静止时停 rAF：到达 target 后下一帧检测 atRest 即停 rAF；下次输入恢复
+ *   - **静止时停 rAF（v0.2 真正实现）**：frame() 只看 atRest（target ≈ current），不再检 engaged；
+ *     pointermove / pointerleave / orientation 事件都只更新 target + ensureFrame()。
+ *     v0.1 旧设计有 P2 bug：orientation 路径设 engaged=true 但永远不清，让 Android tilt 一旦触发
+ *     rAF 就永不停。v0.2 完全去掉 engaged 标志。
+ *   - **方向死区（v0.2 新增）**：deviceorientation 即使设备静止也以 ~60 Hz 上报、每次有亚度级抖动；
+ *     |Δ| < 0.5° 直接 ignore，让 target 在 "device 不动" 时真正不变 → frame() 能 atRest 停 rAF
  *   - rAF 自然 60 FPS 上限；visibilitychange tab 隐藏时 pointermove 不触发，不用额外节流
  *
  * 与 .cover 的几何关系：
@@ -50,6 +55,13 @@
     const LERP = 0.08; // 每帧趋近 target 的比例（0..1）
     const REST_EPSILON = 0.05; // 当 |target - current| < EPS 视为已到位
 
+    // v0.2 (v1.47 修 v1.46 P2 lifecycle bug)：rAF 生命周期纯 atRest 驱动，不再用 `engaged` 标志。
+    // 旧设计：pointer 路径 onPointerLeave 把 engaged=false 清；orientation 路径 onOrientation
+    //         设 engaged=true 但**永远不清** → 一旦 Android tilt 触发，frame() 永不停。
+    // 新设计：frame() 只看 atRest（target ≈ current）。事件处理器只更新 target + ensureFrame()。
+    //         pointer 离开时把 target 设回 0,0,0 → frame() lerp 到 0 → 自然 atRest → 停 rAF。
+    //         orientation 事件用**死区滤波**（< 0.5° 变化忽略），避免 "device 不动但传感器抖" 让
+    //         target 微抖、rAF 永不静。
     let targetX = 0;
     let targetY = 0;
     let targetRz = 0;
@@ -57,7 +69,6 @@
     let curY = 0;
     let curRz = 0;
     let rafId = 0;
-    let engaged = false; // 是否还有输入信号（mouse over / orientation 持续）
 
     // 让浏览器为该元素分配独立合成层（GPU 加速 transform）
     card.style.willChange = "transform";
@@ -73,13 +84,15 @@
 
       applyTransform();
 
+      // v0.2：只看 atRest（target 与 current 都进入 epsilon 内即可停）
+      // 任何事件改 target 后调 ensureFrame() 让 rAF 重启
       const atRest =
         Math.abs(targetX - curX) < REST_EPSILON &&
         Math.abs(targetY - curY) < REST_EPSILON &&
         Math.abs(targetRz - curRz) < REST_EPSILON / 10;
 
-      if (atRest && !engaged) {
-        rafId = 0; // 暂停 rAF；下次输入触发 ensureFrame() 重启
+      if (atRest) {
+        rafId = 0; // 暂停 rAF；下次事件 ensureFrame() 重启
         return;
       }
       rafId = requestAnimationFrame(frame);
@@ -107,15 +120,14 @@
       targetY = clampPx(ny * 2 * MAX_TRANSLATE);
       targetRz = clampDeg(nx * 2 * MAX_ROTATE);
 
-      engaged = true;
       ensureFrame();
     }
 
     function onPointerLeave() {
+      // 把 target 设回中心 → frame() lerp 到 0 → 自然 atRest → 停 rAF
       targetX = 0;
       targetY = 0;
       targetRz = 0;
-      engaged = false;
       ensureFrame();
     }
 
@@ -136,14 +148,33 @@
         }
       ).requestPermission === "function";
 
+    // v0.2：方向死区——传感器静止时仍以 ~60 Hz 上报，每次值有亚度级抖动；
+    // 把过滤阈值卡在 0.5° 以下，"device 看上去不动" 时根本不更新 target，
+    // 这样 frame() 在 lerp 到当前 target 后就能 atRest 停 rAF。
+    let lastOrientationGamma = 0;
+    let lastOrientationBeta = 0;
+    let orientationInitialized = false;
+    const ORIENTATION_DEADBAND_DEG = 0.5;
+
     function onOrientation(e: DeviceOrientationEvent) {
       const gamma = e.gamma ?? 0; // 左右倾斜 [-90, 90]
       const beta = e.beta ?? 0; // 前后倾斜 [-180, 180]
+      if (
+        orientationInitialized &&
+        Math.abs(gamma - lastOrientationGamma) < ORIENTATION_DEADBAND_DEG &&
+        Math.abs(beta - lastOrientationBeta) < ORIENTATION_DEADBAND_DEG
+      ) {
+        // 物理上"几乎没动"，不更新 target；让 rAF 自然停在当前位置
+        return;
+      }
+      lastOrientationGamma = gamma;
+      lastOrientationBeta = beta;
+      orientationInitialized = true;
+
       // 把 ±15° 物理倾斜映射到 ±MAX_TRANSLATE px——日常持机的倾斜范围
       targetX = clampPx((gamma / 15) * MAX_TRANSLATE);
       targetY = clampPx((beta / 15) * MAX_TRANSLATE);
       targetRz = clampDeg((gamma / 15) * MAX_ROTATE);
-      engaged = true;
       ensureFrame();
     }
 
