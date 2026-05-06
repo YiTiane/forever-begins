@@ -1,6 +1,28 @@
 ---
 /**
- * Countdown.astro · §1 倒计时（v0.1 · Phase 2 §1 第一刀）
+ * Countdown.astro · §1 倒计时（v0.2 · v1.51 a11y / 命名收口）
+ *
+ * v0.2 修 v1.50 审计三处：
+ *   - **P2 #1（a11y 噪声）**：v0.1 在根 `.countdown` 上写
+ *     `aria-live="polite" aria-atomic="true"`，每秒一次 textContent 写入都
+ *     被广播为整段重读 → 屏幕阅读器一直被打断。
+ *     v0.2 把可见 UI 包进 `.visible-shell` + `aria-hidden="true"`，
+ *     让 AT 不读视觉每秒滴答；新增同位 `.countdown__sr-status`
+ *     （sr-only · `aria-live="polite"` · `aria-atomic="true"`），仅在
+ *     **天 / 时**跨级时改写一次（≈ 每小时 ≤ 1 次），同时也作为这个
+ *     `<p>` 的可访问名（用户主动 Tab 到此 paragraph 时也读这段）。
+ *
+ *   - **P2 #2（arrived 状态病句）**：v0.1 到点后只把 `.digits` 替换成
+ *     "这一天已经到了"，但前缀 `.prefix`「距离婚礼还有」仍在 DOM →
+ *     朗读 / 阅读时读到 "距离婚礼还有 这一天已经到了" 病句。
+ *     v0.2 用 `replaceChildren()` 一次性清掉 visible-shell 子节点，
+ *     注入完整一句 `.arrived.cn-kaishu`「这一天已经到了」；同时把
+ *     sr-status 设为「婚礼这一天已经到了」让 AT 朗读完整句子。
+ *
+ *   - **P3（cn-sans 未定义）**：DESIGN §2.3.8 / global.css 实际只导出了
+ *     `.cn-hei`（mapping 到 `--font-cn-sans` Noto Sans SC token），
+ *     `.cn-sans` 本身没定义类。v0.2 把全部 `cn-sans` 改成 `cn-hei`，
+ *     与现有 helper 命名统一（PLAN/DESIGN 也按 `.cn-hei` 已收口）。
  *
  * DESIGN §4 §1 视觉要点：
  *   "倒计时 `tabular-nums`"
@@ -12,8 +34,7 @@
  *   - 数字 spans 用 helper class `.latin-mono`（DESIGN §2.3.8 / global.css）
  *     → font-feature-settings "tnum" + font-variant-numeric: tabular-nums lining-nums
  *     更新时数字宽度不抖动
- *   - 前缀 "距离婚礼还有 / 天 · / 时 / 分 / 秒" 用 cn-sans（默认 Noto Sans SC）
- *   - aria-live="polite" 让屏幕阅读器读出更新（不打断当前朗读）
+ *   - 中文前缀 / 单位用 `.cn-hei`（mapping → `--font-cn-sans` Noto Sans SC）
  *
  * Props：
  *   - `targetDate` (ISO 8601 含时区，例：'2026-06-14T19:00:00+08:00')
@@ -23,15 +44,17 @@
  *     离开视口（用户向上滚到 Cover 或向下滚到下一章）→ clearInterval，0 CPU
  *   - **visibilitychange 双层守卫**：tab 切到背景 → pause；切回 → 立刻刷新一次再 resume
  *   - 每秒 1 次 setInterval；每帧只改 4 个 textContent（数字字符串），无 reflow
+ *   - sr-status 只在 **天 / 时** 跨级时改写（≈ 每小时一次），AT 朗读频率极低
  *
- * 已过期处理：
- *   - 婚礼当天 0 时之后 / 婚礼之后访问 → 显示「这一天已经到了」
- *   - 不显示负数倒计时
+ * 已过期处理（v0.2）：
+ *   - 婚礼当天 / 已过 → `.visible-shell` 整体替换为「这一天已经到了」（cn-kaishu）；
+ *     sr-status 改为「婚礼这一天已经到了」并触发一次 AT 朗读；同时清 interval
+ *   - 不显示负数倒计时；不再保留病句前缀
  *
  * a11y：
- *   - `aria-live="polite"`：屏幕阅读器在用户停顿时朗读更新
- *   - `aria-atomic="true"`：每次更新作为一个完整短语朗读，不拼接
- *   - prefers-reduced-motion：无动画 → 无影响
+ *   - 可见 UI（`.visible-shell`）`aria-hidden="true"` → 屏幕阅读器跳过每秒滴答
+ *   - sr-only `.countdown__sr-status` 是这段的可访问名 + 低频 live region
+ *   - prefers-reduced-motion 不影响（无动画）
  *
  * 调试：window.__countdown?.value() 看当前剩余秒数（仅启用时存在）。
  */
@@ -43,23 +66,27 @@ interface Props {
 const { targetDate } = Astro.props;
 ---
 
-<p
-  class="countdown"
-  data-target={targetDate}
-  aria-live="polite"
-  aria-atomic="true"
->
-  <span class="prefix cn-sans">距离婚礼还有</span>
-  <span class="digits latin-mono">
-    <span class="d">--</span>
-    <span class="unit cn-sans"> 天 · </span>
-    <span class="h">--</span>
-    <span class="unit cn-sans"> 时 </span>
-    <span class="m">--</span>
-    <span class="unit cn-sans"> 分 </span>
-    <span class="s">--</span>
-    <span class="unit cn-sans"> 秒</span>
+<p class="countdown" data-target={targetDate}>
+  {/* —— 视觉 UI：每秒滴答；aria-hidden 让 AT 跳过，避免每秒朗读打断 —— */}
+  <span class="visible-shell" aria-hidden="true">
+    <span class="prefix cn-hei">距离婚礼还有</span>
+    <span class="digits latin-mono">
+      <span class="d">--</span>
+      <span class="unit cn-hei"> 天 · </span>
+      <span class="h">--</span>
+      <span class="unit cn-hei"> 时 </span>
+      <span class="m">--</span>
+      <span class="unit cn-hei"> 分 </span>
+      <span class="s">--</span>
+      <span class="unit cn-hei"> 秒</span>
+    </span>
   </span>
+  {/* —— sr-only 同位：AT 才能读；只在 天 / 时 跨级时改写一次 —— */}
+  <span
+    class="countdown__sr-status sr-only"
+    data-sr-status
+    aria-live="polite"
+    aria-atomic="true"></span>
 </p>
 
 <style>
@@ -71,6 +98,8 @@ const { targetDate } = Astro.props;
     line-height: 1.7;
     letter-spacing: 0;
     text-align: center;
+    /* paragraph 自身需要是 positioning 容器，让 .sr-only 的 absolute 不脱离当前段 */
+    position: relative;
   }
 
   .countdown .prefix {
@@ -82,10 +111,38 @@ const { targetDate } = Astro.props;
     color: var(--c-olive-ink);
   }
 
+  /* —— arrived（v0.2 P2 #2 修复）：整段一句 cn-kaishu 抒情体替代倒计时 —— */
+  .countdown .arrived {
+    font-size: 1.25rem;
+    color: var(--c-olive-ink);
+    line-height: 1.85;
+  }
+
+  /*
+    .sr-only 兜底：Tailwind v4 通常会从 static `class="... sr-only"` 处理出
+    一份 utility，但本组件还会在 JS 内 document.createElement 动态加 sr-only，
+    为防 JIT 检测时机或未来重构遗漏，本组件 scoped 内自带等价规则
+    （仅作用于 .countdown 内部的 .sr-only）。
+  */
+  .countdown :global(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   /* 移动端字号微缩 */
   @media (max-width: 540px) {
     .countdown {
       font-size: 0.9375rem;
+    }
+    .countdown .arrived {
+      font-size: 1.125rem;
     }
   }
 </style>
@@ -103,18 +160,38 @@ const { targetDate } = Astro.props;
     const targetMs = new Date(target).getTime();
     if (Number.isNaN(targetMs)) return;
 
+    const visibleShell = root.querySelector<HTMLElement>(".visible-shell");
     const dEl = root.querySelector<HTMLElement>(".d");
     const hEl = root.querySelector<HTMLElement>(".h");
     const mEl = root.querySelector<HTMLElement>(".m");
     const sEl = root.querySelector<HTMLElement>(".s");
-    if (!dEl || !hEl || !mEl || !sEl) return;
+    const srEl = root.querySelector<HTMLElement>("[data-sr-status]");
+    if (!visibleShell || !dEl || !hEl || !mEl || !sEl) return;
 
     let intervalId = 0;
     let inView = false;
     let tabVisible = !document.hidden;
+    // 上一次 sr-status 已朗读的 (天, 时) 状态；初始 -1 → 第一次 tick 必触发
+    let lastDays = -1;
+    let lastHours = -1;
 
     function pad2(n: number): string {
       return n < 10 ? "0" + n : String(n);
+    }
+
+    function showArrived() {
+      // P2 #2: 一次性把 visible-shell 内所有节点替换为整句 cn-kaishu，
+      // 不再保留 .prefix「距离婚礼还有」+ .digits 的拼接病句。
+      root!.classList.add("countdown-arrived");
+      visibleShell!.replaceChildren();
+      const arrived = document.createElement("span");
+      arrived.className = "arrived cn-kaishu";
+      arrived.textContent = "这一天已经到了";
+      visibleShell!.appendChild(arrived);
+      // sr-status：AT 朗读一次完整短句（aria-live polite 自动播报）
+      if (srEl) {
+        srEl.textContent = "婚礼这一天已经到了";
+      }
     }
 
     function tick() {
@@ -122,16 +199,8 @@ const { targetDate } = Astro.props;
       const remaining = Math.max(0, targetMs - now);
 
       if (remaining === 0) {
-        // 婚礼当天 / 已过 — 优雅降级显示
-        root!.classList.add("countdown-arrived");
-        // 整个 .digits 替换成"这一天已经到了"
-        const digits = root!.querySelector<HTMLElement>(".digits");
-        if (digits) {
-          digits.textContent = "这一天已经到了";
-          digits.classList.remove("latin-mono");
-          digits.classList.add("cn-kaishu");
-        }
-        // 停 interval
+        showArrived();
+        // 停 interval（已 arrived 不再每秒空转）
         if (intervalId) {
           window.clearInterval(intervalId);
           intervalId = 0;
@@ -144,12 +213,19 @@ const { targetDate } = Astro.props;
       const mins = Math.floor((remaining % 3600000) / 60000);
       const secs = Math.floor((remaining % 60000) / 1000);
 
-      // 直接 textContent 写值；浏览器会复用 text node，无 reflow（因为文字宽度
-      // 由 tabular-nums 锁定）
+      // 每秒写 4 个 textContent；tabular-nums 锁住宽度，浏览器复用 text node、无 reflow
       dEl!.textContent = String(days);
       hEl!.textContent = pad2(hours);
       mEl!.textContent = pad2(mins);
       sEl!.textContent = pad2(secs);
+
+      // P2 #1: sr-status 仅在 **天 / 时** 跨级时改写（≈ 每小时一次）
+      // — AT 不会被每秒滴答打断，但用户主动 navigate 到此 paragraph 仍能读
+      if (srEl && (days !== lastDays || hours !== lastHours)) {
+        srEl.textContent = `距离婚礼还有 ${days} 天 ${hours} 小时`;
+        lastDays = days;
+        lastHours = hours;
+      }
     }
 
     function start() {
