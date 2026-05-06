@@ -1,27 +1,35 @@
 ---
 /**
- * Base.astro · 全站基础布局（v0.3 字体源 + 全站样式入口）
+ * Base.astro · 全站基础布局（v0.4 完整 SEO + JSON-LD Event + OG/Twitter · §1.1.13）
  *
  * 当前职责：
  *   ① 渲染 <FontFaces /> 组件 → 8 条 base-aware @font-face 注入 head（v0.2 起）
  *   ② <head> 注入 2 条字体 preload（cormorant-italic + noto-serif-sc-light）
  *   ③ frontmatter `import '@/styles/global.css'` —— **全站样式入口**（v0.3 §1.1.12）：
- *      Tailwind v4 base + src/styles/reset.css + src/styles/tokens.css + 7 个 helper class，
- *      经 Astro 编译后会 inline / 链入 dist/_astro/Base.*.css，被所有页面继承
- *   ④ <slot /> 留给页面
- *   ⑤ noindex Prop —— 与 astro.config.mjs sitemap.filter 配合形成 dev-only 路由双重防护
- *
- * 待补（§1.1.13 / §1.1.13a-c）：
- *   - 完整 SEO meta（OG / Twitter card）
- *   - JSON-LD Event schema（婚礼日期 / 地点 / 主持人）
- *   - canonical URL · alternate language · viewport-fit=cover for iOS notch
+ *      Tailwind v4 base + src/styles/reset.css + src/styles/tokens.css + 7 个 helper class
+ *   ④ **完整 SEO meta**（v0.4 §1.1.13）：
+ *      - charset / viewport (含 viewport-fit=cover for iOS 刘海) / generator / title / description
+ *      - link rel=canonical（基于 Astro.site + Astro.url.pathname 一份斜杠归一）
+ *      - theme-color 双态（亮 #FAF6EC paper / 暗 #1F2118 paper-night），让 iOS / Android 顶栏跟随
+ *      - color-scheme: light dark
+ *      - robots（noindex Prop 用于 dev-only 路由）
+ *   ⑤ **Open Graph + Twitter Card**（v0.4）：
+ *      - og:* 8 条（type/title/description/url/image[+w/h/alt]/locale/site_name）
+ *      - twitter:card=summary_large_image + 标题/描述/图同 OG
+ *      - 图源经 cdnUrl('primary', 'misc', 'og/og-cover-1200x630.jpg') 由 asset-versions.ts 集中接缝
+ *        （§1.1.13a 重做正式 OG 后只需 bump misc tag → v1.0.1，本文件无需改动）
+ *   ⑥ **JSON-LD Event schema**（v0.4）：
+ *      - @type: SocialEvent · Schema.org 推荐 · Google Rich Results 支持
+ *      - 婚礼日期 2026-06-14T19:00 (UTC+8) → 23:00 · 二道桥大剧院 · CN/新疆/乌鲁木齐
+ *      - organizer 双 Person（杨倚天 & 希尔娜依）
+ *      - eventStatus: EventScheduled · eventAttendanceMode: OfflineEventAttendanceMode
+ *   ⑦ <slot /> 留给页面
+ *   ⑧ noindex Prop —— 与 astro.config.mjs sitemap.filter 配合形成 dev-only 路由双重防护
  *
  * 历史修订：
- *   v0.2（v1.24）：原 src/styles/fonts.css 硬编码 /forever-begins/fonts/... 导致 8 条
- *     Vite warning，且 base 变更时 preload 与 @font-face 路径分裂。把 @font-face 移到
- *     <FontFaces />，URL 由 import.meta.env.BASE_URL 模板生成。
- *   v0.3（v1.30）：frontmatter 接入 global.css —— 把 §1.1.10/§1.1.11/§1.1.12 的
- *     token / reset / helper 系统首次接进生产 root；Base 不再只是字体相关。
+ *   v0.2（v1.24）：字体单源迁移到 <FontFaces />，URL 由 import.meta.env.BASE_URL 模板生成
+ *   v0.3（v1.30）：接入 global.css，token / reset / helper 系统首次接进生产 root
+ *   v0.4（v1.31）：完整 SEO + canonical + OG + Twitter + JSON-LD Event；OG 图源走 cdnUrl helper
  *
  * preload URL 与 favicon URL 均经 base.replace(/\/$/, '') 归一化，
  * 保证 base 写 '/forever-begins' 或 '/forever-begins/' 都得到一份斜杠。
@@ -30,6 +38,7 @@
  * 否则浏览器会重新发起一次跨域请求覆盖 preload 命中。
  */
 import FontFaces from "@/components/FontFaces.astro";
+import { cdnUrl } from "@/lib/images/asset-versions";
 
 // v0.3 §1.1.12：全站样式入口（Tailwind v4 base + reset + tokens + helper class）
 // 顺序契约 / 约束 / 缺哪条会怎么坏 见 src/styles/global.css 文件头注释
@@ -45,6 +54,12 @@ interface Props {
    * 形成"sitemap 不收录 + 单页 noindex"双重防护。
    */
   noindex?: boolean;
+  /**
+   * 页面级 OG 图片覆盖（v0.4 新增）。
+   * 不传则走默认的 fb-cdn-misc og-cover-1200x630.jpg。
+   * 用例：未来 Cover/Story/Cats 等章节如有专属 OG 图可单独覆盖。
+   */
+  ogImage?: string;
 }
 
 const {
@@ -52,27 +67,108 @@ const {
   description = "我们无法判断一个瞬间的价值，直至它变成回忆。",
   lang = "zh-CN",
   noindex = false,
+  ogImage,
 } = Astro.props;
 
 // import.meta.env.BASE_URL 是否带尾斜杠取决于 astro.config.mjs 中 base 的写法
 // （'/forever-begins' → 不带 / · '/forever-begins/' → 带 /）。
 // 用 normalize 兜底保证后续拼接 `${base}/foo` 永远是 '/forever-begins/foo' 一份斜杠。
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// canonical URL —— Astro.site (https://yitiane.github.io) + Astro.url.pathname
+// （Astro 自动包含 base 前缀；URL 构造器去重斜杠）。
+// 注意：Astro.site 在 astro.config.mjs 中已配；如未配会抛 build 警告。
+const canonicalURL = new URL(Astro.url.pathname, Astro.site).href;
+
+// OG 主图：默认指向 fb-cdn-misc 的 og-cover-1200x630.jpg。
+// §1.1.13a "重做正式 OG" 完成后只需 bump asset-versions.ts misc → v1.0.1，
+// 这里的 URL 自动指向新版本。
+const defaultOgImage = cdnUrl("primary", "misc", "og/og-cover-1200x630.jpg");
+const finalOgImage = ogImage ?? defaultOgImage;
+
+// JSON-LD Event schema · 婚礼是 SocialEvent (Schema.org) 子类型
+// Google Rich Results / Apple Mail / 微信文档预览均支持。
+// 时间用 ISO 8601 含时区（+08:00 = Asia/Urumqi 实质等同 +06:00 但乌鲁木齐市内
+// 通用使用北京时间 +08:00）。
+const eventSchema = {
+  "@context": "https://schema.org",
+  "@type": "SocialEvent",
+  name: "杨倚天 & 希尔娜依 · 婚礼",
+  description: "诚邀构成我们生命不同经纬的你，共同见证这份回忆的开始。",
+  startDate: "2026-06-14T19:00:00+08:00",
+  endDate: "2026-06-14T23:00:00+08:00",
+  eventStatus: "https://schema.org/EventScheduled",
+  eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+  location: {
+    "@type": "Place",
+    name: "二道桥大剧院",
+    address: {
+      "@type": "PostalAddress",
+      addressLocality: "乌鲁木齐",
+      addressRegion: "新疆维吾尔自治区",
+      addressCountry: "CN",
+    },
+  },
+  organizer: [
+    { "@type": "Person", name: "杨倚天" },
+    { "@type": "Person", name: "希尔娜依" },
+  ],
+  url: canonicalURL,
+  image: finalOgImage,
+};
 ---
 
 <!doctype html>
 <html lang={lang}>
   <head>
+    {/* —— 基础 meta —— */}
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <meta name="description" content={description} />
     {noindex && <meta name="robots" content="noindex,nofollow" />}
+    <link rel="canonical" href={canonicalURL} />
 
-    {/* 8 条 @font-face 注入（base-aware 单一源） */}
+    {/* —— 主题色（亮 / 暗 双态，iOS / Android 浏览器顶栏跟随）—— */}
+    <meta
+      name="theme-color"
+      content="#FAF6EC"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#1F2118"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta name="color-scheme" content="light dark" />
+
+    {/* —— Open Graph（Facebook / 微信 / Linkedin / 通用社交分享）—— */}
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={finalOgImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="既见君子，云胡不喜。 · 杨倚天 & 希尔娜依 · 二〇二六年六月十四日"
+    />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="Forever Begins · 永恒之始" />
+
+    {/* —— Twitter Card —— */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={finalOgImage} />
+
+    {/* —— 字体单一源 + 2 条 preload（v0.2 base-aware）—— */}
     <FontFaces />
-
     {
       /* 关键字体 preload —— DESIGN §2.3.7 / PLAN §1.1.9 契约：
         仅 cormorant-italic + noto-serif-sc-light，合计 ≈ 188KB，目标 < 200KB。
@@ -93,8 +189,14 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
       crossorigin
     />
 
-    {/* favicon 占位 —— Phase 1 后期会用水彩 motif 替换 */}
+    {/* —— favicon —— */}
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <link rel="alternate icon" href={`${base}/favicon.ico`} />
+
+    {
+      /* —— JSON-LD Event schema · 让 Google / Apple / 微博 / 企业微信抓婚礼信息 —— */
+    }
+    <script type="application/ld+json" set:html={JSON.stringify(eventSchema)} />
   </head>
   <body>
     <slot />

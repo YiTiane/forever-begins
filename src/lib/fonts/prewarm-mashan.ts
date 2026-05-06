@@ -35,28 +35,31 @@
 let cached: Promise<void> | null = null;
 
 export function prewarmMaShanZheng(): Promise<void> {
-  if (typeof window === 'undefined' || typeof FontFace === 'undefined') {
+  if (typeof window === "undefined" || typeof FontFace === "undefined") {
     return Promise.resolve();
   }
   if (cached) return cached;
 
   // 与 FontFaces.astro 相同的 base 归一化逻辑
-  const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const url = `${base}/fonts/ma-shan-zheng.woff2`;
 
-  const face = new FontFace(
-    'Ma Shan Zheng',
-    `url(${url}) format('woff2')`,
-    { style: 'normal', weight: '400', display: 'swap' },
-  );
-
-  cached = face.load().then(loaded => {
-    document.fonts.add(loaded);
-  }).catch(err => {
-    // 失败时清缓存，允许下次重试
-    cached = null;
-    console.warn('[prewarm] Ma Shan Zheng failed to load', err);
+  const face = new FontFace("Ma Shan Zheng", `url(${url}) format('woff2')`, {
+    style: "normal",
+    weight: "400",
+    display: "swap",
   });
+
+  cached = face
+    .load()
+    .then((loaded) => {
+      document.fonts.add(loaded);
+    })
+    .catch((err) => {
+      // 失败时清缓存，允许下次重试
+      cached = null;
+      console.warn("[prewarm] Ma Shan Zheng failed to load", err);
+    });
 
   return cached;
 }
