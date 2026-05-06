@@ -1,0 +1,243 @@
+/**
+ * reset.css · 现代 reset + 项目级中文排版基线（v0.1 Phase 1 §1.1.11）
+ *
+ * 职责：
+ *   ① 在 Tailwind v4 preflight 之上**叠加**项目特有的全局基线：
+ *      Tailwind preflight 已处理 box-sizing / margin / 表单控件 / img display / heading 字号等，
+ *      本文件**不重复**这些；只补 Tailwind 不做的项目专有约束。
+ *   ② 中文排版三件套（DESIGN §2.3.6 C/D/E 全部上车）：
+ *      - text-spacing-trim: trim-start trim-end          （C 标点挤压）
+ *      - hanging-punctuation: first allow-end            （E 句首/末标点悬挂）
+ *      - font-feature-settings: "kern", "halt"           （D 中英混排基线 + 半角标点）
+ *   ③ body 全局排版默认（DESIGN §2.3.6 A/B）：
+ *      - line-height: var(--leading-cn) = 1.7           （A：中文段落 ≥ 1.7）
+ *      - letter-spacing: 0                              （B：项目级默认 0；非零是组件特例）
+ *   ④ 主题感知：color-scheme + accent-color + ::selection 与 token 系统挂钩
+ *   ⑤ a11y：:focus-visible 项目化轮廓 + prefers-reduced-motion 降级
+ *
+ * ⛔ 严禁（与 tokens.css 同档约束 · 违反请改回来）：
+ *   ❌ 任何非零 `letter-spacing`（DESIGN §2.3.6 B：默认 0）
+ *   ❌ 任何 `vw` / `vh` / `clamp(_, Xvw, _)` 出现在 font-size 上（DESIGN §2.3.5）
+ *   ❌ `@font-face` —— 字体单一源在 src/components/FontFaces.astro（v1.24）
+ *   ❌ helper class（.cn-kaishu / .cn-song / .latin-* 等）—— 那些归 §1.1.12 global.css
+ *
+ * 引入位置：src/styles/global.css 的严格 import 顺序中第 2 位
+ *   `@import "tailwindcss"` → `@import './reset.css'` → `@import './tokens.css'`
+ *
+ * CSS 变量解析顺序的安全性说明：
+ *   本文件大量引用 `var(--bg)` / `var(--fg)` / `var(--text-body)` 等——
+ *   它们由 tokens.css :root / @theme 在 import 链下一步声明。
+ *   CSS 变量是**运行时**解析的：reset.css 的 `body { background: var(--bg) }` 在
+ *   渲染时读取最终生效的 :root --bg；声明顺序无影响。
+ *
+ * 渐进增强（progressive enhancement）：
+ *   - text-spacing-trim 与 hanging-punctuation 在不支持的浏览器（Firefox 全系、
+ *     部分 Chromium 旧版）会被静默忽略，文本依然可读，仅失去"专业级"标点空隙；
+ *   - 现代 evergreen（Chrome 124+ / Safari TP / Edge 124+）已支持二者。
+ */
+
+/* ────────────────────────────────────────────────────────── */
+/* 1. html / 顶层文档行为                                      */
+/* ────────────────────────────────────────────────────────── */
+html {
+  /* 让 UA 能根据 prefers-color-scheme 自动选对滚动条 / 表单控件配色 */
+  color-scheme: light dark;
+
+  /* 内置平滑滚动；Phase 5 Lenis 接管时会通过 JS 把它改回 auto，再用自己的曲线 */
+  scroll-behavior: smooth;
+
+  /* iOS 横屏时禁止文字自动放大；与 viewport meta 协同 */
+  -webkit-text-size-adjust: 100%;
+
+  /* Latin 文本启用断词（中文不受影响） */
+  hyphens: auto;
+  -webkit-hyphens: auto;
+
+  /* 确保滚动锚点不被 sticky nav 盖住（Phase 4 真 nav 落地后再调） */
+  scroll-padding-top: 0;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 2. body —— 全站排版基线                                     */
+/* ────────────────────────────────────────────────────────── */
+body {
+  /* 主题感知颜色（tokens.css 提供 var；夜读由 prefers-color-scheme 在 :root 切换） */
+  background: var(--bg);
+  color: var(--fg);
+
+  /* 默认字族：CN 宋（最常见可见内容是中文叙事段落）。
+     Cover / 标题 / 引文等用 helper class 在 global.css §1.1.12 覆盖。 */
+  font-family: var(--font-cn-song);
+
+  /* 默认字号 + 行高：mobile 第一档；tokens.css @media 在 540 / 960 自动升档。
+     line-height: 1.7 是中文段落底线（DESIGN §2.3.6 A）。 */
+  font-size: var(--text-body);
+  line-height: var(--leading-cn);
+
+  /* DESIGN §2.3.6 B：项目级默认 letter-spacing: 0。非零是组件特例，**不**入全局。 */
+  letter-spacing: 0;
+
+  /* DESIGN §2.3.6 C：CN 全角标点（"，。"）后多余空白自动收紧。
+     现代 evergreen 支持；旧浏览器静默忽略。 */
+  text-spacing-trim: trim-start trim-end;
+
+  /* DESIGN §2.3.6 E：CN 段落首/末全角标点悬挂出版心，大屏阅读体验显著提升。
+     Safari 长期支持；Chromium 渐进支持；Firefox 暂无（静默降级）。 */
+  hanging-punctuation: first allow-end;
+
+  /* DESIGN §2.3.6 D：中英混排基线对齐 + Latin kerning。
+     - "kern"：Latin 字体 OpenType kerning（FFS 写出来必须显式带，否则被覆盖）
+     - "halt"：CJK 半角候选，让中英混排时全角标点不占满整格 */
+  font-feature-settings:
+    "kern" 1,
+    "halt" 1;
+
+  /* 字形渲染品质：在大字号 / italic 下尤其重要（Cover hero / Story 大标题） */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* 所有原生表单/CTA 的强调色（checkbox tick / radio dot / progress bar）
+     用品牌主色 sage，比 UA 默认的蓝紫更贴气质 */
+  accent-color: var(--c-sage);
+
+  /* 防止内容被横向滚动条意外撑开（margin/padding 误用时的兜底） */
+  min-height: 100vh;
+  /* 现代视口单位（避免 iOS Safari 100vh 包含 toolbar 的旧问题） */
+  min-height: 100dvh;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 3. 标题 —— 行高规则（DESIGN §2.3.6 A）                      */
+/* ────────────────────────────────────────────────────────── */
+/* CN 大标题 1.3 是必需的呼吸；Latin 大标题 1.1 由组件 / helper 覆写。
+   Tailwind preflight 把 h1-h6 字号清零并归一，本规则只补 line-height。 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: var(--leading-snug);
+  /* 保留 letter-spacing: 0 的全局规则（不写 inherit 也不写非零值） */
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 4. 媒体元素 —— 防止溢出 / 保持比例                          */
+/* ────────────────────────────────────────────────────────── */
+/* Tailwind preflight 已设置 img/picture/video display: block + max-width: 100%。
+   本规则补 height: auto 与 svg/canvas 的同等行为，并防止懒加载导致的布局跳动。 */
+img,
+picture,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* SVG 默认 display: inline；婚礼站大量 motif 与图标作为块级使用更直观 */
+svg {
+  display: block;
+}
+
+/* 婚纱照 / Story / Cats 大量使用 picture + AVIF/WebP/JPG 渐进；
+   防止图片在加载阶段无尺寸导致 CLS：原生 width/height 属性 + 此处兜底比例 */
+img {
+  font-style: italic; /* alt 文本兜底排版（图片加载失败时更优雅） */
+  background-repeat: no-repeat;
+  background-size: cover;
+  shape-margin: 0.75rem; /* 图文环绕时的呼吸 */
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 5. 链接 —— 项目调性                                         */
+/* ────────────────────────────────────────────────────────── */
+a {
+  color: var(--link);
+  /* 下划线偏移让中文与 Latin 都能呼吸；避免 sage 链接下划线挤压字符底线 */
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 0.06em;
+  transition: color 200ms var(--ease-paper);
+}
+
+a:hover {
+  color: var(--link-hover);
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 6. 选区 —— 用品牌色而非 UA 蓝                               */
+/* ────────────────────────────────────────────────────────── */
+::selection {
+  /* mimosa 黄铺底，olive-ink 墨色字，与"印刷的温度"一致；
+     比 UA 蓝更不打断长文阅读体验。 */
+  background-color: color-mix(in oklch, var(--c-mimosa) 55%, transparent);
+  color: var(--c-olive-ink);
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 7. 焦点环 —— 键盘 a11y                                      */
+/* ────────────────────────────────────────────────────────── */
+/* 鼠标点击不显示轮廓（:focus-visible 只在键盘 / Tab / 屏幕阅读器场景生效） */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--c-sage);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 8. 表单元素 —— Tailwind 不覆盖的项目专属                    */
+/* ────────────────────────────────────────────────────────── */
+/* 文本域只允许垂直拉伸；横向防止破坏版心宽度 */
+textarea {
+  resize: vertical;
+}
+
+/* 数字字段保留 tabular nums（联系电话 / 倒计时 input 等）
+   Phase 4 RSVP 表单具体落地时还会在组件层叠加 font-feature-settings: "tnum" */
+input[type="number"],
+input[type="tel"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 9. 表格 / fieldset 兜底                                     */
+/* ────────────────────────────────────────────────────────── */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 10. 减少动效偏好（a11y · WCAG 2.3.3）                       */
+/* ────────────────────────────────────────────────────────── */
+/* 用户系统设置 reduce motion 时：
+   - 关闭 html scroll-behavior: smooth（让锚点跳转瞬移）
+   - 把所有 CSS 动画/过渡压到几乎瞬时（不为 0 是为了让 listener 还能触发） */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,109 @@
+/**
+ * global.css · 全站样式入口（v0.1 Phase 1 §1.1.12）
+ *
+ * 职责：把 Tailwind v4 base、项目级 reset、设计 token 与 helper class 串成
+ * 全站唯一的样式入口；由 src/layouts/Base.astro 在 frontmatter 中
+ * `import '@/styles/global.css'` 一次性引入，所有页面/组件继承。
+ *
+ * ⚠️ **严格 import 顺序**（v1.28 收紧 · 不要重排）：
+ *   ┌─────────────────────────────────────────────────────────────────┐
+ *   │ 0. @import "tailwindcss"   —— Tailwind v4 base + utilities     │
+ *   │    必须最先：tokens.css 的 @theme 块解析依赖 Tailwind v4 已注册│
+ *   │ 1. @import './reset.css'   —— modern reset 叠 preflight        │
+ *   │    DESIGN §2.3.6 中文排版三件套（text-spacing-trim / hanging  │
+ *   │    -punctuation / font-feature-settings）在 body 上挂齐        │
+ *   │ 2. @import './tokens.css'  —— OKLCH 色板 + 三档 rem 字号 +     │
+ *   │    --c-* DESIGN 别名 + Tailwind v4 @theme 映射                │
+ *   │ 3. helper classes（本文件下方）—— DESIGN §2.3.8 七个排版类    │
+ *   └─────────────────────────────────────────────────────────────────┘
+ *
+ * 缺哪条会怎么坏：
+ *   - 缺 0 → tokens.css 的 @theme 块不被 Tailwind 解析；utility 类与
+ *           --color-* 自动 :root 注入都不会发生
+ *   - 缺 1 → modern reset / hanging-punctuation / font-feature-settings 不生效
+ *   - 缺 2 → reset.css 与 helper class 引用的 var(--bg) / var(--font-*)
+ *           等全部 invalid，文本退回 UA 默认
+ *   - 顺序错（tokens 在 reset 之前）→ 不影响功能但破坏 §1.1.12 契约结构
+ *
+ * ⛔ 严禁（与 tokens.css / reset.css 同档约束）：
+ *   ❌ `@font-face` 任何形式 —— 字体单一源在 src/components/FontFaces.astro（v1.24）
+ *      （Base.astro 在 head 渲染 <FontFaces />，与本文件互不重复）
+ *   ❌ 任何非零 `letter-spacing`（DESIGN §2.3.6 v2.20 全局默认 0；
+ *      本文件 7 个 helper 都显式写 `letter-spacing: 0`）
+ *   ❌ 任何 `vw` / `vh` 在 font-size 上（DESIGN §2.3.5 v2.21）
+ *
+ * helper class 设计原则：
+ *   - 只设 font-family / font-style / font-weight / 必需的 OpenType feature；
+ *   - **不**设字号、行高、颜色、margin（这些由调用处的语义层 / 组件层叠加）；
+ *   - 显式 `letter-spacing: 0` 是为了让组件如果错误地继承到了非零字距时，
+ *     helper 类能把它强制清零（DESIGN §2.3.6 B 防御性编码）。
+ *
+ * helper class 与 Tailwind utility 的关系：
+ *   - tokens.css 的 @theme 已暴露 `font-cn-kaishu` `font-cn-song` 等 Tailwind utility
+ *     （CSS 变量名是 `--font-cn-kaishu` 等），效果与 helper class 等价；
+ *   - 保留 helper class 是因为 DESIGN §2.3.8 文档示例就是用 class 写的，
+ *     新人按文档抄代码不需要先理解 Tailwind v4 @theme；
+ *   - 优先级：组件内的 inline / scoped <style> > helper class ≈ Tailwind utility > body 默认
+ */
+
+@import "tailwindcss";
+@import "./reset.css";
+@import "./tokens.css";
+
+/* ────────────────────────────────────────────────────────── */
+/* 中文排版 helper（DESIGN §2.3.8）                            */
+/* ────────────────────────────────────────────────────────── */
+
+/* 大标题主气质：李旭光霞鹜文楷（落地于 §0/§1/§2 章节大标题与诗句） */
+.cn-kaishu {
+  font-family: var(--font-cn-kaishu);
+  letter-spacing: 0;
+}
+
+/* 正文宋体：长卷叙事段落与子标题（落地于 §2 Story 长卷正文） */
+.cn-song {
+  font-family: var(--font-cn-song);
+  letter-spacing: 0;
+}
+
+/* UI / 数字黑体：倒计时、按钮、标签（落地于 §1 倒计时、§5 RSVP 表单） */
+/* DESIGN 沿用 .cn-hei 类名（"黑体" 简称）；实际指 Noto Sans SC（tokens.css --font-cn-sans） */
+.cn-hei {
+  font-family: var(--font-cn-sans);
+  letter-spacing: 0;
+}
+
+/* 落款专用：马善政毛笔字（仅 §6 Closing 落款句使用 · font-display: optional + JS prewarm） */
+.cn-mashan {
+  font-family: var(--font-cn-mashan);
+  letter-spacing: 0;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 拉丁文 helper（DESIGN §2.3.8）                              */
+/* ────────────────────────────────────────────────────────── */
+
+/* 抒情体（v300 italic）—— Cover hero "Forever Begins"、章节序号、引文装饰 */
+.latin-italic {
+  font-family: var(--font-cormorant);
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0;
+}
+
+/* 罗马体（v400 roman）—— 章节副标题、签名、表单标签 */
+.latin-roman {
+  font-family: var(--font-cormorant);
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* 等距（Inter Variable + tabular-nums）—— 时间戳、日期、坐标距离、版本号 */
+/* "tnum" 让数字在更新时不抖动（DESIGN §2.3.6 F · 倒计时 / 距离里程计的关键） */
+.latin-mono {
+  font-family: var(--font-inter);
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+}

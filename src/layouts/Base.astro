@@ -1,0 +1,102 @@
+---
+/**
+ * Base.astro · 全站基础布局（v0.3 字体源 + 全站样式入口）
+ *
+ * 当前职责：
+ *   ① 渲染 <FontFaces /> 组件 → 8 条 base-aware @font-face 注入 head（v0.2 起）
+ *   ② <head> 注入 2 条字体 preload（cormorant-italic + noto-serif-sc-light）
+ *   ③ frontmatter `import '@/styles/global.css'` —— **全站样式入口**（v0.3 §1.1.12）：
+ *      Tailwind v4 base + src/styles/reset.css + src/styles/tokens.css + 7 个 helper class，
+ *      经 Astro 编译后会 inline / 链入 dist/_astro/Base.*.css，被所有页面继承
+ *   ④ <slot /> 留给页面
+ *   ⑤ noindex Prop —— 与 astro.config.mjs sitemap.filter 配合形成 dev-only 路由双重防护
+ *
+ * 待补（§1.1.13 / §1.1.13a-c）：
+ *   - 完整 SEO meta（OG / Twitter card）
+ *   - JSON-LD Event schema（婚礼日期 / 地点 / 主持人）
+ *   - canonical URL · alternate language · viewport-fit=cover for iOS notch
+ *
+ * 历史修订：
+ *   v0.2（v1.24）：原 src/styles/fonts.css 硬编码 /forever-begins/fonts/... 导致 8 条
+ *     Vite warning，且 base 变更时 preload 与 @font-face 路径分裂。把 @font-face 移到
+ *     <FontFaces />，URL 由 import.meta.env.BASE_URL 模板生成。
+ *   v0.3（v1.30）：frontmatter 接入 global.css —— 把 §1.1.10/§1.1.11/§1.1.12 的
+ *     token / reset / helper 系统首次接进生产 root；Base 不再只是字体相关。
+ *
+ * preload URL 与 favicon URL 均经 base.replace(/\/$/, '') 归一化，
+ * 保证 base 写 '/forever-begins' 或 '/forever-begins/' 都得到一份斜杠。
+ *
+ * crossorigin 属性：preload font 必须含 crossorigin（即使同源，规范要求）；
+ * 否则浏览器会重新发起一次跨域请求覆盖 preload 命中。
+ */
+import FontFaces from "@/components/FontFaces.astro";
+
+// v0.3 §1.1.12：全站样式入口（Tailwind v4 base + reset + tokens + helper class）
+// 顺序契约 / 约束 / 缺哪条会怎么坏 见 src/styles/global.css 文件头注释
+import "@/styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+  lang?: string;
+  /**
+   * 禁止搜索引擎索引（v1.24 新增）。
+   * 用于开发期路由（如 /dev-fonts/），与 astro.config.mjs 的 sitemap.filter 配合
+   * 形成"sitemap 不收录 + 单页 noindex"双重防护。
+   */
+  noindex?: boolean;
+}
+
+const {
+  title = "杨倚天 & 希尔娜依 · 二〇二六年六月十四日 · 永恒之始",
+  description = "我们无法判断一个瞬间的价值，直至它变成回忆。",
+  lang = "zh-CN",
+  noindex = false,
+} = Astro.props;
+
+// import.meta.env.BASE_URL 是否带尾斜杠取决于 astro.config.mjs 中 base 的写法
+// （'/forever-begins' → 不带 / · '/forever-begins/' → 带 /）。
+// 用 normalize 兜底保证后续拼接 `${base}/foo` 永远是 '/forever-begins/foo' 一份斜杠。
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex,nofollow" />}
+
+    {/* 8 条 @font-face 注入（base-aware 单一源） */}
+    <FontFaces />
+
+    {
+      /* 关键字体 preload —— DESIGN §2.3.7 / PLAN §1.1.9 契约：
+        仅 cormorant-italic + noto-serif-sc-light，合计 ≈ 188KB，目标 < 200KB。
+        其他 6 个字体走 @font-face + font-display: swap 自然加载。 */
+    }
+    <link
+      rel="preload"
+      href={`${base}/fonts/cormorant-italic.woff2`}
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href={`${base}/fonts/noto-serif-sc-light.woff2`}
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
+    {/* favicon 占位 —— Phase 1 后期会用水彩 motif 替换 */}
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

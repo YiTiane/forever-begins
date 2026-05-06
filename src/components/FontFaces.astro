@@ -1,0 +1,129 @@
+---
+/**
+ * FontFaces.astro · base-aware @font-face 单一源（v0.2 替代 src/styles/fonts.css）
+ *
+ * 设计原因（v1.24 修订）：
+ *   原 src/styles/fonts.css 把 @font-face URL 硬编码为 /forever-begins/fonts/...，
+ *   导致两个问题：
+ *     ① pnpm build 输出 8 条 Vite warnings（CSS url() 试图在 build 时解析）；
+ *     ② 未来 base 改为 '/'（自定义域）或其他值时，preload 已经 base-aware
+ *        但 @font-face 仍指向 /forever-begins/，路径分裂。
+ *
+ *   方案：把 8 条 @font-face 移到 Astro 组件，通过 set:html 注入由
+ *   import.meta.env.BASE_URL 模板生成的 CSS。Vite 不会扫这块字符串里的 url()，
+ *   也就不会 warn；base 改动时 preload 与 @font-face 自动同步。
+ *
+ * 用法：
+ *   import FontFaces from '@/components/FontFaces.astro';
+ *   <head> ... <FontFaces /> ... </head>
+ *
+ * font-display 策略（沿袭 v1.23）：
+ *   - swap：7 个主字体 fallback 立即可读，woff2 加载完无感切换
+ *   - optional：ma-shan-zheng（落款专用）；100ms 内未到达即永远用 fallback
+ *     在 Phase 6 §6 入视口前用 src/lib/fonts/prewarm-mashan.ts 手动预热
+ *
+ * unicode-range：
+ *   - Latin 三族（cormorant-italic / cormorant-roman / inter）只在 ASCII /
+ *     Latin-1 / 通用标点 / 货币块出现时才下载
+ *   - CJK 五族不加 unicode-range（subset 已按内容裁剪过，整文件即最小集）
+ */
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const FONT_DIR = `${base}/fonts`;
+
+const LATIN_RANGE = [
+  'U+0020-007E',      // ASCII basic
+  'U+00A0-00FF',      // Latin-1 Supplement
+  'U+0152-0153',      // Œ œ
+  'U+02BB-02BC',      // modifier letter
+  'U+02C6, U+02DA, U+02DC',
+  'U+2000-206F',      // general punctuation
+  'U+2074, U+20AC',   // €
+  'U+2122',           // ™
+  'U+2191, U+2193, U+2212, U+2215',
+  'U+FB01-FB02',      // fi fl ligatures
+].join(', ');
+
+const css = `
+/* === 1. Cormorant Garamond · Italic · variable wght 200-700 ⭐ preload === */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url(${FONT_DIR}/cormorant-italic.woff2) format('woff2-variations'),
+       url(${FONT_DIR}/cormorant-italic.woff2) format('woff2');
+  font-style: italic;
+  font-weight: 200 700;
+  font-display: swap;
+  unicode-range: ${LATIN_RANGE};
+}
+
+/* === 2. Cormorant Garamond · Roman · variable wght 200-700 === */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url(${FONT_DIR}/cormorant-roman.woff2) format('woff2-variations'),
+       url(${FONT_DIR}/cormorant-roman.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  unicode-range: ${LATIN_RANGE};
+}
+
+/* === 3. Inter · variable wght 100-900 === */
+@font-face {
+  font-family: 'Inter';
+  src: url(${FONT_DIR}/inter-variable.woff2) format('woff2-variations'),
+       url(${FONT_DIR}/inter-variable.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: ${LATIN_RANGE};
+}
+
+/* === 4. Noto Serif SC · Light (300) ⭐ preload === */
+@font-face {
+  font-family: 'Noto Serif SC';
+  src: url(${FONT_DIR}/noto-serif-sc-light.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+/* === 5. Noto Serif SC · Regular (400) === */
+@font-face {
+  font-family: 'Noto Serif SC';
+  src: url(${FONT_DIR}/noto-serif-sc-regular.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* === 6. Noto Sans SC · Light (300) === */
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url(${FONT_DIR}/noto-sans-sc-light.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+/* === 7. LXGW WenKai · Regular === */
+@font-face {
+  font-family: 'LXGW WenKai';
+  src: url(${FONT_DIR}/lxgw-wenkai.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* === 8. Ma Shan Zheng · Regular · 落款专用 ===
+ *   font-display: optional：100ms 内未到即永远 fallback；
+ *   §6 入视口前由 prewarm-mashan.ts 主动 FontFace API load。 */
+@font-face {
+  font-family: 'Ma Shan Zheng';
+  src: url(${FONT_DIR}/ma-shan-zheng.woff2) format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+}
+`;
+---
+<style is:inline set:html={css}></style>

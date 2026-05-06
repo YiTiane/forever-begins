@@ -1,0 +1,260 @@
+/**
+ * tokens.css · 设计令牌单一源（v0.2 Phase 1 §1.1.10）
+ *
+ * 职责：
+ *   ① OKLCH 色板（DESIGN §2.2 主色 / 强调 / 中性 全表 · 12 个原始色）
+ *   ② DESIGN 契约别名 `--c-*`（v0.2 新增）—— DESIGN §2.2 / §4 SVG 例子里写
+ *      `var(--c-paper)` / `var(--c-honey)` 等是历史悠久的命名；保留 `--color-*`
+ *      给 Tailwind v4 utility，同时在 :root 暴露 `--c-* : var(--color-*)` 别名，
+ *      让两套写法都成立、未来不必返工 DESIGN 全文
+ *   ③ 字号阶梯（DESIGN §2.3.5 v2.21 三档表 10 行 × 3 档纯 rem）
+ *   ④ 行高 / 字族 / 间距 / 容器 / 圆角 / 阴影 / 缓动 / 断点 / z-index
+ *   ⑤ 夜读（prefers-color-scheme: dark）—— **仅切色板，不切字号**
+ *   ⑥ Tailwind v4 `@theme` 块映射 → utility 命名空间
+ *      （text-display-xl / bg-paper / font-cn-song / shadow-paper / tablet: …）
+ *
+ * ⛔ 严禁（v1.26 / v1.27 收紧的硬约束 · 违反请改回来）：
+ *   ❌ `vw` / `vh` / `vmin` / `vmax` 出现在任何 `--text-*` token 中
+ *   ❌ `clamp(min, Xvw, max)` / `clamp(min, calc(1rem + Nvw), max)` 把字号绑 viewport
+ *   ❌ `prefers-color-scheme` 切字号（颜色偏好不应改变字体尺寸）
+ *   ❌ 任何非零 `letter-spacing` token 或 utility（DESIGN §2.3.6 v2.20：项目级默认 0；
+ *      极少数视觉特例只在组件作用域内单独写）
+ *   ❌ `@font-face` —— 字体单一源在 src/components/FontFaces.astro（v1.24）
+ *
+ * 字号切档机制：纯 rem + `@media (min-width: ...)` 二到三档（`@container` 备选，未启用）
+ * 三档断点对齐 DESIGN §2.3.5：
+ *   mobile  : <540px   （:root 第一档默认值）
+ *   tablet  : 540~959px（@media min-width:540px 覆写）
+ *   desktop : ≥960px   （@media min-width:960px 再覆写）
+ *
+ * 体感对照（约 1 rem ≈ 16px）：
+ *   title-md  20→22→24px / body-lg 16→17→18px / body 15→16→16px /
+ *   caption   13→14→14px / meta    11→12→12px
+ *   body / caption / meta 在 tablet 与 desktop 同档（小字号不再放大）。
+ *
+ * Tailwind v4 集成：
+ *   - 本文件 `@theme` 块由 @tailwindcss/vite 在构建期解析，
+ *     生成 utility class 与 :root 上的 CSS 变量。
+ *   - `:root` 块里的"语义角色 token"（--bg / --fg / --link 等）与"DESIGN 别名"
+ *     （--c-paper / --c-sage 等）**不入 @theme**——避免 Tailwind 误生成
+ *     `bg-bg`、`text-fg`、`bg-c-paper` 这种自指/重复 utility。
+ *   - 由 src/styles/global.css 在 `@import "tailwindcss"` **之后** import 本文件。
+ *
+ * OKLCH 来源：DESIGN §2.2 给出 HEX，本文件以 oklch() 表达 + HEX 注释做归一化。
+ *   小幅偏差（±0.5% L · ±0.005 C · ±2° H）属感知容差；如需 byte-perfect，
+ *   可改写成 `oklch(from #FAF6EC l c h)` 形式（现代 evergreen 浏览器支持）。
+ */
+
+/* ────────────────────────────────────────────────────────── */
+/* 1. Tailwind v4 @theme —— 原始 token + utility 命名空间      */
+/* ────────────────────────────────────────────────────────── */
+@theme {
+  /* —— 色板：主色 / Primary（DESIGN §2.2） —— */
+  /* HEX #7B8A6A · 主品牌色 / 链接 / 章节序号 */
+  --color-sage: oklch(56.4% 0.04 117);
+  /* HEX #5A6B47 · 标题 / 深色块 / 按钮 hover */
+  --color-sage-deep: oklch(43% 0.05 121);
+  /* HEX #3F4A2E · 长文正文（替代纯黑） */
+  --color-olive-ink: oklch(31% 0.05 119);
+
+  /* —— 色板：强调 / Accent —— */
+  /* HEX #E6C76B · 高亮 / 章节小图标 */
+  --color-mimosa: oklch(82% 0.13 90);
+  /* HEX #C9A24A · 烫金分隔线 / 引文边框 */
+  --color-honey: oklch(71.5% 0.13 81);
+  /* HEX #B5A4C9 · 极少量次强调（点缀） */
+  --color-lavender: oklch(70.5% 0.06 295);
+  /* HEX #E8D5C4 · 柔和高光 / 卡片底色 */
+  --color-petal: oklch(86.5% 0.04 60);
+
+  /* —— 色板：中性 / Neutral —— */
+  /* HEX #FAF6EC · 全站基础底（邀请函纸张） */
+  --color-paper: oklch(97% 0.02 90);
+  /* HEX #F5EFE0 · 卡片底 / 章节卡片 */
+  --color-ivory: oklch(94.5% 0.025 88);
+  /* HEX #C8C2B4 · 分割线 / 占位 / disabled */
+  --color-mist: oklch(78.5% 0.015 90);
+  /* HEX #2A2A26 · 极少量黑（仅强对比正文） */
+  --color-ink: oklch(20% 0.005 95);
+  /* HEX #1F2118 · Dark mode 基础底（深橄榄墨） */
+  --color-paper-night: oklch(15.5% 0.012 115);
+
+  /* —— 字号阶梯（mobile 第一档默认 · DESIGN §2.3.5 v2.21 三档表第一列） —— */
+  /* ⛔ 任何 vw / 任何 prefers 切档都是回归，违反请回滚 */
+  --text-display-2xl: 3.5rem; /* Cover 巨型 "Forever Begins" */
+  --text-display-xl: 2.5rem; /* 章节大标题（Latin）"I. SNOW" */
+  --text-display-lg: 2rem; /* 章节中文标题 */
+  --text-display-md: 1.75rem; /* 引文 / 诗句 */
+  --text-title-lg: 1.5rem; /* 卡片标题 */
+  --text-title-md: 1.25rem; /* 子标题 */
+  --text-body-lg: 1rem; /* 引文段落（line-height 1.85） */
+  --text-body: 0.9375rem; /* 正文（line-height 1.7） */
+  --text-caption: 0.8125rem; /* 图说 */
+  --text-meta: 0.6875rem; /* UI / 编号 */
+
+  /* —— 行高（DESIGN §2.3.6 A） —— */
+  --leading-tight: 1.1; /* 拉丁大标题 */
+  --leading-snug: 1.3; /* 中文大标题 */
+  --leading-cn: 1.7; /* 中文正文（≥ 1.7 是中文段落底线） */
+  --leading-quote: 1.85; /* 引文段落 */
+
+  /* —— 字族（与 src/components/FontFaces.astro v1.24 单一源对齐） —— */
+  --font-cormorant: "Cormorant Garamond", Georgia, serif;
+  --font-inter: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* 正文宋 */
+  --font-cn-song: "Noto Serif SC", "Songti SC", "宋体", serif;
+  /* UI / 数字 */
+  --font-cn-sans: "Noto Sans SC", "PingFang SC", "黑体", sans-serif;
+  /* 大标题主气质 */
+  --font-cn-kaishu: "LXGW WenKai", "Noto Serif SC", serif;
+  /* 落款专用（FontFace API 主动 prewarm + font-display: optional） */
+  --font-cn-mashan: "Ma Shan Zheng", "LXGW WenKai", cursive;
+
+  /* —— 间距：8pt baseline grid（DESIGN §2.5） —— */
+  /* `--spacing` 是 Tailwind v4 的 base unit；`p-4` = 4 × --spacing = 1rem，
+     全站基础网格 4px。section 大呼吸用 `--spacing-section-*` 命名扩展。 */
+  --spacing: 0.25rem; /* 4px base */
+  --spacing-section-md: 12rem; /* 192px · DESIGN §2.5 "section 间隔小档" */
+  --spacing-section-lg: 16rem; /* 256px · DESIGN §2.5 "section 间隔大档" */
+
+  /* —— 容器最大宽度（measure / max-w-*） —— */
+  --container-narrow: 28rem; /* 448px · 引文 / 诗句 */
+  /* 576px · 中文正文舒适阅读宽（CJK 33-37 字/行） */
+  --container-prose: 36rem;
+  --container-wide: 45rem; /* 720px · 长卷叙事 */
+  --container-page: 75rem; /* 1200px · 页面外框 */
+
+  /* —— 圆角（DESIGN §2.6 极淡材质） —— */
+  --radius-sm: 0.125rem; /* 2px · 标签 / code */
+  --radius-md: 0.375rem; /* 6px · 按钮 / 卡片 */
+  --radius-lg: 0.75rem; /* 12px · 大卡片 */
+  --radius-pill: 9999px; /* 胶囊 / dot */
+
+  /* —— 阴影（DESIGN §2.6：不用 backdrop-blur · 改"纸纹叠层 + 极淡阴影"） —— */
+  /* 用 oklch() 的 ink-on-paper 投影，保证亮 / 暗模式下都有"纸面"质感
+     `--shadow-paper` 的命名与 DESIGN §4 §0/§1 视觉要点一致 */
+  --shadow-paper:
+    0 0.5px 1px 0 oklch(20% 0.005 95 / 0.08),
+    0 4px 16px -2px oklch(20% 0.005 95 / 0.06);
+  --shadow-card:
+    0 1px 2px 0 oklch(20% 0.005 95 / 0.06),
+    0 8px 24px -8px oklch(20% 0.005 95 / 0.08);
+  --shadow-rule: inset 0 -1px 0 0 var(--color-honey); /* 烫金式分隔线 */
+
+  /* —— 缓动（DESIGN §7 / Phase 5 准备） —— */
+  --ease-paper: cubic-bezier(0.32, 0.72, 0, 1); /* 纸面起落 */
+  --ease-petal: cubic-bezier(0.4, 0, 0.2, 1); /* 花瓣下落 */
+
+  /* —— 自定义断点（DESIGN §2.3.5 v2.21 唯二字号断点：540 / 960） —— */
+  /* 不 override Tailwind 默认 sm/md/lg/xl/2xl；让两套断点共存可控
+     设计内书写 `tablet:` / `desktop:` 是项目语义；尽量不写 `sm:` `md:` */
+  --breakpoint-tablet: 540px;
+  --breakpoint-desktop: 960px;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 2. :root —— DESIGN 契约别名 + 语义角色 token                */
+/* 这一段**不入 @theme**：                                      */
+/*   - DESIGN 别名是给 raw CSS / SVG 用的（`var(--c-paper)`），  */
+/*     不需要 utility 化（避免 `bg-c-paper` 这种重复 utility）  */
+/*   - 语义角色（--bg / --fg）同理：避免 `bg-bg` / `text-fg`    */
+/*     这种自指 utility，且需要在 dark 模式下被覆写            */
+/* ────────────────────────────────────────────────────────── */
+:root {
+  /* —— DESIGN 契约别名（v0.2 新增；与 DESIGN §2.2 / §4 §0/§1 / §5 SVG 写法保持一致）—— */
+  /* 主色 / Primary */
+  --c-sage: var(--color-sage);
+  --c-sage-deep: var(--color-sage-deep);
+  --c-olive-ink: var(--color-olive-ink);
+  /* 强调 / Accent */
+  --c-mimosa: var(--color-mimosa);
+  --c-honey: var(--color-honey);
+  --c-lavender: var(--color-lavender);
+  --c-petal: var(--color-petal);
+  /* 中性 / Neutral */
+  --c-paper: var(--color-paper);
+  --c-ivory: var(--color-ivory);
+  --c-mist: var(--color-mist);
+  --c-ink: var(--color-ink);
+  --c-paper-night: var(--color-paper-night);
+
+  /* —— 语义角色 token（主题切换面）—— */
+  --bg: var(--color-paper);
+  --fg: var(--color-olive-ink);
+  --muted: var(--color-mist);
+  --accent: var(--color-sage);
+  --link: var(--color-sage);
+  --link-hover: var(--color-sage-deep);
+  --rule: var(--color-honey);
+
+  /* —— z-index 层级（数字递增即可；无 utility 化）—— */
+  --z-base: 1;
+  --z-rail: 20;
+  --z-nav: 50;
+  --z-lightbox: 100;
+  --z-toast: 200;
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 3. tablet (≥540px) —— 字号第二档                            */
+/* DESIGN §2.3.5 v2.21 三档表第二列                             */
+/* 仅切字号 token；色板 / 别名 / 语义角色 / 字族 / 间距 不变    */
+/* ────────────────────────────────────────────────────────── */
+@media (min-width: 540px) {
+  :root {
+    --text-display-2xl: 5rem;
+    --text-display-xl: 3.5rem;
+    --text-display-lg: 2.5rem;
+    --text-display-md: 2rem;
+    --text-title-lg: 1.75rem;
+    --text-title-md: 1.375rem;
+    --text-body-lg: 1.0625rem;
+    --text-body: 1rem;
+    --text-caption: 0.875rem;
+    --text-meta: 0.75rem;
+  }
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 4. desktop (≥960px) —— 字号第三档                           */
+/* DESIGN §2.3.5 v2.21 三档表第三列                             */
+/* body / caption / meta 在此档与 tablet 同档（小字号不再放大）*/
+/* 故仅覆写 display-* / title-* / body-lg                       */
+/* ────────────────────────────────────────────────────────── */
+@media (min-width: 960px) {
+  :root {
+    --text-display-2xl: 6rem;
+    --text-display-xl: 4.5rem;
+    --text-display-lg: 3rem;
+    --text-display-md: 2.25rem;
+    --text-title-lg: 2rem;
+    --text-title-md: 1.5rem;
+    --text-body-lg: 1.125rem;
+    /* body / caption / meta 不变 —— DESIGN §2.3.5 v2.21 表内"tablet 与 desktop 同档" */
+  }
+}
+
+/* ────────────────────────────────────────────────────────── */
+/* 5. 夜读 / Dark Mode —— 仅切色板，不切字号                   */
+/* DESIGN §2.3.5：颜色偏好不应改变字体尺寸                      */
+/* 只覆写"语义角色 token"和阴影；--text-* / --spacing-* /       */
+/* --leading-* 全部不动；--c-* 别名也不动（原始色板不变）        */
+/* 验收：发现夜读下字号变大/变小即为回归                        */
+/* ────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--color-paper-night);
+    --fg: var(--color-petal);
+    --muted: oklch(45% 0.013 90);
+    --accent: oklch(72% 0.05 121); /* sage 在暗底略提亮 */
+    --link: oklch(72% 0.05 121);
+    --link-hover: oklch(80% 0.05 121);
+    --rule: var(--color-honey); /* 烫金在暗底依然成立 */
+
+    /* 阴影改用更深"墨黑"投影，在 paper-night 上仍可感 */
+    --shadow-paper:
+      0 0.5px 1px 0 oklch(0% 0 0 / 0.4), 0 4px 16px -2px oklch(0% 0 0 / 0.3);
+    --shadow-card:
+      0 1px 2px 0 oklch(0% 0 0 / 0.3), 0 8px 24px -8px oklch(0% 0 0 / 0.4);
+  }
+}

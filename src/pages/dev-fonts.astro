@@ -1,0 +1,157 @@
+---
+/**
+ * dev-fonts.astro · 8 字体冒烟测试（开发期手动访问）
+ *
+ * URL：/forever-begins/dev-fonts/
+ *
+ * 用途：DevTools Network 面板逐项验证 8 个 woff2 都能从 /forever-begins/fonts/
+ * 加载、@font-face 与各字族实际渲染正确。
+ *
+ * 注意：
+ *   - 此路由**不**从主页或导航链接到。
+ *   - v1.24 临时双重防护（不是上线方案）：
+ *     ① astro.config.mjs sitemap.filter 把它排除出 sitemap-0.xml；
+ *     ② 本页 <Base noindex={true} /> 注入 <meta name="robots" content="noindex,nofollow">；
+ *     这两层只阻止搜索引擎收录——**社交分享预览（如微信、Twitter card）和不遵守 robots
+ *     的爬虫仍可能抓取**这个公开 URL。婚礼站上线后暴露开发页本身有观感风险。
+ *   - **Phase 7 上线前默认删除此文件**（或用构建开关排除）。
+ *     当前的 noindex 只作为开发期临时双保险；不是长期上线方案。
+ *   - 任何"打开 / 后浏览器只下载 2 字体"的预算证据，都不能用此页。生产 root
+ *     用 src/pages/index.astro，那里只引用 2 个 preload 字体。
+ *
+ * 排版约束：本冒烟页保留较大字号是为了肉眼判别字体差异；不要把这里的
+ *   font-size: clamp(_, _vw, _) 或负 letter-spacing 模式带回真 Cover/Story。
+ */
+import Base from '@/layouts/Base.astro';
+---
+<Base
+  title="Forever Begins · Font Smoke Test (dev)"
+  description="8 font families smoke test — dev-only route, not for production root"
+  noindex={true}
+>
+  <main class="font-smoke">
+    <h1 class="dev-hero">Forever Begins · Font Smoke</h1>
+    <p class="dev-note">
+      Dev-only route. Each section below uses one font family.
+      Verify in DevTools → Network that the corresponding <code>.woff2</code> loads.
+    </p>
+
+    <section class="demo">
+      <h2>① Cormorant Garamond Italic (variable)</h2>
+      <p style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 300;">
+        Welcome · Forever Begins · Invitation
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>② Cormorant Garamond Roman (variable)</h2>
+      <p style="font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 400;">
+        Henceforth, our story begins. The Day · The Family.
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>③ Inter (variable)</h2>
+      <p style="font-family: 'Inter', system-ui, sans-serif; font-feature-settings: 'tnum';">
+        2026-06-14 · 19:00 · 10,755 km · 2,654 days together
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>④ Noto Serif SC Light (300)</h2>
+      <p style="font-family: 'Noto Serif SC', '宋体', serif; font-weight: 300;">
+        既见君子，云胡不喜。 我们无法判断一个瞬间的价值，直至它变成回忆。
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>⑤ Noto Serif SC Regular (400)</h2>
+      <p style="font-family: 'Noto Serif SC', '宋体', serif; font-weight: 400;">
+        诚邀构成我们生命不同经纬的你，共同见证这份回忆的开始。
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>⑥ Noto Sans SC Light (300)</h2>
+      <p style="font-family: 'Noto Sans SC', '黑体', sans-serif; font-weight: 300;">
+        距离婚礼还有 41 天 · 02 时 17 分 33 秒
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>⑦ LXGW WenKai (中文大标题主气质)</h2>
+      <p style="font-family: 'LXGW WenKai', 'Noto Serif SC', serif;">
+        愿有岁月可回首，且以深情共白头。
+      </p>
+    </section>
+
+    <section class="demo">
+      <h2>⑧ Ma Shan Zheng (落款专用 · font-display: optional)</h2>
+      <p style="font-family: 'Ma Shan Zheng', 'LXGW WenKai', cursive;">
+        无论你能否赴约，我们都感恩你在我们的故事里。
+        <br />
+        — 杨倚天 &amp; 希尔娜依 —
+      </p>
+      <p class="dev-note tiny">
+        ⚠️ optional 模式：此字体若 100ms 内未到达即永远 fallback。
+        生产 §6 入视口前由 prewarm-mashan.ts 主动 FontFace API load。
+        此页不做预热 → 当前看到的可能是 fallback（楷体）。
+      </p>
+    </section>
+  </main>
+
+  <style>
+    .font-smoke {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+      color: #2a2a26;
+      background: #faf6ec;
+      line-height: 1.7;
+    }
+    .dev-hero {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-style: italic;
+      font-weight: 300;
+      font-size: 3rem;       /* 静态 rem，符合项目 UI 约束 */
+      letter-spacing: 0;
+      margin: 0 0 0.5rem;
+      color: #5a6b47;
+    }
+    .dev-note {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.875rem;
+      color: #7b8a6a;
+      margin: 0 0 2rem;
+    }
+    .dev-note.tiny {
+      font-size: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    .demo {
+      margin: 2rem 0;
+      padding: 1rem 0;
+      border-top: 1px solid #c8c2b4;
+    }
+    .demo h2 {
+      font-size: 0.75rem;
+      letter-spacing: 0;     /* v2.20 全局约束：letter-spacing = 0；区分小标用大写 + 字色 */
+      color: #7b8a6a;
+      text-transform: uppercase;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-weight: 500;
+      margin: 0 0 0.75rem;
+    }
+    .demo p {
+      font-size: 1.25rem;
+      margin: 0;
+    }
+    code {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.85em;
+      background: #ece4d3;
+      padding: 0 0.3em;
+      border-radius: 2px;
+    }
+  </style>
+</Base>
