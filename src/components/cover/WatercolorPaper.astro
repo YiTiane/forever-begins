@@ -1,6 +1,6 @@
 ---
 /**
- * WatercolorPaper.astro · §0 Cover 背景层（v0.1 · Phase 2 §0 第四刀）
+ * WatercolorPaper.astro · §0 Cover 背景层（v0.2 · v1.49 修 v1.48 P2 + 2 P3）
  *
  * 职责（DESIGN §4 §0 视觉要点）：
  *   "背景由"水彩纸纹延展"承担——`--c-paper` + 4% 灰度噪点 +
@@ -54,12 +54,20 @@ import OliveBranch from "@/components/motifs/OliveBranch.astro";
           baseFrequency="0.9"
           numOctaves="2"
           seed="3"></feTurbulence>
-        {/* 转灰度并把整体 alpha 拍到 4%（DESIGN §4 §0 比例） */}
+        {
+          /*
+          v0.2 (audit P2 fix)：把 feTurbulence 的彩色 RGB 转灰度（用 ITU-R BT.601
+          luminance 系数），保留**像素级亮度差异** —— 这是噪点能被看到的源头；
+          再用 alpha 行系数 0.04 把整层降到 4% 不透明度。
+          v0.1 错误版本是 RGB 全 0、alpha 也固定 0.04，结果是一张均匀 4% 黑色遮罩
+          （没有像素差异 → 不是噪点，只是色调暗一点）。
+        */
+        }
         <feColorMatrix
-          values="0 0 0 0 0
-                  0 0 0 0 0
-                  0 0 0 0 0
-                  0 0 0 0.04 0"
+          values="0.299 0.587 0.114 0 0
+                  0.299 0.587 0.114 0 0
+                  0.299 0.587 0.114 0 0
+                  0     0     0     0.04 0"
         ></feColorMatrix>
       </filter>
     </defs>
@@ -90,28 +98,42 @@ import OliveBranch from "@/components/motifs/OliveBranch.astro";
     height: 100%;
   }
 
-  /* 角落 motif 定位：8pt grid 留白，避免贴边
-     mobile 留 16px / 桌面 24px—— */
-  :global(.motif-tl) {
+  /*
+    v0.2 (audit P3 fix)：把 :global(.motif-*) 限定在 .watercolor-paper **内**，
+    不再泄漏到全局命名空间。这样 §1 / §4 等其他章节复用 motif library 时，
+    motif-tl / motif-br 类不会被本 Cover 装饰层的绝对定位 + 偏移 + mobile 缩放污染。
+    Astro 编译后：`.watercolor-paper[data-astro-cid-X] > .motif-tl`（外部封装范围 + 内部 motif class 通配）。
+  */
+  /* 角落 motif 定位：8pt grid 留白，避免贴边（mobile 留 16px / 桌面 24px） */
+  .watercolor-paper :global(.motif-tl) {
     position: absolute;
     top: 1.5rem;
     left: 1rem;
   }
-  :global(.motif-br) {
+  .watercolor-paper :global(.motif-br) {
     position: absolute;
     bottom: 2rem;
     right: 1rem;
   }
 
+  /*
+    v0.2 (audit P3 fix)：用 CSS Transforms Level 2 的 `scale` 属性而非 `transform: scale(...)`。
+    `scale` 与 `transform` 是独立属性、自动合成 —— 这样 OliveBranch 内部的 `.flipped { transform: scaleX(-1) }`
+    与本组件的 mobile 缩放不再互相覆盖（v0.1 旧 bug：mobile rule 用 transform: scale(0.7)
+    覆盖了 .flipped 的 transform: scaleX(-1)，导致右下橄榄枝在 mobile 既不缩也丢了镜像）。
+    支持：Chrome 104+ / Safari 14.1+ / Firefox 72+，全 evergreen 覆盖。
+  */
   @media (max-width: 539px) {
-    /* 小屏 motif 缩到 ~70%，给中央邀请函更多视觉空间 */
-    :global(.motif-tl),
-    :global(.motif-br) {
-      transform: scale(0.7);
+    /* 小屏 motif 缩到 70%，给中央邀请函更多视觉空间 */
+    .watercolor-paper :global(.motif-tl) {
+      scale: 0.7;
       transform-origin: top left;
     }
-    :global(.motif-br) {
+    .watercolor-paper :global(.motif-br) {
+      scale: 0.7;
       transform-origin: bottom right;
+      /* OliveBranch 内部的 .flipped { transform: scaleX(-1) } 通过 transform 属性独立生效；
+         本规则的 scale 属性独立合成，不会干掉镜像。 */
     }
   }
 </style>
