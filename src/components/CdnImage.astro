@@ -1,6 +1,6 @@
 ---
 /**
- * CdnImage.astro · 跨境多 CDN 图片组件（v0.2 · Phase 1 §1.1.15）
+ * CdnImage.astro · 跨境多 CDN 图片组件（v0.3 · Phase 1 §1.1.15 + Phase 2 §0 第一刀 CLS fix）
  *
  * 输出 `<picture>` with AVIF/WebP/JPG 三层 srcset；
  * 主路径 = jsDelivr · 备路径 = Statically · 通过 `data-srcset-alt` / `data-src-alt`
@@ -29,6 +29,14 @@
  * `<img src>` / `data-src-alt` 单图兜底用 `Math.max(...JPG_WIDTHS)` 而**不是固定 1600**，
  * 这样调用方传 `widths={[320, 640, 1024]}` 时 src 也会指向真实存在的派生品（v0.2 修订）。
  * 若 widths 中无任何 ≤ 1600 的值，**构建期直接 throw**——把错误暴露在调用方，不让上线后 404。
+ *
+ * **CLS（Cumulative Layout Shift）防御 · v0.3 新增**：
+ * 新增可选 `width` / `height` Props（源图原始像素）。配对填写后渲染为
+ * `<img width={...} height={...}>` 属性 → 浏览器自动推导 `aspect-ratio: width / height`，
+ * 配合 CSS `height: auto + width: 100%` 在图片解码完成前就 reserve 完整版心，
+ * 杜绝下方文本因图片加载完成而 reflow（CLS = 0）。
+ * 仅填一个会**构建期 throw**——避免 aspect-ratio 推不出。
+ * 强烈推荐**首屏图必填**；后续 lazy 图也建议填以避免 scroll-jank。
  *
  * **不写 onerror 内联属性**：CdnEarlyProbe 已在 document 层 capture 阶段监听所有
  * img.error，会按 picture 范围切换 srcset；写内联 onerror 会重复触发。
@@ -59,6 +67,17 @@ interface Props {
   priority?: "high" | "low" | "auto";
   /** 派生品宽度数组；默认 [320, 640, 1024, 1600, 2400, 3840]。 */
   widths?: number[];
+  /**
+   * **源图固有宽度**（像素，v0.3 新增 · CLS 修）。
+   * 与 `height` 配对成 `<img width height>` 属性 → 浏览器自动推导
+   * `aspect-ratio: width / height`，配合 CSS `height: auto` 在图片解码完成前
+   * 就 reserve 完整版心，杜绝下方文本因图片加载完成而 reflow。
+   * **强烈推荐**首屏图必填；后续 lazy 图也填可避免 scroll-jank。
+   * 数值必须是源图原始像素，不要写渲染宽度（CSS 控制渲染尺寸）。
+   */
+  width?: number;
+  /** **源图固有高度**（像素，v0.3 新增）。与 `width` 配对启用 aspect-ratio 几何预留。 */
+  height?: number;
 }
 
 const {
@@ -68,7 +87,17 @@ const {
   alt,
   priority = "auto",
   widths = [320, 640, 1024, 1600, 2400, 3840],
+  width,
+  height,
 } = Astro.props;
+
+// width / height 必须配对：只填一个会让浏览器算不出 aspect-ratio
+if ((width !== undefined) !== (height !== undefined)) {
+  throw new Error(
+    `<CdnImage cdnTarget="${cdnTarget}" stem="${stem}">: width 和 height 必须同时填或同时省略；` +
+      `仅填一个无法启用 aspect-ratio 几何预留。当前 width=${String(width)} · height=${String(height)}。`,
+  );
+}
 
 // JPG fallback 仅到 1600w（DESIGN §7.4：JPG 体积 > 1600 太重）
 const JPG_WIDTHS = widths.filter((w) => w <= 1600);
@@ -138,6 +167,9 @@ const loading: "eager" | "lazy" = priority === "high" ? "eager" : "lazy";
 
   {/* JPG —— 终极兜底（仅到 1600w · DESIGN §7.4） */}
   {/* 不写 onerror 属性：CdnEarlyProbe.astro 已在 document 层 capture 监听 */}
+  {
+    /* width/height（v0.3，CLS fix）—— 浏览器配合 CSS height: auto 自动推 aspect-ratio */
+  }
   <img
     src={primaryJpg}
     data-src-alt={backupJpg}
@@ -145,5 +177,7 @@ const loading: "eager" | "lazy" = priority === "high" ? "eager" : "lazy";
     loading={loading}
     decoding="async"
     fetchpriority={priority}
+    width={width}
+    height={height}
   />
 </picture>
