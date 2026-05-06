@@ -229,6 +229,28 @@ const cats = defineCollection({
 //
 // 一个 entry 一份 main.json（也可未来扩多份；glob 全 *.json）。
 // ─────────────────────────────────────────────────────────────────
+/**
+ * v1.56 收紧 · `role` 从自由 string 升级为 enum（v1.55 P2 #3 修）：
+ *   v1.55 起 `role` 已是决定 photo 视觉位置的关键字段（[data-role="far"] / "top-left" 等
+ *   在 PoemBeat CSS 里直接驱动绝对定位），但 schema 仍是 `z.string().optional()` —— 如果
+ *   有人把 main.json 写成 "topLeft" / "bottomright" / "nearer" 等 typo，schema 会通过、
+ *   组件会丢掉那张照片的定位规则、Story 视觉静默碎掉。v1.56 用 enum 锁住合法值；
+ *   再用 beats array 上的 refine 强约束"role 必须属于 layout 的 VALID_ROLES_BY_LAYOUT"。
+ */
+const photoRoleSchema = z.enum([
+  "far", // parallax-pair (beat 01)
+  "near", // parallax-pair (beat 01)
+  "top-left", // diagonal-gaze (beat 02)
+  "bottom-right", // diagonal-gaze (beat 02)
+  "center", // radial-mask (beat 03)
+  "anchor", // anchor-single (beat 04 / 05)
+  "vignette", // vignette (beat 06)
+  "overlap", // overlap (beat 07)
+  "reveal", // reveal (beat 08)
+  "wooden", // wooden (beat 09)
+  "pearl", // pearl (beat 10)
+]);
+
 const storyPoemPhoto = z.object({
   /** 派生品 stem，例：'Snow_03' / 'Wooden_door_01'。共用 stemSchema 防错。 */
   stem: stemSchema,
@@ -236,10 +258,11 @@ const storyPoemPhoto = z.object({
   cdnTarget: z.enum(CDN_TARGETS),
   alt: z.string().min(1),
   /**
-   * 渲染角色提示（可选）。例：'far' / 'near' / 'top-left' / 'bottom-right' / 'portrait'。
-   * 仅供组件做 layout 分流（不会进 alt / aria）。未来 layout decision 可严格化为 enum。
+   * 渲染角色（v1.56 P2 #3 修：升级为 enum）。
+   * 决定 photo 在 layout 中的绝对定位 —— typo 会被 zod 拦截，不再静默碎屏。
+   * 上层 beats refine 进一步强约束"role ∈ VALID_ROLES_BY_LAYOUT[layout]"。
    */
-  role: z.string().optional(),
+  role: photoRoleSchema,
   /**
    * 源图原始像素（CLS 几何预留 · CdnImage v0.3 width/height props 直传）。
    * 都填或都不填；其中一个填一个空 → CdnImage 构建期 throw（一致性 by 调用方）。
@@ -340,6 +363,27 @@ const EXPECTED_BEAT_LAYOUTS: readonly (z.infer<
   null, // 12 · finale (无 layout)
 ];
 
+/**
+ * v1.56：每套 layout 允许哪些 photo role（v1.55 P2 #3 修）。
+ * Story §2 的"远近 / 对视斜线 / 柔焦晕散 / 锚点定格"等空间叙事完全由 role 决定 photo 的
+ * absolute 位置；role 写错的话 CSS 不匹配、photo 会回到默认流式位置 —— 视觉静默碎掉。
+ * v1.56 用此表 + beats 上的第 4 条 refine 拦住 role × layout 不匹配的输入。
+ */
+const VALID_ROLES_BY_LAYOUT: Record<
+  z.infer<typeof photoPoemLayout>,
+  readonly z.infer<typeof photoRoleSchema>[]
+> = {
+  "parallax-pair": ["far", "near"],
+  "diagonal-gaze": ["top-left", "bottom-right"],
+  "radial-mask": ["center"],
+  "anchor-single": ["anchor"],
+  vignette: ["vignette"],
+  overlap: ["overlap"],
+  reveal: ["reveal"],
+  wooden: ["wooden"],
+  pearl: ["pearl"],
+};
+
 const storyPoem = defineCollection({
   loader: glob({ pattern: "*.json", base: "./src/content/story-poem" }),
   schema: z.object({
@@ -377,6 +421,19 @@ const storyPoem = defineCollection({
         {
           message:
             "beat layout 必须严格匹配 EXPECTED_BEAT_LAYOUTS：01 parallax-pair · 02 diagonal-gaze · 03 radial-mask · 04 anchor-single · 05 anchor-single · 06 vignette · 07 overlap · 08 reveal · 09 wooden · 10 pearl · 11/12 不写 layout",
+        },
+      )
+      .refine(
+        (beats) =>
+          beats.every((b) => {
+            // globe / finale beat：允许 photos 为空，此处不强约束 role × layout
+            if (!b.layout) return true;
+            const validRoles = VALID_ROLES_BY_LAYOUT[b.layout];
+            return b.photos.every((p) => validRoles.includes(p.role));
+          }),
+        {
+          message:
+            "photo role 必须属于 layout 的 VALID_ROLES_BY_LAYOUT：parallax-pair → far|near · diagonal-gaze → top-left|bottom-right · radial-mask → center · anchor-single → anchor · vignette/overlap/reveal/wooden/pearl 各自同名",
         },
       ),
   }),

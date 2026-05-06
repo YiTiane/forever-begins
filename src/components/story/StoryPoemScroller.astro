@@ -130,48 +130,164 @@ const photoPoemBeats = main.data.beats
 </style>
 
 <script>
+  /*
+   * v1.56（v1.55 P2 #1+#2 修）·  scroll-progress driven choreography
+   *
+   *   v1.55 之前是 "一次 IO 触发 .visible + 一次 CSS transition" 的 one-shot reveal。
+   *   v1.56 让每个 beat 在 sticky stage 被钉住时，根据"已滚多少 / 总可滚多少"算出
+   *   归一化进度 p ∈ [0, 1]，把 p 与三个分阶段变量写到 beat 元素的 CSS 自定义属性上：
+   *     --p           主进度（线性 0→1）
+   *     --p-photo-1   phase-1（0..0.35 段映射到 0→1，之后保持 1）
+   *     --p-photo-2   phase-2（0.35..0.7 段映射到 0→1）
+   *     --p-text      phase-3（0.55..0.9 段映射到 0→1）
+   *   PoemBeat 的 layout CSS 全用 calc(var(--p)) 表达 transform / mask / opacity，
+   *   每帧 rAF 重写 → CSS calc 即时反映 → 真正的 scroll-driven choreography。
+   *
+   * 性能：
+   *   - rAF 仅在 IO 报告 beat 进视口时跑；离开 viewport → cancelAnimationFrame
+   *   - 单帧只 read 一次 getBoundingClientRect + write 4 个 CSS 变量到 beat（成本恒定）
+   *   - prefers-reduced-motion → 不跑 rAF，所有变量直接写 1（PoemBeat 同时也有 CSS 兜底）
+   *
+   * 调试：window.__storyPoem.progress() 看每个 beat 当前 --p / 子阶段值
+   */
   (function setupStoryPoemScroller() {
     if (typeof window === "undefined") return;
 
-    const beats = document.querySelectorAll<HTMLElement>(".poem-beat");
+    const beats = Array.from(
+      document.querySelectorAll<HTMLElement>(".poem-beat"),
+    );
     if (beats.length === 0) return;
 
-    // prefers-reduced-motion：直接全部 visible，跳过 IO（也避免空跑 IO 资源）
+    function clamp01(n: number): number {
+      return n < 0 ? 0 : n > 1 ? 1 : n;
+    }
+
+    // 把 phase 变量统一写在 beat 元素上（CSS calc 直接读到）。
+    function writeProgress(beat: HTMLElement, p: number): void {
+      const pPhoto1 = clamp01(p / 0.35);
+      const pPhoto2 = clamp01((p - 0.35) / 0.35);
+      const pText = clamp01((p - 0.55) / 0.35);
+      beat.style.setProperty("--p", String(p));
+      beat.style.setProperty("--p-photo-1", String(pPhoto1));
+      beat.style.setProperty("--p-photo-2", String(pPhoto2));
+      beat.style.setProperty("--p-text", String(pText));
+    }
+
+    // prefers-reduced-motion：跳过 rAF，所有 beat 直接显示完整 composed 帧。
     const prefersReduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     if (prefersReduced) {
-      beats.forEach((b) => b.classList.add("visible"));
+      beats.forEach((b) => writeProgress(b, 1));
       return;
     }
 
+    // 每个 beat 一份 tracker：rAF id + inView flag + 计算函数。
+    type Tracker = {
+      beat: HTMLElement;
+      rafId: number;
+      inView: boolean;
+    };
+    const trackers = new Map<HTMLElement, Tracker>();
+
+    function computeProgress(beat: HTMLElement): number {
+      // outer .poem-beat 高度 = scroll spacer；inner .poem-stage 是 sticky 100vh。
+      // 当 beat.top = 0（刚滚到 stage 顶）→ p=0
+      // 当 beat.bottom = vh（刚要离开 stage）→ p=1
+      // 总可滚距离 = beat.height - vh
+      const rect = beat.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const scrollable = beat.offsetHeight - vh;
+      if (scrollable <= 0) return 1; // beat 比 vh 还矮：直接给 final 帧
+      const scrolled = -rect.top; // 顶部滚出视口的距离
+      return clamp01(scrolled / scrollable);
+    }
+
+    function tick(beat: HTMLElement): void {
+      const t = trackers.get(beat);
+      if (!t) return;
+      t.rafId = 0;
+      if (!t.inView) return;
+      writeProgress(beat, computeProgress(beat));
+      t.rafId = window.requestAnimationFrame(() => tick(beat));
+    }
+
+    function ensureRunning(beat: HTMLElement): void {
+      const t = trackers.get(beat);
+      if (!t || t.rafId !== 0 || !t.inView) return;
+      t.rafId = window.requestAnimationFrame(() => tick(beat));
+    }
+
+    function stop(beat: HTMLElement): void {
+      const t = trackers.get(beat);
+      if (!t || t.rafId === 0) return;
+      window.cancelAnimationFrame(t.rafId);
+      t.rafId = 0;
+    }
+
+    // 单 IO 监听全部 beat；进视口 → tracker.inView=true → ensureRunning；
+    // 离视口 → tracker.inView=false → stop。多个 threshold 让边界更精细。
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("visible");
-            // 一次性触发，立即解绑（不会因为 hover / 反复滚动重复 transition）
-            io.unobserve(entry.target);
+          const beat = entry.target as HTMLElement;
+          const t = trackers.get(beat);
+          if (!t) continue;
+          t.inView = entry.isIntersecting;
+          if (t.inView) {
+            // 进入视口立刻先写一次（避免第一帧还显示初始 --p:0）
+            writeProgress(beat, computeProgress(beat));
+            ensureRunning(beat);
+          } else {
+            stop(beat);
+            // 离开视口写一次终态：在视口上方时 p=1（已滚过），在视口下方时 p=0（未到达）
+            // computeProgress 在两种情况下分别返回 1 / 0，符合预期，无需额外分支。
           }
         }
       },
       {
-        // 进入视口约 15% 后才触发，让用户先看到一点 beat 再淡入
-        rootMargin: "-15% 0px -15% 0px",
-        threshold: 0,
+        // 上下都给一点 margin，让 stage 进 / 出视口时有"准备帧"
+        rootMargin: "10% 0px 10% 0px",
+        threshold: [0, 0.05, 0.95, 1],
       },
     );
 
-    beats.forEach((b) => io.observe(b));
+    beats.forEach((beat) => {
+      trackers.set(beat, { beat, rafId: 0, inView: false });
+      io.observe(beat);
+    });
 
-    // 调试钩子：window.__storyPoem.list() 看哪些 beat 已 visible
+    // 调试钩子：window.__storyPoem.progress() / .list()
     (
       window as unknown as {
-        __storyPoem?: { list: () => string[] };
+        __storyPoem?: {
+          progress: () => Record<
+            string,
+            { p: number; p1: number; p2: number; pt: number }
+          >;
+          list: () => string[];
+        };
       }
     ).__storyPoem = {
+      progress: () => {
+        const out: Record<
+          string,
+          { p: number; p1: number; p2: number; pt: number }
+        > = {};
+        beats.forEach((b) => {
+          const id = b.dataset.beatId ?? "?";
+          const css = getComputedStyle(b);
+          out[id] = {
+            p: Number(css.getPropertyValue("--p")) || 0,
+            p1: Number(css.getPropertyValue("--p-photo-1")) || 0,
+            p2: Number(css.getPropertyValue("--p-photo-2")) || 0,
+            pt: Number(css.getPropertyValue("--p-text")) || 0,
+          };
+        });
+        return out;
+      },
       list: () =>
-        Array.from(document.querySelectorAll<HTMLElement>(".poem-beat.visible"))
+        Array.from(document.querySelectorAll<HTMLElement>(".poem-beat"))
           .map((e) => e.dataset.beatId ?? "?")
           .sort(),
     };
