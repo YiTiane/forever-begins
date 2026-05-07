@@ -48,6 +48,29 @@ export type BeatLayout =
 
 export type StoryLayoutMode = "compact" | "portrait" | "wide";
 
+/**
+ * v1.65（v1.64 audit P2-B 修）：textPlacement 让 solver 解"文字相对照片的 stage
+ * composition"，不只解 photo box 尺寸。CSS 用 [data-text-placement="..."] 决定
+ * 文字位置（下方 / 上方 / 文字-照片侧排 / overlay 浮起 / between 双图之间）。
+ *
+ * 当前各 layout 的 placement（v1.65 上线）：
+ *   - parallax-pair wide → "side-text-photo"（文字左 / 双图右）
+ *   - parallax-pair portrait → "between"（display:contents + order，文字夹在两图之间）
+ *   - diagonal-gaze wide → "overlay-center"（文字浮卡居中 + backdrop-blur）
+ *   - diagonal-gaze portrait → "between"
+ *   - radial-mask / anchor-single / overlap / reveal / wooden / pearl → "below"
+ *   - vignette → "overlay-bottom"（文字浮在夜色暗角图底部，营造亲密语境）
+ */
+export type TextPlacement =
+  | "below"
+  | "above"
+  | "between"
+  | "overlay-bottom"
+  | "overlay-top"
+  | "overlay-center"
+  | "side-text-photo"
+  | "side-photo-text";
+
 export interface PhotoSpec {
   /** width / height 比；e.g. 1.5 = 3:2 横图，0.667 = 2:3 竖图 */
   aspectRatio: number;
@@ -76,6 +99,21 @@ export interface SolverInput {
 
 /** key 形如 "--photo-w"；value 形如 "320px" / "1.5rem" / "1fr 1fr" */
 export type SolverOutput = Record<string, string>;
+
+/**
+ * v1.65：solver 返回值升级为 SolverResult，同时携带 CSS 变量与 data-* 属性。
+ *   - vars：调用方写到 element.style.setProperty
+ *   - dataAttrs：调用方写到 element.dataset（注意 dataset.X 对应 data-x）
+ *
+ * 旧的 SolverOutput (Record<string, string>) 只能给 CSS 变量；data-text-placement
+ * 这种"既要参与 CSS 选择器又要语义清晰"的属性必须走 dataset，故引入新封装。
+ */
+export interface SolverResult {
+  vars: SolverOutput;
+  dataAttrs?: {
+    textPlacement?: TextPlacement;
+  };
+}
 
 // ─── 几何常量 ───────────────────────────────────────────────────────
 /** stage 外侧 safe padding（避免内容贴到 sticky 视口边缘） */
@@ -124,12 +162,12 @@ function fitAspect(
 // ─── parallax-pair（beat 01 · snow_03 远 + snow_07 近）────────────
 // 视觉契约：text 在一侧（宽屏左 / 窄屏上），photos 在另一侧；photos 区内
 // far 上右、near 下左 错位重叠 → 单视口看完"远近构图"
-function solveParallaxPair(input: SolverInput): SolverOutput {
+function solveParallaxPair(input: SolverInput): SolverResult {
   const { vw, vh, photos } = input;
   const farPhoto = photos.find((p) => p.role === "far") ?? photos[0];
   const nearPhoto =
     photos.find((p) => p.role === "near") ?? photos[1] ?? photos[0];
-  if (!farPhoto || !nearPhoto) return {};
+  if (!farPhoto || !nearPhoto) return { vars: {} };
 
   const mode = getStoryLayoutMode(vw, vh);
   const isWide = mode === "wide";
@@ -137,15 +175,11 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
   const stageH = vh - STAGE_PAD_Y * 2;
 
   if (isWide) {
-    // 双列：text 列 + photos 列
     const textColW = clampPx(stageW * 0.4, 320, 540);
     const gap = Math.max(MIN_GAP, stageW * 0.04);
     const photosColW = stageW - textColW - gap;
-    // photos 区高度：vh 的 70%，但不超过自然 stage 内高
     const photosColH = Math.min(stageH * 0.95, vh * 0.7);
 
-    // 在 photosColW × photosColH 内，far/near 错位重叠
-    // far：右上 56% × aspect → 自动算高
     const farMaxW = photosColW * 0.55;
     const farMaxH = photosColH * 0.62;
     const [farW, farH] = fitAspect(farMaxW, farMaxH, farPhoto.aspectRatio);
@@ -155,19 +189,23 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
     const [nearW, nearH] = fitAspect(nearMaxW, nearMaxH, nearPhoto.aspectRatio);
 
     return {
-      "--stage-cols": `${textColW}px ${photosColW}px`,
-      "--stage-gap": `${gap}px`,
-      "--text-col-w": `${textColW}px`,
-      "--photos-col-w": `${photosColW}px`,
-      "--photos-col-h": `${photosColH}px`,
-      "--photo-far-w": `${farW}px`,
-      "--photo-far-h": `${farH}px`,
-      "--photo-near-w": `${nearW}px`,
-      "--photo-near-h": `${nearH}px`,
+      vars: {
+        "--stage-cols": `${textColW}px ${photosColW}px`,
+        "--stage-gap": `${gap}px`,
+        "--text-col-w": `${textColW}px`,
+        "--photos-col-w": `${photosColW}px`,
+        "--photos-col-h": `${photosColH}px`,
+        "--photo-far-w": `${farW}px`,
+        "--photo-far-h": `${farH}px`,
+        "--photo-near-w": `${nearW}px`,
+        "--photo-near-h": `${nearH}px`,
+      },
+      // 宽屏：双列 cinematic — 文字左 reading column，双图右 parallax stack
+      dataAttrs: { textPlacement: "side-text-photo" },
     };
   }
 
-  // portrait / compact：text + photos box 共同构成一帧；photos box 内仍保留远近错位。
+  // portrait / compact：text 夹在 far / near 之间；display:contents + order 流式
   const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
   const photosColW = stageW;
   const gap = mode === "compact" ? 18 : 22;
@@ -189,27 +227,30 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
   const [nearW, nearH] = fitAspect(nearMaxW, nearMaxH, nearPhoto.aspectRatio);
 
   return {
-    "--stage-cols": `1fr`,
-    "--stage-gap": `${gap}px`,
-    "--text-col-w": `${stageW}px`,
-    "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 560 : stageW)}px`,
-    "--photos-col-w": `${photosColW}px`,
-    "--photos-col-h": `${photosTotalH}px`,
-    "--photo-far-w": `${farW}px`,
-    "--photo-far-h": `${farH}px`,
-    "--photo-near-w": `${nearW}px`,
-    "--photo-near-h": `${nearH}px`,
+    vars: {
+      "--stage-cols": `1fr`,
+      "--stage-gap": `${gap}px`,
+      "--text-col-w": `${stageW}px`,
+      "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 560 : stageW)}px`,
+      "--photos-col-w": `${photosColW}px`,
+      "--photos-col-h": `${photosTotalH}px`,
+      "--photo-far-w": `${farW}px`,
+      "--photo-far-h": `${farH}px`,
+      "--photo-near-w": `${nearW}px`,
+      "--photo-near-h": `${nearH}px`,
+    },
+    dataAttrs: { textPlacement: "between" },
   };
 }
 
 // ─── diagonal-gaze（beat 02 · snow_14 左上 + snow_15 右下 + 文字居中）──
 // 视觉契约：左上 / 右下两人像 + 中间文字 backdrop-blur 浮起；单视口对视轴
-function solveDiagonalGaze(input: SolverInput): SolverOutput {
+function solveDiagonalGaze(input: SolverInput): SolverResult {
   const { vw, vh, photos } = input;
   const tlPhoto = photos.find((p) => p.role === "top-left") ?? photos[0];
   const brPhoto =
     photos.find((p) => p.role === "bottom-right") ?? photos[1] ?? photos[0];
-  if (!tlPhoto || !brPhoto) return {};
+  if (!tlPhoto || !brPhoto) return { vars: {} };
 
   const mode = getStoryLayoutMode(vw, vh);
   const isWide = mode === "wide";
@@ -217,26 +258,26 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
   const stageH = vh - STAGE_PAD_Y * 2;
 
   if (isWide) {
-    // 双图都是 portrait（aspect ≈ 0.667）；让两张占据 stage 30% 宽
-    // 但若 stage 矮（vh 较小）则按高度反推，避免 photo 撑高出 stage
     const photoMaxW = stageW * 0.3;
     const photoMaxH = stageH * 0.5;
     const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
     const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
-
-    // 文字浮卡：居中，宽不超过 stage 50%；最小 360 保可读
     const textW = clampPx(stageW * 0.5, 360, 540);
 
     return {
-      "--text-max-w": `${textW}px`,
-      "--photo-tl-w": `${tlW}px`,
-      "--photo-tl-h": `${tlH}px`,
-      "--photo-br-w": `${brW}px`,
-      "--photo-br-h": `${brH}px`,
+      vars: {
+        "--text-max-w": `${textW}px`,
+        "--photo-tl-w": `${tlW}px`,
+        "--photo-tl-h": `${tlH}px`,
+        "--photo-br-w": `${brW}px`,
+        "--photo-br-h": `${brH}px`,
+      },
+      // 宽屏：文字浮卡居中 + backdrop-blur，photos 角落对视
+      dataAttrs: { textPlacement: "overlay-center" },
     };
   }
 
-  // portrait / compact：保留 diagonal gaze，但压缩成一个竖屏可读的 stack frame。
+  // portrait / compact：tl photo / 文字 / br photo 三块流式堆叠
   const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
   const gap = mode === "compact" ? 18 : 22;
   const photosMaxH =
@@ -255,27 +296,28 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
   const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
 
   return {
-    "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 520 : stageW)}px`,
-    "--stage-gap": `${gap}px`,
-    "--photos-col-h": `${photosTotalH}px`,
-    "--photo-tl-w": `${tlW}px`,
-    "--photo-tl-h": `${tlH}px`,
-    "--photo-br-w": `${brW}px`,
-    "--photo-br-h": `${brH}px`,
+    vars: {
+      "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 520 : stageW)}px`,
+      "--stage-gap": `${gap}px`,
+      "--photos-col-h": `${photosTotalH}px`,
+      "--photo-tl-w": `${tlW}px`,
+      "--photo-tl-h": `${tlH}px`,
+      "--photo-br-w": `${brW}px`,
+      "--photo-br-h": `${brH}px`,
+    },
+    dataAttrs: { textPlacement: "between" },
   };
 }
 
 // ─── radial-mask（beat 03 · snow_05 居中柔焦）─────────────────────
-// 视觉契约：单图居中 + 文字下方；photo 在 stage 内紧凑居中
-function solveRadialMask(input: SolverInput): SolverOutput {
+function solveRadialMask(input: SolverInput): SolverResult {
   const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
-  if (!photo) return {};
+  if (!photo) return { vars: {} };
 
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
-  // v0.2: 优先用调用方实测的 .poem-text 高度；缺省时按 vh×0.18 保守估算
   const textReserveH = textHeight ?? clampPx(vh * 0.18, 110, 200);
   const gap = 24;
   const photoMaxW = Math.min(stageW * 0.85, 720);
@@ -283,19 +325,21 @@ function solveRadialMask(input: SolverInput): SolverOutput {
   const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
 
   return {
-    "--photo-w": `${photoW}px`,
-    "--photo-h": `${photoH}px`,
-    "--text-max-w": `${Math.min(photoW + 60, stageW)}px`,
-    "--stage-gap": `${gap}px`,
+    vars: {
+      "--photo-w": `${photoW}px`,
+      "--photo-h": `${photoH}px`,
+      "--text-max-w": `${Math.min(photoW + 60, stageW)}px`,
+      "--stage-gap": `${gap}px`,
+    },
+    dataAttrs: { textPlacement: "below" },
   };
 }
 
 // ─── anchor-single（beat 04 / 05 · 单图作锚点）─────────────────────
-// 视觉契约：单图小框 + 文字下方；photo 比 radial-mask 更小、更克制
-function solveAnchorSingle(input: SolverInput): SolverOutput {
+function solveAnchorSingle(input: SolverInput): SolverResult {
   const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
-  if (!photo) return {};
+  if (!photo) return { vars: {} };
 
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
@@ -307,10 +351,13 @@ function solveAnchorSingle(input: SolverInput): SolverOutput {
   const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
 
   return {
-    "--photo-w": `${photoW}px`,
-    "--photo-h": `${photoH}px`,
-    "--text-max-w": `${Math.min(photoW + 40, stageW)}px`,
-    "--stage-gap": `${gap}px`,
+    vars: {
+      "--photo-w": `${photoW}px`,
+      "--photo-h": `${photoH}px`,
+      "--text-max-w": `${Math.min(photoW + 40, stageW)}px`,
+      "--stage-gap": `${gap}px`,
+    },
+    dataAttrs: { textPlacement: "below" },
   };
 }
 
@@ -335,85 +382,118 @@ interface SinglePhotoOpts {
 function solveSinglePhoto(
   input: SolverInput,
   opts: SinglePhotoOpts,
-): SolverOutput {
+  textPlacement: TextPlacement,
+): SolverResult {
   const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
-  if (!photo) return {};
+  if (!photo) return { vars: {} };
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
-  const textReserveH =
-    textHeight ?? clampPx(vh * opts.textTopReserveFactor, 96, 200);
+  // overlay-bottom 时 photo 几乎占满 stage（text 浮在底部），不再扣减 textReserve
+  const isOverlay =
+    textPlacement === "overlay-bottom" ||
+    textPlacement === "overlay-top" ||
+    textPlacement === "overlay-center";
+  const textReserveH = isOverlay
+    ? 0
+    : (textHeight ?? clampPx(vh * opts.textTopReserveFactor, 96, 200));
   const photoMaxW = Math.min(stageW * opts.photoMaxWFactor, opts.photoMaxAbs);
-  const photoMaxH = stageH - textReserveH - opts.gap;
+  const photoMaxH = stageH - textReserveH - (isOverlay ? 0 : opts.gap);
   const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
   return {
-    "--photo-w": `${photoW}px`,
-    "--photo-h": `${photoH}px`,
-    "--text-max-w": `${Math.min(photoW + opts.textOverhang, stageW)}px`,
-    "--stage-gap": `${opts.gap}px`,
+    vars: {
+      "--photo-w": `${photoW}px`,
+      "--photo-h": `${photoH}px`,
+      "--text-max-w": `${Math.min(photoW + opts.textOverhang, stageW)}px`,
+      "--stage-gap": `${opts.gap}px`,
+    },
+    dataAttrs: { textPlacement },
   };
 }
 
-// ─── vignette（beat 06 · snow_08 夜色 + 文字三行 stagger）─────────────
-function solveVignette(input: SolverInput): SolverOutput {
-  return solveSinglePhoto(input, {
-    photoMaxWFactor: 0.85,
-    photoMaxAbs: 720,
-    gap: 28,
-    textTopReserveFactor: 0.2,
-    textOverhang: 60,
-  });
+// ─── vignette（beat 06 · snow_08 夜色）── 文字浮在底部夜色暗角上
+function solveVignette(input: SolverInput): SolverResult {
+  return solveSinglePhoto(
+    input,
+    {
+      // overlay-bottom：photo 占整 stage，photoMaxAbs 抬到 820 给夜色更大画面
+      photoMaxWFactor: 0.92,
+      photoMaxAbs: 820,
+      gap: 0,
+      textTopReserveFactor: 0,
+      textOverhang: 80,
+    },
+    "overlay-bottom",
+  );
 }
 
 // ─── overlap（beat 07 · snow_09 契合双层 ghost）────────────────────────
-function solveOverlap(input: SolverInput): SolverOutput {
-  return solveSinglePhoto(input, {
-    photoMaxWFactor: 0.78,
-    photoMaxAbs: 660,
-    gap: 24,
-    textTopReserveFactor: 0.14,
-    textOverhang: 60,
-  });
+function solveOverlap(input: SolverInput): SolverResult {
+  return solveSinglePhoto(
+    input,
+    {
+      photoMaxWFactor: 0.78,
+      photoMaxAbs: 660,
+      gap: 24,
+      textTopReserveFactor: 0.14,
+      textOverhang: 60,
+    },
+    "below",
+  );
 }
 
 // ─── reveal（beat 08 · snow_12 clip-path 展开）─────────────────────────
-function solveReveal(input: SolverInput): SolverOutput {
-  return solveSinglePhoto(input, {
-    photoMaxWFactor: 0.85,
-    photoMaxAbs: 720,
-    gap: 24,
-    textTopReserveFactor: 0.14,
-    textOverhang: 60,
-  });
+function solveReveal(input: SolverInput): SolverResult {
+  return solveSinglePhoto(
+    input,
+    {
+      photoMaxWFactor: 0.85,
+      photoMaxAbs: 720,
+      gap: 24,
+      textTopReserveFactor: 0.14,
+      textOverhang: 60,
+    },
+    "below",
+  );
 }
 
 // ─── wooden（beat 09 · Wooden_door_01 缝线包边）────────────────────────
-function solveWooden(input: SolverInput): SolverOutput {
-  return solveSinglePhoto(input, {
-    photoMaxWFactor: 0.7,
-    photoMaxAbs: 560,
-    gap: 26,
-    textTopReserveFactor: 0.22,
-    textOverhang: 40,
-  });
+function solveWooden(input: SolverInput): SolverResult {
+  return solveSinglePhoto(
+    input,
+    {
+      photoMaxWFactor: 0.7,
+      photoMaxAbs: 560,
+      gap: 26,
+      textTopReserveFactor: 0.22,
+      textOverhang: 40,
+    },
+    "below",
+  );
 }
 
 // ─── pearl（beat 10 · Pearl_03 高光横扫）───────────────────────────────
-function solvePearl(input: SolverInput): SolverOutput {
-  return solveSinglePhoto(input, {
-    photoMaxWFactor: 0.78,
-    photoMaxAbs: 640,
-    gap: 24,
-    textTopReserveFactor: 0.16,
-    textOverhang: 50,
-  });
+function solvePearl(input: SolverInput): SolverResult {
+  return solveSinglePhoto(
+    input,
+    {
+      photoMaxWFactor: 0.78,
+      photoMaxAbs: 640,
+      gap: 24,
+      textTopReserveFactor: 0.16,
+      textOverhang: 50,
+    },
+    "below",
+  );
 }
 
 /**
  * Solve a single beat's layout for the current viewport + photo specs.
- * 调用方：StoryPoemScroller 在 init / window.resize 时跑一次，把结果写到 `.poem-beat` 上。
+ * 调用方：StoryPoemScroller 在 init / window.resize 时跑一次：
+ *   - vars 写到 element.style.setProperty
+ *   - dataAttrs 写到 element.dataset（dataset.textPlacement → data-text-placement）
  */
-export function solveBeatLayout(input: SolverInput): SolverOutput {
+export function solveBeatLayout(input: SolverInput): SolverResult {
   switch (input.layout) {
     case "parallax-pair":
       return solveParallaxPair(input);

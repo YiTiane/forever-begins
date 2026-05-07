@@ -1,0 +1,233 @@
+---
+/**
+ * SnowAtmosphere.astro · § 2 vignette 重点舞台 · 雪粒子 canvas
+ *   v0.1（Phase 2 §2 batch 5 · v1.65 修 v1.64 audit P2-C）
+ *
+ * Snow_08 是 Story 序列中第一张"夜色 / 互道晚安"主题的氛围照；用户期望它有
+ * 额外的雪动画来强化重点。本组件给 vignette layout 在 photo 之上叠一层
+ * Canvas 雪粒子，慢慢从顶部飘落，营造夜色 + 雪夜的亲密语境。
+ *
+ * 设计：
+ *   - Canvas 2D 渲染 ~36 个粒子（粒子对象保留 x / y / radius / driftX / fallSpeed）
+ *   - 粒子下落速度 8-22 px/s，横向 sway ±0.4 px/帧，半径 0.8-2.4px，
+ *     opacity 0.4-0.85；越靠后景越透明 / 越慢，给前后景深感
+ *   - 粒子飘出底部 → 重投到顶部上方 (-radius-10) 让循环自然
+ *   - 粒子背景透明，blendMode = 'screen' 让雪在暗角夜色上自然发亮
+ *
+ * 性能 / 节能：
+ *   - IntersectionObserver 监 .poem-beat（vignette）：进视口启动 rAF；离视口
+ *     cancelAnimationFrame —— 不可见时 0 CPU
+ *   - visibilitychange 双层守卫：tab 切后台 → pause；切回 → resume
+ *   - resize 时按当前 canvas 实尺寸重新分布粒子（不重新创建对象）
+ *   - prefers-reduced-motion → 不绑事件、不跑 rAF；canvas 留空白（结构在但不画）
+ *
+ * a11y：
+ *   - canvas aria-hidden="true"（纯装饰，不进 AT 朗读）
+ *
+ * 调试：window.__snowAtmosphere?.particles() 看粒子状态
+ */
+---
+
+<canvas class="snow-atmosphere" aria-hidden="true"></canvas>
+
+<script>
+  (function setupSnowAtmosphere() {
+    if (typeof window === "undefined") return;
+
+    const canvases =
+      document.querySelectorAll<HTMLCanvasElement>(".snow-atmosphere");
+    if (canvases.length === 0) return;
+
+    const prefersReduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    interface Particle {
+      x: number;
+      y: number;
+      radius: number;
+      driftX: number;
+      fallSpeed: number;
+      opacity: number;
+    }
+
+    interface Stage {
+      canvas: HTMLCanvasElement;
+      ctx: CanvasRenderingContext2D;
+      particles: Particle[];
+      width: number;
+      height: number;
+      rafId: number;
+      inView: boolean;
+      tabVisible: boolean;
+      lastT: number;
+    }
+
+    const stages: Stage[] = [];
+
+    function createParticle(width: number, height: number): Particle {
+      // 半径 0.8-2.4，越大越前景（更不透明 + 更快下落）
+      const radius = 0.8 + Math.random() * 1.6;
+      const depth = (radius - 0.8) / 1.6; // 0 (远) - 1 (近)
+      return {
+        x: Math.random() * width,
+        y: Math.random() * height,
+        radius,
+        driftX: (Math.random() - 0.5) * 0.6, // ±0.3px/帧 横向 sway
+        fallSpeed: 8 + depth * 14, // 8-22 px/s
+        opacity: 0.4 + depth * 0.45, // 远 0.4 / 近 0.85
+      };
+    }
+
+    function syncCanvasSize(stage: Stage): void {
+      const rect = stage.canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // CSS 尺寸
+      stage.width = rect.width;
+      stage.height = rect.height;
+      // 实际像素分辨率
+      stage.canvas.width = Math.round(rect.width * dpr);
+      stage.canvas.height = Math.round(rect.height * dpr);
+      stage.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function ensureParticles(stage: Stage): void {
+      // 数量随面积 scale，但夹在 24-48 之间
+      const target = Math.round(
+        Math.min(48, Math.max(24, (stage.width * stage.height) / 12000)),
+      );
+      while (stage.particles.length < target) {
+        stage.particles.push(createParticle(stage.width, stage.height));
+      }
+      if (stage.particles.length > target) stage.particles.length = target;
+    }
+
+    function step(stage: Stage, dt: number): void {
+      const { ctx, width, height, particles } = stage;
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = "screen";
+      for (const p of particles) {
+        // 更新位置
+        p.y += p.fallSpeed * (dt / 1000);
+        p.x += p.driftX;
+        // 横向 sway 自然回弹
+        if (p.x < -2) p.x = width + 2;
+        else if (p.x > width + 2) p.x = -2;
+        // 飘出底部 → 重投到顶上
+        if (p.y > height + p.radius + 2) {
+          p.y = -p.radius - Math.random() * 30;
+          p.x = Math.random() * width;
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(245, 248, 255, ${p.opacity.toFixed(3)})`;
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    function tick(stage: Stage, t: number): void {
+      stage.rafId = 0;
+      if (!stage.inView || !stage.tabVisible) return;
+      const dt = Math.min(50, t - stage.lastT || 16); // clamp 50ms 防 tab 切回大跳
+      stage.lastT = t;
+      step(stage, dt);
+      stage.rafId = window.requestAnimationFrame((tt) => tick(stage, tt));
+    }
+
+    function start(stage: Stage): void {
+      if (stage.rafId !== 0) return;
+      stage.lastT = performance.now();
+      stage.rafId = window.requestAnimationFrame((t) => tick(stage, t));
+    }
+
+    function stop(stage: Stage): void {
+      if (stage.rafId === 0) return;
+      window.cancelAnimationFrame(stage.rafId);
+      stage.rafId = 0;
+    }
+
+    canvases.forEach((canvas) => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const stage: Stage = {
+        canvas,
+        ctx,
+        particles: [],
+        width: 0,
+        height: 0,
+        rafId: 0,
+        inView: false,
+        tabVisible: !document.hidden,
+        lastT: 0,
+      };
+      stages.push(stage);
+      syncCanvasSize(stage);
+      ensureParticles(stage);
+      // 静态首帧（reduced-motion 也能看到雪粒分布，只是不动）
+      step(stage, 16);
+    });
+
+    if (prefersReduced) {
+      // 不绑事件、不启动 rAF；保留首帧静态雪粒
+      return;
+    }
+
+    // 单 IO 监所有 vignette beat 是否在视口
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const stage = stages.find(
+            (s) => s.canvas.closest(".poem-beat") === entry.target,
+          );
+          if (!stage) continue;
+          stage.inView = entry.isIntersecting;
+          if (stage.inView && stage.tabVisible) start(stage);
+          else stop(stage);
+        }
+      },
+      { rootMargin: "10% 0px 10% 0px", threshold: [0, 0.05] },
+    );
+    stages.forEach((s) => {
+      const beat = s.canvas.closest(".poem-beat");
+      if (beat) io.observe(beat);
+    });
+
+    // visibilitychange：tab 切后台 → 全停；切回 → 视 IO 状态决定恢复
+    document.addEventListener("visibilitychange", () => {
+      const tabNow = !document.hidden;
+      stages.forEach((s) => {
+        s.tabVisible = tabNow;
+        if (tabNow && s.inView) start(s);
+        else stop(s);
+      });
+    });
+
+    // resize：重新同步 canvas 物理尺寸 + 调整粒子数量
+    window.addEventListener(
+      "resize",
+      () => {
+        stages.forEach((s) => {
+          syncCanvasSize(s);
+          ensureParticles(s);
+        });
+      },
+      { passive: true },
+    );
+
+    // 调试钩子
+    (
+      window as unknown as {
+        __snowAtmosphere?: {
+          particles: () => Array<{ count: number; size: [number, number] }>;
+        };
+      }
+    ).__snowAtmosphere = {
+      particles: () =>
+        stages.map((s) => ({
+          count: s.particles.length,
+          size: [s.width, s.height],
+        })),
+    };
+  })();
+</script>

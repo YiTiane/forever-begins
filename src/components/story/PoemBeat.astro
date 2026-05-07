@@ -75,6 +75,7 @@
  *   ✗ 鼠标 / 真 inertia parallax（CSS calc scroll-progress 已能表达"远近 settle"）
  */
 import CdnImage from "@/components/CdnImage.astro";
+import SnowAtmosphere from "@/components/story/SnowAtmosphere.astro";
 
 interface BeatPhoto {
   stem: string;
@@ -133,6 +134,18 @@ const { id, layout, lines, photos, firstAboveFold = false } = Astro.props;
 const headingId = `beat-${id}-heading`;
 const firstLine = lines[0] ?? "";
 
+/**
+ * v1.65 SSR 默认 data-text-placement（JS 接管 applyLayout 后仍会覆写）。
+ * 各 layout 的 portrait 模式默认 placement，匹配 solver 在 portrait 下的输出，
+ * 减轻 first-paint 与 hydrate 之间的 layout shift。
+ */
+function getSsrTextPlacement(l: BeatLayout | undefined): string {
+  if (l === "vignette") return "overlay-bottom";
+  if (l === "parallax-pair" || l === "diagonal-gaze") return "between";
+  return "below";
+}
+const ssrTextPlacement = getSsrTextPlacement(layout);
+
 // 给 solver 用的 aspect ratio：原始 width/height 算 w/h 比；缺失时按 layout 给 fallback
 function getAspectRatio(p: BeatPhoto): string {
   if (p.width && p.height) return (p.width / p.height).toFixed(4);
@@ -169,6 +182,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   data-beat-id={id}
   data-layout={layout}
   data-story-mode="portrait"
+  data-text-placement={ssrTextPlacement}
   aria-labelledby={headingId}
 >
   <div class="poem-stage">
@@ -205,6 +219,11 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
                 width={photo.width}
                 height={photo.height}
               />
+              {/* v1.65：vignette layout 在 photo 之上叠 SnowAtmosphere canvas
+                  雪粒子（仅 vignette role；canvas 自身 absolute inset:0 + IO 生命周期）*/}
+              {layout === "vignette" && photo.role === "vignette" && (
+                <SnowAtmosphere />
+              )}
             </figure>
           ))}
         </div>
@@ -693,22 +712,32 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
 
   /* ──────────────────────────────────────────────────────────────  */
-  /* layout = vignette · beat 06（夜色 vignette + 文字逐行亮起）        */
+  /* layout = vignette · beat 06（夜色重点舞台 + 文字 overlay-bottom）   */
   /*                                                                   */
-  /* 视觉：photo 边缘 radial darken 暗角；文字三行 stagger 借            */
-  /*   :nth-child + clamp 把 --p-text 拆成 3 段映射，                  */
-  /*   line 1 ↗ p-text 0..0.7，line 2 ↗ 0.2..0.85，line 3 ↗ 0.4..1。   */
+  /* v1.65（v1.64 audit P2-C 修）：从"暗角图 + 下方文字"升级为重点氛围  */
+  /* 舞台。变化：                                                      │
+  /*   1) text 从 below 改 overlay-bottom（solver 已输出 textPlacement） │
+  /*   2) photo 占整个 stage（solver photoMaxWFactor 0.85→0.92，         │
+  /*      photoMaxAbs 720→820；gap=0；text reserve=0）                  │
+  /*   3) 暗角更深：edge alpha 0.6→0.78；inner stop 30%→18%（夜色更收）  │
+  /*   4) text 浮卡：rgba(15,18,30,0.45) + backdrop-blur(6px) +         │
+  /*      白文字 (0.95) + padding/border-radius —— 婚礼站亲密夜读语境  │
+  /*   5) 三行 stagger 保留                                             │
+  /*   6) <SnowAtmosphere /> canvas 雪粒子由 PoemBeat 在 vignette layout │
+  /*      条件渲染（粒子动画 + IO 生命周期 + reduced-motion guard）     │
   /* ──────────────────────────────────────────────────────────────  */
   .poem-beat[data-layout="vignette"] .poem-stage {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--stage-gap);
+    gap: 0;
+    /* stage 自己已是 position: sticky / relative，containing block 给 text 用 */
   }
   .poem-beat[data-layout="vignette"] .poem-photos {
     width: var(--photo-w);
     max-width: var(--photo-w);
+    height: var(--photo-h);
     position: relative;
   }
   .poem-beat[data-layout="vignette"] .poem-photo[data-role="vignette"] {
@@ -718,6 +747,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     overflow: hidden;
     border-radius: var(--radius-sm);
   }
+  /* dark vignette 暗角（更深更收，强化夜色 / 重点感）*/
   .poem-beat[data-layout="vignette"] .poem-photo[data-role="vignette"]::after {
     content: "";
     position: absolute;
@@ -725,14 +755,30 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     pointer-events: none;
     background: radial-gradient(
       ellipse at center,
-      rgba(0, 0, 30, 0) 30%,
-      rgba(0, 0, 30, 0.35) 75%,
-      rgba(0, 0, 30, 0.6) 100%
+      rgba(8, 10, 24, 0) 18%,
+      rgba(8, 10, 24, 0.4) 72%,
+      rgba(8, 10, 24, 0.78) 100%
     );
     border-radius: var(--radius-sm);
+    z-index: 2;
   }
-  .poem-beat[data-layout="vignette"] .poem-text {
-    max-width: var(--text-max-w);
+  /* 文字浮卡：overlay-bottom + 半透明深底 + backdrop-blur + 白色文字 */
+  .poem-beat[data-layout="vignette"][data-text-placement="overlay-bottom"]
+    .poem-text {
+    position: absolute;
+    bottom: clamp(2rem, 6vh, 4rem);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(var(--text-max-w), 88%);
+    max-width: 92%;
+    text-align: center;
+    z-index: 4;
+    padding: 1rem 1.5rem;
+    background: rgba(15, 18, 30, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: rgba(255, 255, 255, 0.95);
+    border-radius: var(--radius-sm);
   }
   /* 文字三行 stagger：每行用不同的 --p-text 区段 */
   .poem-beat[data-layout="vignette"] .poem-text p {
@@ -746,6 +792,14 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
   .poem-beat[data-layout="vignette"] .poem-text p:nth-child(3) {
     opacity: clamp(0, calc((var(--p-text, 0) - 0.36) * 1.8), 1);
+  }
+  /* SnowAtmosphere canvas overlay 容器：z 在 photo 之上、暗角之下 */
+  .poem-beat[data-layout="vignette"] .snow-atmosphere {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+    border-radius: var(--radius-sm);
   }
 
   /* ──────────────────────────────────────────────────────────────  */

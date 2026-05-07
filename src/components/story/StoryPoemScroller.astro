@@ -392,7 +392,7 @@ const finaleLines = finaleBeat?.lines ?? [];
       const mode = getStoryLayoutMode(window.innerWidth, window.innerHeight);
       beat.dataset.storyMode = mode;
 
-      const vars = solveBeatLayout({
+      const result = solveBeatLayout({
         vw: window.innerWidth,
         vh: window.innerHeight,
         layout,
@@ -400,8 +400,13 @@ const finaleLines = finaleBeat?.lines ?? [];
         ...(textHeight !== undefined ? { textHeight } : {}),
         ...(textWidth !== undefined ? { textWidth } : {}),
       });
-      for (const [key, value] of Object.entries(vars)) {
+      // v1.65：solver 返回 { vars, dataAttrs }——vars 写 CSS 自定义属性，
+      // dataAttrs 写 data-* 属性（dataset.textPlacement → data-text-placement）。
+      for (const [key, value] of Object.entries(result.vars)) {
         beat.style.setProperty(key, value);
+      }
+      if (result.dataAttrs?.textPlacement) {
+        beat.dataset.textPlacement = result.dataAttrs.textPlacement;
       }
     }
 

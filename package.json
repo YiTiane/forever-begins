@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "prebuild": "tsx scripts/build-time-check.ts",
+    "prebuild": "tsx scripts/build-time-check.ts && tsx scripts/verify-story-photo-dimensions.ts",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
