@@ -1,8 +1,22 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.8 · v1.71 batch 7：globe beat 11 实接入）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.9 · v1.75 [N] CountUp + a11y 收口）
  *
- * v0.8 新增（v1.71）：
+ * v0.9 新增（v1.74-v1.75）：
+ *   - **§2.D beat 05 [N] 天 daysTogether CountUp 实接入**（v1.74）：
+ *     * 加 anchorDate = main.data.anchor_date 透传给 PoemBeat
+ *     * 新增独立 <script> IIFE：找所有 .days-together[data-days-anchor]，
+ *       client-time 重算 N（避访客在 build 之后访问 N 漂老），单 IO 入场
+ *       0 → N over 1.4s ease-out cubic（reduced-motion 钉终值），单次后
+ *       io.unobserve 不重复
+ *     * 与 src/lib/story/daysTogether.ts 解析时区一致（+08:00），与服务端
+ *       SSR 算法相同 → AT / 视觉看到的数字与 SSR 写入一致
+ *   - **a11y 收口**（v1.75 修 v1.74 audit P2）：visible CountUp span aria-hidden +
+ *     .sr-only sibling 拿稳定终值；CountUp 1.4s 内 60 帧不同的过渡值不再灌入
+ *     AT 朗读流（AT 只读一次准确终值）。脚本同步 sr-only sibling textContent
+ *     一次（client-time N），visible span 跑 IO 动画
+ *
+ * v0.8（v1.71）：§2.B GlobeDistanceScene 实接入
  *   - **§2.B GlobeDistanceScene 实接入**：v1.54 起 beats 11/12 占位注释明确
  *     "globe 留待 §2.B GlobeDistanceScene"。v1.71 batch 7 把 GlobeBeat.astro
  *     真正挂在 photo-poem 之后、end-cap 之前，渲染 .globe-beat#beat-11-heading
@@ -17,6 +31,8 @@
  * v0.7（v1.62）：批次扩展 maxBeats 4→10 / 5 套新 layout (vignette / overlap /
  *   reveal / wooden / pearl) solver + CSS / finale Pearl_04 priority high→auto /
  *   finale 文案从 schema 拉
+ *
+ * (v1.71 段落上方为 v0.8 起源，已收纳于上述 v0.9 段；保留以下历史段不再重复)
  *
  * v0.6（v1.61）新增：
  *   - **批次扩展**：`maxBeats` 默认 4 → 10，渲染全部 10 个 photo-poem beat
@@ -43,15 +59,17 @@
  *
  * v0.4 修 v1.56 审计 P2 #2 + P3：scroll-event driven 替代常驻 rAF tick；写头注释。
  *
- * 上层 wrapper（v1.71 现状）：从 src/content/story-poem/main.json 读 12 beats，
- * 渲染顺序：
+ * 上层 wrapper（v1.75 现状）：从 src/content/story-poem/main.json 读 12 beats +
+ * anchor_date，渲染顺序：
  *   1. photo-poem × maxBeats (默认 10 = 全部 photo-poem) → <PoemBeat>
+ *      含 [N] 占位的行（当前仅 beat 05）由 PoemBeat 拆 prefix / .days-together-wrap /
+ *      suffix；本 wrapper 通过 anchorDate prop 透传锚定日期
  *   2. globe (beat 11) → <GlobeBeat>（v1.71 起实接入；R3F 岛 client:visible
  *      懒 hydrate）
  *   3. <div class="story-end-cap">：Pearl_04 主海报 + finale.lines (临时收束，
  *      等 §2.C StarCarouselFinale 接入后取代)
  *
- * 运行机制（v1.71 现状）：
+ * 运行机制（v1.75 现状）：
  *   ✓ photo-poem beat：solver + applyLayout + scroll-progress choreography
  *     - wide 模式（≥900px 且 vw/vh ≥ 0.85）→ sticky 100vh cinematic stage
  *     - portrait 模式 → 自然纵向流式（释放 sticky）
@@ -60,15 +78,19 @@
  *       rAF flush 写 --p / --p-photo-1 / --p-photo-2 / --p-text
  *   ✓ globe beat (v1.71)：GlobeBeat 内部独立的 IO + scroll listener 自驱 progress；
  *     不参与本 wrapper 的 applyLayout / phase 变量管理（R3F 岛自治）
+ *   ✓ [N] 天 CountUp (v1.74-v1.75)：本 wrapper 第二个 <script> IIFE 单 IO 监
+ *     visible .days-together span，入场动画 0 → client-time N over 1.4s ease-out；
+ *     visible span aria-hidden + .sr-only sibling 拿稳定终值给 AT
  *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉) + "To be continued"
- *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat
- *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe 内部独立处理
+ *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat /
+ *     [N] 天 visible aria-hidden + sr-only stable
+ *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe Canvas frameloop
+ *     "demand" + 自旋 / 脉冲全停；[N] CountUp 钉终值不动画
  *
  * **NOT in current batch**（仍留 §2 后续刀）：
- *   ✗ §2.B GlobeDistanceScene v0.2：水彩贴图 / Bloom postprocessing / CountUp
- *     同步 / 3D <Html> 城市标签
+ *   ✗ §2.B GlobeDistanceScene v0.5+：水彩贴图 / Bloom postprocessing / 距离 CountUp
+ *     同步弧线 / 3D <Html> 城市标签
  *   ✗ §2.C StarCarouselFinale (beat 12) Shader Dissolve · end cap 仍是临时
- *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
  *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
@@ -80,11 +102,13 @@
  *     里的 from/to/distanceKm）
  *   - finaleLines = beats.find(kind==='finale').lines（临时给 end-cap 用，
  *     §2.C 接入后由 StarCarouselFinale 自取）
- *   - anchor_date 当前未消费（beat 05 [N] 天 CountUp 留独立小刀）
+ *   - anchorDate = main.data.anchor_date：透传给每个 PoemBeat；含 [N] 的行
+ *     在 PoemBeat 内部拆分渲染（v1.74 起）
  *
  * 调试：window.__storyPoem.progress() / .list() / .active() —— 看进度 / 全部 beat /
- *   当前 inView beats。globe beat 不进 __storyPoem（自治岛）；其内部状态走
- *   GlobeDistanceScene 自身的 dataset[data-progress]。
+ *   当前 inView beats。globe beat / [N] CountUp 不进 __storyPoem（各自自治）；
+ *   GlobeDistanceScene 状态走自身 dataset[data-progress]，[N] 状态走
+ *   .days-together textContent。
  */
 import { getCollection } from "astro:content";
 import CdnImage from "@/components/CdnImage.astro";
@@ -580,17 +604,26 @@ const anchorDate = main.data.anchor_date;
 <script>
   /**
    * v1.74 §2.D · `[N]` 天 daysTogether CountUp · 独立 IIFE
+   * v1.75 修 v1.74 audit P2：visible span aria-hidden + sr-only sibling 拿稳定终值
    *
-   * PoemBeat.astro 含 "[N]" 的行（当前仅 beat 05）会被 SSR 拆成
-   *   ...prefix...<span class="days-together" data-days-anchor="2019-01-27"
-   *                     aria-live="polite">{build-time-N}</span>...suffix...
+   * PoemBeat.astro 含 "[N]" 的行（当前仅 beat 05）会被 SSR 拆成：
+   *   ...prefix...
+   *   <span class="days-together-wrap">
+   *     <span class="days-together" data-days-anchor="2019-01-27"
+   *           aria-hidden="true">{build-time-N}</span>
+   *     <span class="sr-only" data-days-together-sr>{build-time-N}</span>
+   *   </span>
+   *   ...suffix...
    *
-   * 本脚本：
+   * 本脚本（v1.75）：
    *   1. 找到所有 .days-together[data-days-anchor]
-   *   2. 重新算 client-time 的 N（避访客在 build 之后访问导致 N 漂老）
-   *   3. 单 IO 监每个 span 是否进视口；进入时 CountUp 0 → N over ~1.4s ease-out
-   *      （reduced-motion 直接钉到 N，不动画）
-   *   4. 离开 / 重新进入：保持已写入的最终值（不重复触发动画）
+   *   2. 算 client-time 的 N（避访客在 build 之后访问导致 N 漂老）
+   *   3. **同一 wrap 下的 .sr-only sibling 立即写 client-time N**（不动画，AT
+   *      读到的是稳定终值，不会被 1.4s 内 60 帧不同的过渡值淹没——v1.74 audit
+   *      P2 的根因即"aria-live 在动画期间被反复刷")
+   *   4. visual span（aria-hidden）按 IO 入场启动 CountUp 0 → N over 1.4s
+   *      ease-out cubic（reduced-motion 钉到 N，跳过动画）
+   *   5. 单 IO 单次后 unobserve；离开 / 重新进入不重复
    *
    * 与 PoemBeat 的 [N] SSR 拆分约定耦合在 lib：parseAnchorDate("YYYY-MM-DD")
    * 等价于 `new Date("YYYY-MM-DDT00:00:00+08:00")`，与服务端同款时区，避免
@@ -618,7 +651,7 @@ const anchorDate = main.data.anchor_date;
       return Math.floor(diff / MS_PER_DAY);
     }
 
-    // 缓存每个 span 的目标值 + 是否已动画过
+    // 缓存每个 visual span 的目标值 + 是否已动画过
     const meta = new WeakMap<
       HTMLSpanElement,
       { target: number; animated: boolean }
@@ -628,16 +661,23 @@ const anchorDate = main.data.anchor_date;
       if (!iso) return;
       const target = daysBetween(parseAnchor(iso), new Date());
       meta.set(span, { target, animated: false });
-      // reduced-motion / 无 IO 支持 → 立即写最终值（不等入场）
+
+      // v1.75 a11y：sibling sr-only 立即写 client-time N（一次性，不动画）。
+      // .days-together-wrap 下找 [data-days-together-sr] sibling
+      const wrap = span.closest<HTMLElement>(".days-together-wrap");
+      const srSibling = wrap?.querySelector<HTMLElement>(
+        "[data-days-together-sr]",
+      );
+      if (srSibling) srSibling.textContent = String(target);
+
       if (prefersReduced) {
+        // reduced-motion：visual span 直接钉到终值，不进 IO 动画路径
         span.textContent = String(target);
         meta.set(span, { target, animated: true });
-      } else {
-        // 非 reduced：先把 SSR 写的 build-time 数字替换成 client-time 的最新
-        // 终值，CountUp 入场动画从 0 → target 期间会反复改写它；离开视口
-        // 后保持 target，不再动画（重复触发让人晃眼）
-        span.textContent = String(target);
       }
+      // 非 reduced：保留 SSR 写的 build-time 数字（visual span），CountUp 入场
+      // 时从 0 起跑到 target；entrant 之前看到的是 build-time N（≈ client-time N，
+      // 用户首次进入页面到滚到 beat 05 的间隔不足以让两者差超 1 天）
     });
 
     if (prefersReduced) return; // 全部已写终值，无需 IO

@@ -1,8 +1,22 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.4 · v1.70 wide diagonal-gaze 安全构图）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.5 · v1.74-v1.75 [N] 天 CountUp + a11y 收口）
  *
- * v1.4 新增（v1.70 修 v1.69 audit P2）：
+ * v1.5 新增（v1.74 §2.D 落地 / v1.75 修 v1.74 audit P2）：
+ *   - **beat 05 "[N] 天" 占位实时计算**：lines.map 检 "[N]"，含的行 SSR 拆成
+ *     prefix / .days-together-wrap / suffix。wrap 内：
+ *       * <span class="days-together" data-days-anchor=".." aria-hidden="true">
+ *         visible 数字（StoryPoemScroller 脚本 IO 入场后做 CountUp 0 → N）
+ *       * <span class="sr-only">stable client-time N（脚本一次性写）</span>
+ *     —— a11y：CountUp 1.4s 内 60 帧不同的过渡值不进 AT 朗读流（v1.75 修），
+ *     AT 只读一次 sr-only 的稳定终值
+ *   - 新增 anchorDate?: string prop（StoryPoemScroller 透传 main.data.anchor_date）；
+ *     SSR 阶段 await import src/lib/story/daysTogether 算 build-time N，写入
+ *     visible span 与 sr-only sibling（让无 JS 访客也看到合理数字）
+ *   - 新增 .days-together-wrap (display:inline) + .days-together (honey 色 +
+ *     tabular-nums + 1.18em + font-weight 400) CSS
+ *
+ * v1.4（v1.70 修 v1.69 audit P2）：
  *   - **wide diagonal-gaze beat 02 photo 不再被 sticky stage overflow 裁切**：
  *     原 4% 角落 inset + ±15% 入场 transform 在 1375×997 实测人像顶部 / 底部
  *     超出 stage ~33px，hash landing (#beat-02-heading) 看到上半人 / 下半人
@@ -97,7 +111,7 @@
  *
  * v0.2 修 v1.53 P2 #2：data-photo-count 从 .poem-beat 挪到 .poem-photos 让选择器命中。
  *
- * 落地范围（v1.68 收口标准）：
+ * 落地范围（v1.75 收口标准）：
  *   ✓ 9 套 data-layout 真正不同的空间组合 + per-photo 入场 settle（schema enum 全量上线）
  *   ✓ photo 尺寸 / 文字宽 / gap 全部由 solver 在 viewport 维度求解
  *   ✓ 5 种 textPlacement (below / between / overlay-bottom / overlay-center / overlay-top
@@ -108,13 +122,16 @@
  *   ✓ vignette beat 06 重点夜色舞台 + Canvas 雪粒子（mix-blend-mode: screen）
  *   ✓ mobile fallback (≤540) 把 overlay absolute text reset 回流式堆叠
  *   ✓ public hash anchor `#beat-XX-heading` 落到 .poem-beat composed frame 起点
- *   ✓ a11y：sr-only h3 aria-labelledby (内部 ariaHeadingId) + reduced-motion fallback
+ *   ✓ beat 05 [N] 天 daysTogether CountUp（v1.74 §2.D 实接入；visible aria-hidden +
+ *     sr-only stable + IO 入场 ease-out cubic 1.4s + reduced-motion 钉终值）
+ *   ✓ a11y：sr-only h3 aria-labelledby (内部 ariaHeadingId) + reduced-motion fallback +
+ *     [N] CountUp visible aria-hidden / sr-only sibling 拿稳定终值
  *   ✓ build-time CDN dimension gate (scripts/verify-story-photo-dimensions.ts)
  *
  * **NOT in this batch**（仍留 §2 后续刀）：
- *   ✗ globe (beat 11) → §2.B GlobeDistanceScene · 等 R3F + Three.js + 水彩贴图
+ *   ✗ §2.B GlobeDistanceScene v0.5+：水彩贴图 / Bloom postprocessing / 距离 CountUp
+ *     同步弧线 / 3D <Html> 城市标签（globe 已 v1.71 实接入，剩视觉精调）
  *   ✗ finale 完整版 (beat 12) → §2.C StarCarouselFinale Shader Dissolve
- *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
  *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（动效细化 motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  */
@@ -289,7 +306,15 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     <div class="poem-text cn-song">
       {
         lines.map((line) => {
-          // v1.74 [N] 占位：含 "[N]" 的行拆成 prefix / 数字 span / suffix；其它行原样
+          // v1.74 [N] 占位 + v1.75 a11y 修：含 "[N]" 的行拆成
+          //   prefix / .days-together-wrap (visual aria-hidden + sr-only 静态)
+          //   / suffix。其它行原样。
+          //
+          // a11y 设计（修 v1.74 audit P2）：visible span aria-hidden="true" →
+          // CountUp 动画期间不进 AT 读流，避免 1.4s 内向 AT 抛 60 个不同的
+          // 错误天数；sr-only sibling 拿稳定终值（SSR build-time，客户端脚本
+          // 入场前一次性改成 client-time），AT 在初次扫读这一行时读到一个
+          // 准确数字"2657 天"，不再是过渡值。
           const idx = line.indexOf("[N]");
           if (idx === -1 || initialDaysCount === null || !anchorDate) {
             return <p>{line}</p>;
@@ -299,12 +324,17 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
           return (
             <p>
               {prefix}
-              <span
-                class="days-together"
-                data-days-anchor={anchorDate}
-                aria-live="polite"
-              >
-                {initialDaysCount}
+              <span class="days-together-wrap">
+                <span
+                  class="days-together"
+                  data-days-anchor={anchorDate}
+                  aria-hidden="true"
+                >
+                  {initialDaysCount}
+                </span>
+                <span class="sr-only" data-days-together-sr>
+                  {initialDaysCount}
+                </span>
               </span>
               {suffix}
             </p>
@@ -506,7 +536,14 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
 
   /* v1.74 §2.D：[N] 天 实时数字（StoryPoemScroller 内 IIFE 的 IO + ease-out 动画
      会改写 textContent，从 0 计到当前 N）。视觉上比正文更厚重 + honey 色让
-     "携手 N 天"在低饱和 sage 背景里立得起来；inline 不破坏行高。 */
+     "携手 N 天"在低饱和 sage 背景里立得起来；inline 不破坏行高。
+     v1.75：visible span aria-hidden + .sr-only sibling 拿稳定终值给 AT，
+     避免 CountUp 1.4s 内 60 帧不同过渡值灌入 AT 朗读流。 */
+  .poem-text .days-together-wrap {
+    /* wrap 是包裹 visible 数字 + sr-only 字符串的 inline 容器，必须不引入额外
+       盒模型 / 行高变化 —— display:inline 让两个 span 都在父行内 */
+    display: inline;
+  }
   .poem-text .days-together {
     display: inline-block;
     color: var(--c-honey, #c69d4e);

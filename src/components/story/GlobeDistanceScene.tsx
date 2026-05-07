@@ -1,10 +1,16 @@
 /**
  * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.4 · v1.74 修 Three.Clock dep warn）
  *
- * v0.4 新增（v1.74 修 v1.73 audit P3）：
+ * v0.4 新增（v1.74 修 v1.73 audit P3，v1.75 收口契约）：
  *   - Endpoint useFrame 改用本地 elapsedRef 累加 dt，不再读 state.clock —— Three.js
  *     0.184 把 THREE.Clock 进 deprecated（推荐 THREE.Timer），原 .getElapsedTime()
- *     调用每帧都把 dep warning 写到 console；改本地 ref 累加完全绕开 → console 干净
+ *     调用每帧都把 dep warning 写到 console；改本地 ref 累加 → 本组件不再产生 warn
+ *   - **v1.75 claim 收紧**：本修复仅消除"业务代码调用 state.clock 触发的 dep warn"。
+ *     three / @react-three/fiber / drei 自身仍可能在 Canvas 内部 new THREE.Clock()，
+ *     hydrate 时浏览器 console 仍可能看到一次同款 dep warn —— 这不是本组件可
+ *     直接修的范围，而是 upstream 升级到使用 THREE.Timer 的事。等 R3F / drei
+ *     升新版后该 warn 自然消除；当前不做 console.warn 拦截 monkey-patch（会
+ *     连带屏蔽其它有用 warn）
  *
  * 视觉契约（DESIGN §2.B · v2.21）：
  *   - 球体：深墨绿/纸白低饱和；v0.x 暂用纯色 + 柔和环境光（2K 水彩贴图
