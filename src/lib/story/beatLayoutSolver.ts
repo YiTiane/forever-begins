@@ -258,11 +258,30 @@ function solveDiagonalGaze(input: SolverInput): SolverResult {
   const stageH = vh - STAGE_PAD_Y * 2;
 
   if (isWide) {
-    const photoMaxW = stageW * 0.3;
-    const photoMaxH = stageH * 0.5;
+    /**
+     * v0.6（v1.69 audit P2 修）：宽屏 diagonal-gaze 安全构图收紧。
+     * 原 photoMaxW=stageW*0.3 / photoMaxH=stageH*0.5 + 4% 角落 inset + ±15%
+     * 入场 transform 在 1375×997 实测两人像被 sticky stage overflow:hidden
+     * 裁切 33px（vertical clipping at p=0）。photos at top:4% with translate
+     * (-15%,-15%) → top edge = stageH*0.04 - photoH*0.15 = 37 - 70 = -33px。
+     *
+     * 改：photoMaxW 0.3→0.28 / photoMaxH 0.5→0.42 收紧人像最大盒；CSS 把
+     * 角落 inset 4%→6% / transform ±15%→±8%，三者合一保证 p=0 时 photo 顶部
+     * （top-left）/底部（bottom-right）边缘距 stage 边缘 ≥ 25px，不再被 sticky
+     * stage overflow:hidden 裁切。textW 540→520 给 photo 与文字浮卡留 ≥20px
+     * 横向呼吸；center 文字浮卡仍 z-index:2 在 photo 之上（设计契约保留）。
+     *
+     * 校验区间（手算几个常见 viewport，photoH/2 = stageH*0.21；transformY
+     * = photoH*0.08）：
+     *   1366×768: stageH=704, photoH=296, top@p=0 = 704*0.06 - 296*0.08 ≈ 19px ✓
+     *   1375×997: stageH=933, photoH=392, top@p=0 = 933*0.06 - 392*0.08 ≈ 25px ✓
+     *   1920×1080: stageH=1016, photoH=427, top@p=0 ≈ 27px ✓
+     */
+    const photoMaxW = stageW * 0.28;
+    const photoMaxH = stageH * 0.42;
     const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
     const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
-    const textW = clampPx(stageW * 0.5, 360, 540);
+    const textW = clampPx(stageW * 0.42, 360, 520);
 
     return {
       vars: {

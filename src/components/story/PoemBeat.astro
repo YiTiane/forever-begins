@@ -1,6 +1,15 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.3 · v1.69 vignette hash landing 锚句可见）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.4 · v1.70 wide diagonal-gaze 安全构图）
+ *
+ * v1.4 新增（v1.70 修 v1.69 audit P2）：
+ *   - **wide diagonal-gaze beat 02 photo 不再被 sticky stage overflow 裁切**：
+ *     原 4% 角落 inset + ±15% 入场 transform 在 1375×997 实测人像顶部 / 底部
+ *     超出 stage ~33px，hash landing (#beat-02-heading) 看到上半人 / 下半人
+ *     被切。改：solver photoMaxH 0.5→0.42 / photoMaxW 0.3→0.28（人像盒收紧
+ *     ~16%）、textW 540→520（与人像横向呼吸 ≥20px）、CSS 角落 inset 4%→6%、
+ *     transform ±15%→±8%。手算覆盖 1366×768 / 1375×997 / 1920×1080 三档
+ *     宽屏：p=0 时 photo 边缘距 stage 边缘 ≥ 19/25/27px，p=0/p=1 都不再裁切。
  *
  * v1.3 新增（v1.69 修 v1.68 audit P2）：
  *   - **vignette 文字 stagger：第 1 行 = 锚句 (opacity:1 不接 --p-text gate)，
@@ -684,24 +693,31 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     gap: 0;
     z-index: 1;
   }
+  /* v1.70 修 v1.69 audit P2：宽屏 diagonal-gaze photo 安全构图。
+     原 4% 角落 inset + ±15% 入场 transform 在 sticky stage overflow:hidden
+     下让 hash landing (p=0) 时两人像被裁掉 ~33px（top-left 顶部超出 stage 顶
+     边、bottom-right 底部超出 stage 底边）。改 6% 角落 inset + ±8% transform
+     —— 数值已在 solver photoMaxH=stageH*0.42 一起验算过，常见宽屏（1366×768
+     / 1375×997 / 1920×1080）上 p=0 时 photo 边缘距 stage 边缘 ≥ 19/25/27px。
+     入场 settle 仍可见但更克制；composed frame 在 p=0 / p=1 都不再裁切。 */
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="top-left"] {
     position: absolute;
-    top: 4%;
-    left: 4%;
+    top: 6%;
+    left: 6%;
     transform: translate(
-      calc((1 - var(--p, 0)) * -15%),
-      calc((1 - var(--p, 0)) * -15%)
+      calc((1 - var(--p, 0)) * -8%),
+      calc((1 - var(--p, 0)) * -8%)
     );
   }
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="bottom-right"] {
     position: absolute;
-    bottom: 4%;
-    right: 4%;
+    bottom: 6%;
+    right: 6%;
     transform: translate(
-      calc((1 - var(--p, 0)) * 15%),
-      calc((1 - var(--p, 0)) * 15%)
+      calc((1 - var(--p, 0)) * 8%),
+      calc((1 - var(--p, 0)) * 8%)
     );
   }
 
