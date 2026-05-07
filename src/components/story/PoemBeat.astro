@@ -1,6 +1,14 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.2 · v1.68 hash anchor 上移 + textPlacement 全量收口）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.3 · v1.69 vignette hash landing 锚句可见）
+ *
+ * v1.3 新增（v1.69 修 v1.68 audit P2）：
+ *   - **vignette 文字 stagger：第 1 行 = 锚句 (opacity:1 不接 --p-text gate)，
+ *     第 2/3 行保留 stagger fade-in**：v1.62 引入的"三行同时 gate 0→1"在 hash
+ *     深链 (#beat-06-heading) 落到 .poem-beat 顶端时 --p-text≈0，看到的是
+ *     "照片 + 暗角 + 空白深色卡"，违反公开 deep-link 应是 composed frame
+ *     的契约。第 1 行始终可见 → hash landing 必有"照片 + 暗角 + 首句诗"
+ *     的可读导演帧；2/3 行 stagger 仍保留（正常滚动入场仍是逐行展开的电影感）。
  *
  * v1.2 新增（v1.68 修 v1.67 audit P2）：
  *   - **公开 hash 锚点 `#beat-XX-heading` 从 sr-only h3 上移到 .poem-beat 外层**：
@@ -830,12 +838,19 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     color: rgba(255, 255, 255, 0.95);
     border-radius: var(--radius-sm);
   }
-  /* 文字三行 stagger：每行用不同的 --p-text 区段 */
+  /* 文字 stagger（v1.69 修 v1.68 audit P2 hash landing）：
+     第 1 行 = 锚句 (anchor line)，opacity:1 不接 --p-text gate；
+     第 2/3 行 = stagger fade-in，按 --p-text 区段渐显。
+     —— 哈希深链 (#beat-06-heading) 落到 .poem-beat 顶端时 --p-text≈0；
+     原方案三行同时 gate 0→1，hash landing 看到的是"照片 + 空白深色卡"，
+     违反公开 deep-link 应是 composed frame 的契约。第 1 行始终可见 →
+     hash landing 必有"照片 + 暗角 + 首句诗"的可读导演帧；2/3 行 stagger
+     仍保留（正常滚动入场时仍是逐行展开的电影感）。 */
   .poem-beat[data-layout="vignette"] .poem-text p {
     transition: opacity 80ms linear;
   }
   .poem-beat[data-layout="vignette"] .poem-text p:nth-child(1) {
-    opacity: clamp(0, calc(var(--p-text, 0) * 1.4), 1);
+    opacity: 1;
   }
   .poem-beat[data-layout="vignette"] .poem-text p:nth-child(2) {
     opacity: clamp(0, calc((var(--p-text, 0) - 0.18) * 1.6), 1);

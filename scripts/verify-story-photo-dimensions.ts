@@ -1,6 +1,8 @@
 /**
  * verify-story-photo-dimensions.ts · § 2 Story photo 尺寸合约 build-time gate
- *   v0.1（Phase 2 §2 batch 5 · v1.65 修 v1.64 audit P2-A）
+ *   v0.4（Phase 2 §2 batch 6 · v1.69 收 v1.68 audit P3 头注释收口 ·
+ *        v1.65 起 v0.1 → v1.66 dual-CDN v0.2 → v1.67 first-success-wins v0.3 →
+ *        v1.68 abort losers v0.4；本次只更新顶部契约描述，逻辑不变）
  *
  * 动机：v1.63 audit 实测 main.json 把 5 张实际 1600×2400 (portrait) 竖幅人像
  * 错标成 3000×2000 (landscape)，solver 据此求横幅 box，cover 模式裁掉人物主体。
@@ -8,14 +10,29 @@
  * schema (zod) 只校验"正整数"，无法和 CDN 真实派生品比对。同类事故仍可能再次
  * 静默进入页面（新加 photo / 误改尺寸）。
  *
- * 本脚本作为 prebuild gate：
+ * 本脚本作为 prebuild gate（**dual-CDN first-valid + abort losers** 契约）：
  *   1. 读 src/content/story-poem/main.json
- *   2. 对每张 photo，构造 CDN URL `${primary}/jpg/${stem}-${PROBE_W}.jpg`
- *   3. 下载图片，从 JPEG SOF 头读真实像素 (width × height)
- *   4. 比对 main.json width/height 的 aspect 与 CDN 1600 派生品 aspect
- *      - 容差 ±2% 给 sharp resize 的 round 误差
- *      - 任何 photo aspect 不匹配 → 列错误并 exit(1)
- *   5. 全部通过 → "✓ Story photo dimensions match CDN"
+ *   2. 对每张 photo 同时构造 primary (jsDelivr) 与 backup (Statically) 两个
+ *      CDN URL：`cdnUrl(stem, target, PROBE_W, "primary"|"backup")`
+ *   3. 在 probeOne 内对 candidates 并行 race：每个 attempt 跑
+ *      tryOne(cdn, url, signal) = fetchWithTimeout(url, signal)
+ *        → JPEG SOF 解析 (width × height)
+ *        → 比对 cdnAspect 与 main.json aspect（relErr ≤ ±2% 容差，覆盖 sharp
+ *          resize round 误差）
+ *      任一步失败该 attempt 即视为失败，不污染另一侧。
+ *   4. **Promise.any 首胜即返回**：第一个 fetch + parse + aspect 都通过的
+ *      attempt 立即 resolve；返回前调 ctrls.forEach(c => c.abort()) 取消
+ *      所有未完结的输者 fetch（不再挂到自己的 5s timeout）；全失败 →
+ *      AggregateError，attempts 收集的细节拼综合错误抛出。
+ *   5. 全部 12 张通过 → "✓ 12 张 Story photo 与 CDN 1600px 派生品 aspect 一致"
+ *
+ * 设计为什么 dual-CDN：v1.66 audit 发现 jsDelivr 偶发缓存 stale 派生品，单 CDN
+ * gate 会让 build 误 fail；备 CDN (Statically) 给区域性 / 缓存抖动留兜底。
+ *
+ * 设计为什么首胜 + abort：v1.67 audit 发现 Promise.all 等两侧拖慢 build；
+ * Promise.any 让快侧先返回。v1.68 audit 进一步发现输者仍跑到 5s timeout
+ * 占带宽，v0.4 fetchWithTimeout 接 externalSignal，首胜后 ctrls.abort()
+ * 立即取消。
  *
  * 跳过：本地调试可 `SKIP_STORY_PHOTO_CHECK=1 pnpm build`；CI 永不传该 env。
  *
