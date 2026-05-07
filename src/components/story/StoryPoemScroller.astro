@@ -1,6 +1,13 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.4 · v1.57 scroll-event driven + 头注释收口）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.5 · v1.59 接入 layout solver）
+ *
+ * v0.5 新增（v1.59 P2 #1+#2 修）：接入 src/lib/story/beatLayoutSolver.ts。
+ *   v1.58 之前 PoemBeat 的 4 套 layout 用 magic % / clamp + 媒体查询断点硬编码 photo 宽 /
+ *   文字最大宽 / gap，结果窄屏 / 小平板纵向几乎必崩（市场视口矩阵 360-820px portrait
+ *   多档都报失败：空屏 / 文字图距离失衡 / radial 单图脱顶）。v0.5 让 init / window.resize
+ *   时跑一次 solver，把 viewport × layout × photo aspectRatio 求出的尺寸 / gap 写到 beat
+ *   元素的 CSS 自定义属性上；CSS 只消费变量。layout 不再依赖断点凑型。
  *
  * v0.4 修 v1.56 审计 P2 #2 + P3：
  *   - **P2 #2（rAF 常驻空跑）**：v1.56 / v0.3 inView 时每帧
@@ -147,7 +154,19 @@ const photoPoemBeats = main.data.beats
 </style>
 
 <script>
+  import {
+    solveBeatLayout,
+    type BeatLayout,
+    type PhotoSpec,
+  } from "@/lib/story/beatLayoutSolver";
+
   /*
+   * v1.59（v1.58 P2 #1+#2 修）· 接入 constraint-based layout solver
+   *
+   *   v1.58 之前 PoemBeat 的 4 套 layout 用 magic % / clamp + 媒体查询断点硬编码 photo
+   *   宽 / 文字宽 / gap，窄屏几乎必崩。v1.59 在 init / window.resize 时跑一次 solver
+   *   `solveBeatLayout(...)`，求出 4-12 个 CSS 自定义属性写到 .poem-beat 上，CSS 只消费。
+   *
    * v1.57（v1.56 P2 #2 修）· scroll-event driven · idle 0 CPU
    *
    *   v1.56 用"inView 时每帧 rAF tick"驱动 scroll-progress，访客在 stage 上停下来读
@@ -204,7 +223,43 @@ const photoPoemBeats = main.data.beats
       return clamp01(scrolled / scrollable);
     }
 
+    /**
+     * v1.59 layout solver：把每个 beat 当前 viewport 下的 photo 尺寸 / gap / 文字宽
+     * 求出来写到 .poem-beat 的 CSS 自定义属性上。CSS 只消费变量，不再写 magic %。
+     * 仅在 init / window.resize 时跑（开销不敏感）；scroll 期间只更新 phase 变量。
+     */
+    function applyLayout(beat: HTMLElement): void {
+      const layout = beat.dataset.layout as BeatLayout | undefined;
+      if (!layout) return;
+      const photoEls = Array.from(
+        beat.querySelectorAll<HTMLElement>(".poem-photo"),
+      );
+      // 没照片的 beat（globe / finale）不渲染 PoemBeat；理论 unreachable
+      if (photoEls.length === 0) return;
+      const photos: PhotoSpec[] = photoEls.map((el) => ({
+        aspectRatio:
+          parseFloat(el.dataset.aspectRatio ?? "") ||
+          (el.dataset.role === "top-left" || el.dataset.role === "bottom-right"
+            ? 0.6667
+            : 1.5),
+        role: el.dataset.role ?? "",
+      }));
+      const vars = solveBeatLayout({
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        layout,
+        photos,
+      });
+      for (const [key, value] of Object.entries(vars)) {
+        beat.style.setProperty(key, value);
+      }
+    }
+
+    // 初始一次：page load 后立刻给每个 beat 算一遍 layout 变量
+    beats.forEach(applyLayout);
+
     // prefers-reduced-motion：写终态后退出；不绑事件、不跑 rAF。
+    // （solver 已经在上面跑过了，layout 尺寸已写到位）
     const prefersReduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -258,7 +313,11 @@ const photoPoemBeats = main.data.beats
     // scroll / resize 事件驱动 scheduleUpdate：访客滚动 / 调整窗口才触发 rAF。
     // 滚动停 → 没有事件 → 没有 rAF 调度 → 0 CPU（与 §0 Parallax / §1 Countdown 同策略）。
     window.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
+    // resize 上还需要重跑 layout solver（viewport 变了，photo / gap 尺寸也要重算）。
+    window.addEventListener("resize", () => {
+      beats.forEach(applyLayout);
+      scheduleUpdate();
+    });
 
     // ResizeObserver：图片懒加载完成 / 字体回流改变 .poem-beat offsetHeight 时
     // computeProgress 的分母会变，scrolled 也可能漂；用 RO 兜一道，保证布局 shift

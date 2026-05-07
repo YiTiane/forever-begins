@@ -1,112 +1,52 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.6 · v1.58 tablet 断点 + stage exit fade）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.7 · v1.59 constraint-based layout）
  *
- * v0.6 修 v1.57 审计两处视觉 P2：
- *   - **P2 #3（541-719px tablet 断点缺失）**：v1.57 把 parallax-pair / diagonal-gaze
- *     的 layout CSS 用 `@media (min-width: 720px)` 守门，而 mobile fallback 用
- *     `@media (max-width: 540px)`。541-719px 这段 portrait/tablet 视口 既不进 mobile
- *     堆叠也不进 desktop 真布局，回落到通用单列 grid → photos 列没高度、absolute 子元素
- *     脱顶，构图碎掉。v0.6 把 desktop 守门下沉到 `@media (min-width: 541px)`，无中间
- *     gap：≤ 540 mobile 单列；≥ 541 layout-aware desktop。
- *   - **P2 #4（beat 跨转时 broken transition frames）**：sticky beat 释放钉位后、下一个
- *     beat sticky 接管前，视口会同时显示"半截上一段 + 半截下一段"。v0.6 在 `.poem-stage`
- *     上加 exit-fade：`opacity: clamp(0, calc((1 - --p) * 10), 1)` —— --p 0..0.9 期间 ≥ 1
- *     被 clamp 保持 1（满帧可见），0.9..1 期间线性降到 0。sticky 释放那一刻本 beat 已
- *     隐形，下一 beat 以"干净视口"接管。配 will-change: opacity 走 GPU 合成。
+ * v0.7 修 v1.58 审计两处 P2（窄屏 / 小平板纵向构图碎掉 + exit-fade 反而留空白）：
  *
- * v0.5 修 v1.56 审计 P2 #1（"sticky stage 仍产生 broken visual frames：text 跟 photo 被
- *      grid align-self start/end 拆到 100vh 两端"）：
+ *   v1.58 之前 layout 用「magic % + clamp + 媒体查询断点」硬编码，照片宽 / 文字宽 / gap
+ *   全是凑出来的；窄屏几乎必崩。v1.59 把这套替换成 src/lib/story/beatLayoutSolver.ts
+ *   的 **constraint-based solver**：
+ *     - 输入：viewport(vw,vh) × layout 类型 × photo aspectRatio[]
+ *     - 输出：CSS 自定义属性（--photo-w / --photo-h / --text-max-w / --stage-gap /
+ *       --stage-cols 等）
+ *     - StoryPoemScroller 在 init / window.resize 时跑一次 solver，写到 `.poem-beat`
+ *       上；CSS 只负责 `width: var(--photo-w)` / `gap: var(--stage-gap)` 这种消费工作
+ *     - 滚动 progress（--p / --p-photo-1/2 / --p-text）继续每帧 rAF flush，互不干扰
  *
- *   v0.4 的 radial-mask / anchor-single 用 `grid-template-rows: 1fr auto` + 一边
- *   `align-self: start`、另一边 `align-self: end`，结果 stage 顶部和中间出现大片空白，
- *   text 与 photo 不在同一画面里；diagonal-gaze / parallax-pair 又把 text/photo 的
- *   `opacity` 绑到 `--p-text` / `--p-photo-1/2`，访客在中段进度时可能看到 stage 内只有
- *   照片在场、文字 opacity 还是 0 的"残缺帧"。
+ *   同时 v1.59 也修 v1.58 P2 #4（exit-fade 反而出现整屏空白）：
+ *     - 收紧每个 beat 的 min-height，把 release zone 从 v1.58 的 ~40-140vh 压到 10-30vh
+ *       （sticky 100vh + 短 release）；自然滚动跨过这点的时间 ≪ 一秒，肉眼察觉不到
+ *     - 删掉 v1.58 的 `.poem-stage` exit-fade —— 既然 release zone 极短，让两个 beat 在
+ *       这 10-30vh 自然重叠比强行 fade 出空白更合理；用户审计具体说明的"空白屏"由此修复
  *
- *   v0.5 关键原则改为：
- *     - 文字 / 照片 baseline `opacity: 1` —— **始终可见**，不再 gate 在 progress 后段才
- *       fade in。任意停留点都看到 text + photo 同画面。
- *     - 各 layout 的 stage 用 `flex column` 或 `grid` align-content: center，让 text +
- *       photos **紧凑居中堆叠**，二者贴近留白；不让任何一方靠到 100vh 视口边缘。
- *     - parallax-pair 把 photos 列卡死在 `min(70vh, 540px)`，确保 absolute 子元素始终
- *       在 box 内闭合；text 列 `align-self: center` 与 photos 列同高对齐。
- *     - 入场感由 transform / scale / mask 等"位置 / 形态"层小幅 settle 表达，每帧
- *       都看得到完整内容，只是"还没完全归位"。
+ *   每张 photo 通过 data-aspect-ratio 暴露 width/height ratio 给 solver；缺失时 solver
+ *   会用合理 fallback。
  *
- * v0.4 修 v1.55 审计 P2 #1（"diagonal gaze 不是稳定的 story frame · 滚动会切碎构图"）+
- *      P2 #2（"动画仍是 one-shot reveal，不是 scroll-driven choreography"）：
+ * v0.6 修 v1.57 审计 P2 #3+#4：541-719px 断点缺口下沉到 541px；.poem-stage 加 exit-fade
+ *   防 beat 跨转时半截上下两段并存。v1.59 后断点逻辑被 solver 接管，exit-fade 已删除。
  *
- *   v0.3 把每个 beat 渲成 "min-height: 110-120vh 的普通流式 section + 一次 IO 触发 .visible
- *   后 CSS transition 入场"。在窄滚动窗口里，访客很容易停在"只看到照片层、文字滚出视口"
- *   的不完整帧；diagonal-gaze 的"左上 + 右下 + 文字居中" 合像也无法在单视口内成立。
- *   这是分散排版 + 一次性入场，不是被导演过的长卷叙事。
+ * v0.5 修 v1.56 审计 P2 #1：v1.56 的 grid 1fr/auto + align-self start/end 把 text 与 photo
+ *   拆到 100vh 两端的"残缺帧"问题，全部 4 套 layout 重写为 baseline opacity:1 + 紧凑居中堆叠。
  *
- *   v0.4 引入 **cinematic stage** 架构：
- *     - `<section class="poem-beat">` 外层是 **scroll spacer**（min-height 200vh / 240vh /
- *       180vh / 160vh 按 layout 配），它的高度决定本 beat 的滚动时长
- *     - `<div class="poem-stage">` 内层是 **`position: sticky; top: 0; height: 100vh`** 的舞台，
- *       用户滚到 beat 顶时舞台被钉住、整个 100vh 视口都给本 beat 用，直到 beat 滚完才解钉
- *     - JS 在 StoryPoemScroller 里给每个 in-view 的 beat 跑 rAF + IntersectionObserver，
- *       计算"beat 已滚动多少 / 总可滚动量"作为 `--p`（0..1），再衍生
- *       `--p-photo-1` / `--p-photo-2` / `--p-text` 三个分阶段变量
- *     - CSS 完全用 `calc(var(--p))` 表达 transform / mask-radius / opacity / filter，
- *       没有 transition —— 每帧由 rAF 重写变量，CSS 的 calc 即时反映出位置/形态变化，
- *       这就是真正的 "scroll-progress driven choreography"
+ * v0.4 修 v1.55 审计 P2 #1+#2：cinematic stage 架构（外层 scroll spacer + 内层 100vh sticky）。
  *
- *   每套 layout 的导演表（DESIGN §2.A 行 770-783）：
- *
- *     - **parallax-pair**（beat 01）：
- *       视觉契约：两图远近重叠 + 文字在文字列；停留在 stage 上能完整看到"一远一近 + 文字"
- *       choreography（--p 0→1）：far(snow_03) 上右 56% 从 translateY(-25%) settle 到 0；
- *         near(snow_07) 下左 64% 从 translateY(+25%) settle 到 0；文字 opacity --p-text
- *
- *     - **diagonal-gaze**（beat 02）：
- *       视觉契约：左上人像 + 右下人像 + 中间文字 backdrop-blur 浮起 → 单一对视画面
- *       choreography（分 3 阶段）：
- *         · phase-1（--p 0→0.35 → --p-photo-1 0→1）：top-left(snow_14) 从 translate(-30%, -30%)
- *           opacity 0 滑入 corner 落定 opacity 1
- *         · phase-2（--p 0.35→0.7 → --p-photo-2 0→1）：bottom-right(snow_15) 从 translate(+30%, +30%)
- *           opacity 0 滑入 corner 落定 opacity 1
- *         · phase-3（--p 0.55→0.9 → --p-text 0→1）：文字从中心 opacity 0 浮起到 1
- *
- *     - **radial-mask**（beat 03）：
- *       视觉契约：单图居中边缘晕散 + 文字下方
- *       choreography：
- *         · 图：mask-image radial-gradient inner 30%→55% / outer 60%→95% 同步扩散；
- *           scale 1.08→1.0；filter saturate 0.85→1
- *         · 文字（--p-text 在 --p ≥ 0.4 后生效）：opacity 0→1 渐入下方
- *
- *     - **anchor-single**（beat 04 / 也用于 beat 05）：
- *       视觉契约：单图小框居中 + 文字定格
- *       choreography：图 scale 0.92→1.0 + opacity 0→1（--p 0→0.5）；
- *         文字 opacity 0→1（--p 0.4→0.9 → --p-text）
- *
- *   prefers-reduced-motion：StoryPoemScroller 检测到 reduced-motion → 不跑 rAF，直接给
- *   每个 beat 写 --p:1 / --p-photo-1:1 / --p-photo-2:1 / --p-text:1。CSS 立即跳到"完整
- *   composed 帧"，不动。
- *
- *   移动端（≤ 540px）：所有 layout 的 sticky stage 退化为单列流式堆叠（取消 sticky + 取消
- *   absolute photo 定位），保证窄屏可读 / 不出现 stage 内挤压。
- *
- * v0.3 修 v1.54 审计 P2 #1+#2：role-driven layout 落地（4 套 data-layout CSS）。本批 v0.4
- *   之前每个 beat 是普通 section + 一次 IO 入场；v0.4 让每个 beat 变 sticky cinematic stage。
+ * v0.3 修 v1.54 审计：role-driven layout 落地（4 套 data-layout CSS）。
  *
  * v0.2 修 v1.53 P2 #2：data-photo-count 从 .poem-beat 挪到 .poem-photos 让选择器命中。
  *
- * **NOT in this batch**（明确留 §2 后续刀）：
- *   ✗ vignette / overlap / reveal / wooden / pearl 五套 layout 的 stage CSS（schema 已留位，
- *     等 batch 4 lift maxBeats 时一并）
+ * 落地范围（v1.59 收口标准）：
+ *   ✓ 4 套 data-layout 真正不同的空间组合 + per-photo 入场 settle
+ *   ✓ photo 尺寸 / 文字宽 / gap 全部由 solver 在 viewport 维度求解
+ *   ✓ sticky cinematic stage（外层 110-150vh 短 spacer + 内层 100vh sticky）
+ *   ✓ scroll-progress driven choreography（StoryPoemScroller 写 --p 等变量，CSS calc 消费）
+ *   ✓ a11y：sr-only h3 aria-labelledby + reduced-motion fallback
+ *
+ * **NOT in this batch**（仍留 §2 后续刀）：
+ *   ✗ vignette / overlap / reveal / wooden / pearl 五套 layout solver + CSS（schema 已留位）
  *   ✗ 文字字符级 stagger / blur enter（Phase 5 motion polish）
  *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
- *   ✗ beat 09 缝线 SVG path / beat 10 珍珠高光闪动（motion polish 刀）
- *   ✗ 鼠标 / 真 inertia parallax（CSS calc 的 scroll-progress 已能表达"远近 settle"语义）
- *
- * 性能：
- *   - 每个 beat 一个 rAF + 一个 IO（StoryPoemScroller 集中维护）；rAF 仅在 IO 报告 beat
- *     在视口时才跑，离视口立即 cancelAnimationFrame
- *   - 单帧只 read 一次 getBoundingClientRect + write 4 个 CSS 变量到 beat 元素（计算成本恒定）
- *   - 100vh sticky stage 内的 transform / mask-image 由 GPU 合成，无 layout reflow
+ *   ✗ 鼠标 / 真 inertia parallax（CSS calc scroll-progress 已能表达"远近 settle"）
  */
 import CdnImage from "@/components/CdnImage.astro";
 
@@ -161,6 +101,14 @@ const { id, layout, lines, photos, firstAboveFold = false } = Astro.props;
 
 const headingId = `beat-${id}-heading`;
 const firstLine = lines[0] ?? "";
+
+// 给 solver 用的 aspect ratio：原始 width/height 算 w/h 比；缺失时按 layout 给 fallback
+function getAspectRatio(p: BeatPhoto): string {
+  if (p.width && p.height) return (p.width / p.height).toFixed(4);
+  // portrait fallback for diagonal-gaze; landscape fallback for others
+  if (p.role === "top-left" || p.role === "bottom-right") return "0.6667";
+  return "1.5";
+}
 ---
 
 <section
@@ -169,14 +117,6 @@ const firstLine = lines[0] ?? "";
   data-layout={layout}
   aria-labelledby={headingId}
 >
-  {
-    /*
-    v0.4：内层 .poem-stage 是 sticky 100vh 舞台，外层 section 提供 scroll spacer
-    （min-height 200vh / 240vh / 180vh / 160vh 按 layout）。所有视觉布局 + 入场
-    choreography 在 stage 内闭合；rAF 写 --p 等变量到 .poem-beat 元素，
-    stage 内的 calc(var(--p)) 即时反映。
-  */
-  }
   <div class="poem-stage">
     <h3 id={headingId} class="sr-only">
       第 {id} 段 · {firstLine}
@@ -194,14 +134,18 @@ const firstLine = lines[0] ?? "";
           data-roles={photos.map((p) => p.role).join(",")}
         >
           {photos.map((photo) => (
-            <figure class="poem-photo" data-role={photo.role}>
+            <figure
+              class="poem-photo"
+              data-role={photo.role}
+              data-aspect-ratio={getAspectRatio(photo)}
+            >
               <CdnImage
                 cdnTarget={photo.cdnTarget}
                 stem={photo.stem}
                 alt={photo.alt}
                 priority={firstAboveFold ? "high" : "auto"}
                 widths={[320, 640, 1024, 1600, 2400]}
-                sizes="(min-width: 960px) 38vw, (min-width: 540px) 60vw, 90vw"
+                sizes="(min-width: 720px) 38vw, (min-width: 540px) 60vw, 90vw"
                 width={photo.width}
                 height={photo.height}
               />
@@ -215,42 +159,52 @@ const firstLine = lines[0] ?? "";
 
 <style>
   /* ────────────────────────────────────────────────────────────── */
-  /* 外层 scroll-spacer · 高度按 layout 决定本 beat 滚动时长          */
+  /* 外层 scroll-spacer · 高度 = 100vh sticky + 极短 release zone     */
+  /* v1.59 收紧 release zone：从 v1.58 的 60-140vh → 10-30vh         */
+  /* 自然滚动越过 release zone < 半秒，无需 exit-fade 也不会留空白    */
   /* ────────────────────────────────────────────────────────────── */
   .poem-beat {
     position: relative;
-    /* 默认 fallback（无 data-layout 时）：120vh，与 v0.3 兼容 */
-    min-height: 120vh;
-    /* 提供 4 个 phase 变量给 stage 内 CSS 消费；初始 0（JS 接管前的静态值） */
+    /* 默认 fallback（无 data-layout 时）：130vh */
+    min-height: 130vh;
+    /* phase 变量初值 0；StoryPoemScroller 的 rAF 接管后 0..1 写入 */
     --p: 0;
     --p-photo-1: 0;
     --p-photo-2: 0;
     --p-text: 0;
+    /* solver 输出变量 fallback —— 在 JS 接管前给一个能看的初始值 */
+    --stage-cols: 1fr;
+    --stage-gap: 24px;
+    --text-col-w: 100%;
+    --text-max-w: 100%;
+    --photos-col-w: 100%;
+    --photos-col-h: 60vh;
+    --photo-w: 80%;
+    --photo-h: auto;
+    --photo-far-w: 56%;
+    --photo-far-h: auto;
+    --photo-near-w: 64%;
+    --photo-near-h: auto;
+    --photo-tl-w: 240px;
+    --photo-tl-h: auto;
+    --photo-br-w: 240px;
+    --photo-br-h: auto;
   }
   .poem-beat[data-layout="parallax-pair"] {
-    min-height: 200vh;
+    min-height: 150vh;
   }
   .poem-beat[data-layout="diagonal-gaze"] {
-    min-height: 240vh;
+    min-height: 160vh;
   }
   .poem-beat[data-layout="radial-mask"] {
-    min-height: 180vh;
+    min-height: 130vh;
   }
   .poem-beat[data-layout="anchor-single"] {
-    min-height: 160vh;
+    min-height: 130vh;
   }
 
   /* ────────────────────────────────────────────────────────────── */
-  /* sticky 100vh stage · 单视口构图舞台                              */
-  /*                                                                  */
-  /* v1.58 P2 #4 修（broken transition frames）：                     */
-  /*   sticky beat 在 --p 越过 0.9 后即将释放钉位；释放完到下一 beat  */
-  /*   sticky 接管之间，旧 beat 内容会在视口顶部继续向上滑离、新 beat │
-  /*   头部从下方进入 → 视口同时显示半截上下两段，破坏导演帧。       */
-  /*   解：让 stage 在 p ∈ [0.9, 1] 区间 opacity 1 → 0 退场，sticky    */
-  /*   释放时本帧已隐形，下个 beat 以"干净视口"接管。                 */
-  /*   公式 `(1 - --p) * 10` 在 p=0..0.9 一直 ≥ 1 (clamp 后保持 1)，   */
-  /*   p=0.9..1 内线性降到 0。                                       */
+  /* sticky 100vh stage                                              */
   /* ────────────────────────────────────────────────────────────── */
   .poem-stage {
     position: sticky;
@@ -258,18 +212,15 @@ const firstLine = lines[0] ?? "";
     height: 100vh;
     overflow: hidden;
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: var(--stage-cols);
     grid-template-rows: 1fr;
     align-items: center;
     justify-items: center;
-    padding: 2.5rem 1.5rem;
+    padding: 2rem 1.5rem;
     max-width: 1280px;
     margin: 0 auto;
     box-sizing: border-box;
-    /* exit-fade · 防 beat 跨转时半截上下两段并存（v1.58 P2 #4） */
-    opacity: clamp(0, calc((1 - var(--p, 0)) * 10), 1);
-    /* GPU 合成（避免 opacity 改变触发 paint pipeline 上的非合成层重绘） */
-    will-change: opacity;
+    gap: var(--stage-gap);
   }
 
   /* sr-only 兜底 */
@@ -292,13 +243,20 @@ const firstLine = lines[0] ?? "";
     color: var(--c-olive-ink);
     font-weight: 300;
     font-size: 1.5rem;
-    line-height: 1.95;
+    line-height: 1.85;
     text-align: center;
-    max-width: min(620px, 42vw);
     width: 100%;
   }
   .poem-text p {
     margin: 0.35em 0;
+  }
+
+  /* 移动端字号收一档 */
+  @media (max-width: 540px) {
+    .poem-text {
+      font-size: 1.25rem;
+      line-height: 1.7;
+    }
   }
 
   /* ────────────────────────────────────────────────────────────── */
@@ -308,11 +266,7 @@ const firstLine = lines[0] ?? "";
     display: grid;
     gap: 1.25rem;
     width: 100%;
-    max-width: 720px;
     grid-template-columns: 1fr;
-  }
-  .poem-photos[data-photo-count="2"] {
-    grid-template-columns: repeat(2, 1fr);
   }
   .poem-photo {
     margin: 0;
@@ -323,60 +277,33 @@ const firstLine = lines[0] ?? "";
   .poem-photo :global(img) {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: cover;
     border-radius: var(--radius-sm);
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* v1.57 视觉契约总则（修 v1.56 P2 #1 "broken visual frames"）：    */
-  /*                                                                */
-  /* 关键原则：每个 sticky stage 在**任何**滚动停留点都必须显示完整   */
-  /*   composed 帧（text + photo 同画面），而不是 align-self start/   */
-  /*   end 把 text/photo 拆到 100vh 两端造成大片空白。               */
-  /*                                                                */
-  /*   - 文字 / 照片 baseline opacity 始终为 1（不再 gate 在 --p-text  */
-  /*     < 1 时彻底不可见）；scroll-progress 只驱动 transform / mask   */
-  /*     / scale / filter 等"位置 / 形态"层属性。                    */
-  /*   - 各 layout 的 stage 用 flex column / grid auto-rows 把 text   */
-  /*     + photos 紧凑居中堆叠，整体 align-content: center；100vh    */
-  /*     里只让二者贴近留白，不再让任何一方靠到视口边缘。             */
-  /*   - 入场感由位置 / 缩放小幅 settle 表达（更克制、不再用透明度  */
-  /*     bin/out 来"奖励"完整滚完才看到内容）。                        */
-  /* ────────────────────────────────────────────────────────────── */
-
-  /* ────────────────────────────────────────────────────────────── */
-  /* layout = parallax-pair · beat 01                                  */
-  /* 视觉契约：text 左列居中 + 双图右列上下错位重叠（70vh 卡死高度）   */
-  /* 任意停留点：text + 双图必同视口；photos 列内部 absolute 不外溢    */
-  /* choreography：远近沿 Y 轴向中心小幅 settle（--p 0→1）             */
-  /* v1.58 P2 #3 修：min-width 从 720px 下沉到 541px，补 541-719px    */
-  /* tablet/portrait 断点（v1.57 这段会回落到通用单列 grid 出现脱顶）  */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = parallax-pair · beat 01                                 */
+  /* solver 给 stage 双列 + photos 容器尺寸；CSS 只放固定 absolute     */
+  /* 位置 + 入场 transform                                           */
+  /* ──────────────────────────────────────────────────────────────  */
   @media (min-width: 541px) {
-    .poem-beat[data-layout="parallax-pair"] .poem-stage {
-      grid-template-columns: minmax(0, min(540px, 40vw)) minmax(0, 1fr);
-      gap: 3rem;
-      align-items: center; /* 关键：text & photos 都垂直居中而非分到两端 */
-    }
     .poem-beat[data-layout="parallax-pair"] .poem-text {
       grid-column: 1;
       align-self: center;
       justify-self: end;
       text-align: left;
+      max-width: var(--text-col-w);
       z-index: 2;
-      /* baseline 始终可见；--p 0→1 微 translateX 收正给 settle 感 */
-      opacity: 1;
       transform: translateX(calc((1 - var(--p, 0)) * -8px));
     }
     .poem-beat[data-layout="parallax-pair"] .poem-photos {
       grid-column: 2;
       position: relative;
       align-self: center;
-      width: 100%;
+      width: var(--photos-col-w);
+      height: var(--photos-col-h);
       max-width: none;
-      /* 卡死高度 70vh：保证 photos 与 text 不撑出 100vh 视口外；
-         absolute 子元素都在此 box 内闭合 */
-      height: min(70vh, 540px);
       grid-template-columns: 1fr;
       gap: 0;
       z-index: 1;
@@ -385,8 +312,8 @@ const firstLine = lines[0] ?? "";
       position: absolute;
       top: 0;
       right: 0;
-      width: 56%;
-      opacity: 1;
+      width: var(--photo-far-w);
+      height: var(--photo-far-h);
       filter: saturate(0.92);
       transform: translateY(calc((1 - var(--p, 0)) * -14%))
         scale(calc(0.96 + var(--p, 0) * 0.04));
@@ -395,21 +322,17 @@ const firstLine = lines[0] ?? "";
       position: absolute;
       bottom: 0;
       left: 0;
-      width: 64%;
+      width: var(--photo-near-w);
+      height: var(--photo-near-h);
       z-index: 1;
-      opacity: 1;
       transform: translateY(calc((1 - var(--p, 0)) * 14%))
         scale(calc(0.96 + var(--p, 0) * 0.04));
     }
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* layout = diagonal-gaze · beat 02                                  */
-  /* 视觉契约：左上 + 右下两人像 + 中间文字 backdrop-blur 浮起          */
-  /* 任意停留点：所有元素 opacity 始终 1；choreography 只驱动位移。     */
-  /* 入场动作：照片从 ±15% 位置 settle 到 (0,0)；文字 translateY 6→0px  */
-  /* v1.58 P2 #3 修：min-width 从 720px 下沉到 541px，补 tablet 断点  */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = diagonal-gaze · beat 02                                 */
+  /* ──────────────────────────────────────────────────────────────  */
   @media (min-width: 541px) {
     .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
       grid-template-columns: 1fr;
@@ -420,16 +343,14 @@ const firstLine = lines[0] ?? "";
       grid-area: 1 / 1;
       align-self: center;
       justify-self: center;
-      max-width: min(520px, 60vw);
+      max-width: var(--text-max-w);
       text-align: center;
       z-index: 2;
-      padding: 1.5rem 1.75rem;
+      padding: 1.25rem 1.5rem;
       background: rgba(245, 240, 230, 0.7);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border-radius: var(--radius-sm);
-      /* baseline 始终可见；只用 translateY 给 settle */
-      opacity: 1;
       transform: translateY(calc((1 - var(--p, 0)) * 6px));
     }
     .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
@@ -437,7 +358,6 @@ const firstLine = lines[0] ?? "";
       position: relative;
       width: 100%;
       height: 100%;
-      max-width: none;
       grid-template-columns: 1fr;
       gap: 0;
       z-index: 1;
@@ -446,10 +366,8 @@ const firstLine = lines[0] ?? "";
       position: absolute;
       top: 4%;
       left: 4%;
-      width: clamp(220px, 30%, 360px);
-      opacity: 1;
-      /* 双图都用 --p（线性）：低进度时已在视口内只是略偏移；不再用 stage
-         头部空白让用户疑惑"是不是没加载" */
+      width: var(--photo-tl-w);
+      height: var(--photo-tl-h);
       transform: translate(
         calc((1 - var(--p, 0)) * -15%),
         calc((1 - var(--p, 0)) * -15%)
@@ -460,8 +378,8 @@ const firstLine = lines[0] ?? "";
       position: absolute;
       bottom: 4%;
       right: 4%;
-      width: clamp(220px, 30%, 360px);
-      opacity: 1;
+      width: var(--photo-br-w);
+      height: var(--photo-br-h);
       transform: translate(
         calc((1 - var(--p, 0)) * 15%),
         calc((1 - var(--p, 0)) * 15%)
@@ -469,25 +387,24 @@ const firstLine = lines[0] ?? "";
     }
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* layout = radial-mask · beat 03                                    */
-  /* 视觉契约：单图居中边缘晕散 + 文字紧贴下方（同视口紧凑构图）       */
-  /* 任意停留点：text + photo 同时可见；不再上下 1fr 拆开              */
-  /* choreography：mask 同步外扩 + scale settle + saturate 渐回 1     */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = radial-mask · beat 03                                   */
+  /* solver 给 photo 单图尺寸；CSS 单 stage 紧凑居中堆叠              */
+  /* ──────────────────────────────────────────────────────────────  */
   .poem-beat[data-layout="radial-mask"] .poem-stage {
-    /* flex column 比 grid 1fr/auto 更稳：内容自然居中 + gap 紧凑 */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: var(--stage-gap);
   }
   .poem-beat[data-layout="radial-mask"] .poem-photos {
-    max-width: 540px;
-    width: 100%;
+    width: var(--photo-w);
+    max-width: var(--photo-w);
   }
   .poem-beat[data-layout="radial-mask"] .poem-photo[data-role="center"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
     --mask-inner: calc(30% + var(--p, 0) * 25%);
     --mask-outer: calc(60% + var(--p, 0) * 35%);
     -webkit-mask-image: radial-gradient(
@@ -501,50 +418,43 @@ const firstLine = lines[0] ?? "";
       rgba(0, 0, 0, 0) var(--mask-outer)
     );
     box-shadow: none;
-    opacity: 1;
     transform: scale(calc(1.06 - var(--p, 0) * 0.06));
     filter: saturate(calc(0.88 + var(--p, 0) * 0.12));
   }
   .poem-beat[data-layout="radial-mask"] .poem-text {
-    /* baseline 1；--p 0→1 微 translateY 收正 */
-    opacity: 1;
+    max-width: var(--text-max-w);
     transform: translateY(calc((1 - var(--p, 0)) * 6px));
-    max-width: min(540px, 70vw);
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* layout = anchor-single · beat 04 / 05                             */
-  /* 视觉契约：单图小框 + 文字紧贴下方（同视口紧凑构图）               */
-  /* 任意停留点：text + photo 同时可见；不再上下 1fr 拆开              */
-  /* choreography：图 scale 0.94→1 + 微 translateY；text 微浮起        */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = anchor-single · beat 04 / 05                            */
+  /* ──────────────────────────────────────────────────────────────  */
   .poem-beat[data-layout="anchor-single"] .poem-stage {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.75rem;
+    gap: var(--stage-gap);
   }
   .poem-beat[data-layout="anchor-single"] .poem-photos {
-    max-width: 460px;
-    width: 100%;
+    width: var(--photo-w);
+    max-width: var(--photo-w);
   }
   .poem-beat[data-layout="anchor-single"] .poem-photo[data-role="anchor"] {
-    /* baseline 1；scale + translateY 用 --p 给"锚点 settle"语义 */
-    opacity: 1;
+    width: var(--photo-w);
+    height: var(--photo-h);
     transform: scale(calc(0.94 + var(--p, 0) * 0.06))
       translateY(calc((1 - var(--p, 0)) * 6px));
   }
   .poem-beat[data-layout="anchor-single"] .poem-text {
-    opacity: 1;
+    max-width: var(--text-max-w);
     transform: translateY(calc((1 - var(--p, 0)) * 6px));
-    max-width: min(460px, 70vw);
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* 移动端 · ≤ 540px（所有 layout 退化为单列流式堆叠）                 */
-  /* sticky / absolute 在窄屏会挤；改成普通流让用户能滚 + 看完整      */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* 移动端 · ≤ 540px（windows 取消 sticky / absolute，单列流式堆叠） */
+  /* solver 在窄屏依然给出尺寸值，但视觉上简化为竖向流式             */
+  /* ──────────────────────────────────────────────────────────────  */
   @media (max-width: 540px) {
     .poem-beat,
     .poem-beat[data-layout] {
@@ -557,17 +467,14 @@ const firstLine = lines[0] ?? "";
       overflow: visible;
       grid-template-columns: 1fr !important;
       grid-template-rows: auto auto !important;
-      padding: 4rem 1rem;
-      gap: 1.5rem !important;
+      padding: 3rem 1rem;
+      gap: 1.25rem !important;
     }
     .poem-text {
-      font-size: 1.25rem;
-      line-height: 1.85;
       text-align: center !important;
       max-width: 100% !important;
       grid-column: auto !important;
       grid-area: auto !important;
-      opacity: 1 !important;
       transform: none !important;
       background: transparent !important;
       backdrop-filter: none !important;
@@ -576,28 +483,34 @@ const firstLine = lines[0] ?? "";
     }
     .poem-photos {
       max-width: 100% !important;
+      width: 100% !important;
       height: auto !important;
       grid-area: auto !important;
       grid-column: auto !important;
       grid-template-columns: 1fr !important;
       position: static !important;
+      gap: 1rem !important;
     }
     .poem-photo,
     .poem-photo[data-role] {
       position: static !important;
       width: 100% !important;
+      height: auto !important;
       transform: none !important;
-      opacity: 1 !important;
       filter: none !important;
       mask-image: none !important;
       -webkit-mask-image: none !important;
     }
+    .poem-photo :global(picture),
+    .poem-photo :global(img) {
+      height: auto !important;
+      object-fit: contain;
+    }
   }
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* prefers-reduced-motion · 完整 composed 帧 + 零动画                */
-  /* StoryPoemScroller 也会写 --p:1 等，但 CSS 内再多守一道避免漂移   */
-  /* ────────────────────────────────────────────────────────────── */
+  /* ──────────────────────────────────────────────────────────────  */
+  /* prefers-reduced-motion · 完整 composed 帧 + 零动画                 */
+  /* ──────────────────────────────────────────────────────────────  */
   @media (prefers-reduced-motion: reduce) {
     .poem-beat {
       --p: 1;
