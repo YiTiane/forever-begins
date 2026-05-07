@@ -5,8 +5,8 @@
  *   - routes[] 支持全部共同去过地点的球面连线：重庆↔乌鲁木齐、重庆↔合肥、
  *     杭州↔合肥、乌鲁木齐↔合肥、乌鲁木齐↔新加坡，以及 primary 主线
  *     乌鲁木齐↔墨尔本
- *   - primary 主线用更粗 TubeGeometry + honey 呼吸 opacity，强调"最远距离"；
- *     secondary 路线用细 sage 线作为旅行网络背景
+ *   - primary 主线用更粗 TubeGeometry + 高亮 honey 呼吸 opacity，强调"最远距离"；
+ *     secondary 路线用暖白细线常显；不复用地图 sage 绿，避免线和大陆轮廓混在一起
  *   - endpoint 去重：所有城市标点；primary 两端保留柔和金色脉冲，其余城市用
  *     小号纸白点，避免视觉过载
  *
@@ -123,8 +123,12 @@ const COLOR_SAGE = new THREE.Color("#3f5e3f");
 const COLOR_GLOBE = new THREE.Color("#27392c");
 /** 纸白 highlight */
 const COLOR_PAPER = new THREE.Color("#f5f0e6");
-/** honey 蜜色（弧线终点 + 端点光晕） */
+/** honey 蜜色（端点光晕 / 文案同源） */
 const COLOR_HONEY = new THREE.Color("#c69d4e");
+/** primary route：在深绿地图上保持最高对比的明亮蜜金 */
+const COLOR_ROUTE_PRIMARY = new THREE.Color("#ffd45a");
+/** secondary route：暖白线，比地图 land/coast 更亮，避免与 sage 绿混色 */
+const COLOR_ROUTE_SECONDARY = new THREE.Color("#fff1b8");
 
 /* ─────────────────────── Globe sphere ─────────────────────── */
 type GeoPoint = readonly [lng: number, lat: number];
@@ -365,7 +369,7 @@ function Endpoint({
     position[2] + normal[2] * offset,
   ];
 
-  const markerRadius = featured ? ENDPOINT_RADIUS : ENDPOINT_RADIUS * 0.68;
+  const markerRadius = featured ? ENDPOINT_RADIUS : ENDPOINT_RADIUS * 0.76;
 
   return (
     <group position={placed}>
@@ -373,10 +377,11 @@ function Endpoint({
       <mesh ref={dotRef}>
         <sphereGeometry args={[markerRadius, 16, 16]} />
         <meshBasicMaterial
-          color={featured ? COLOR_HONEY : COLOR_PAPER}
+          color={featured ? COLOR_ROUTE_PRIMARY : COLOR_ROUTE_SECONDARY}
           transparent
-          opacity={featured ? 0.85 : 0.72}
+          opacity={featured ? 0.92 : 0.82}
           depthWrite={false}
+          toneMapped={false}
         />
       </mesh>
       {/* halo 环 —— 用一个稍大透明球模拟 bloom（postprocessing 接入前的 fallback） */}
@@ -388,6 +393,7 @@ function Endpoint({
             transparent
             opacity={0.45}
             depthWrite={false}
+            toneMapped={false}
           />
         </mesh>
       )}
@@ -413,6 +419,7 @@ function Arc({
   reducedMotion,
 }: ArcProps): React.ReactElement {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const elapsedRef = useRef(0);
   const points = useMemo<Vec3[]>(
     () => greatCircleArc(from, to, ARC_SEGMENTS, ARC_LIFT, GLOBE_RADIUS),
     [from, to],
@@ -428,8 +435,8 @@ function Arc({
     const curve = new THREE.CatmullRomCurve3(
       sliced.map((point) => new THREE.Vector3(point[0], point[1], point[2])),
     );
-    const radius = kind === "primary" ? 0.007 : 0.0024;
-    const radialSegments = kind === "primary" ? 10 : 6;
+    const radius = kind === "primary" ? 0.01 : 0.0042;
+    const radialSegments = kind === "primary" ? 12 : 8;
     return new THREE.TubeGeometry(
       curve,
       Math.max(8, sliced.length - 1),
@@ -450,8 +457,9 @@ function Arc({
     if (kind !== "primary" || reducedMotion) return;
     const mat = materialRef.current;
     if (!mat) return;
-    // 主线轻微呼吸，突出"最长距离"；不做强闪烁，避免抢过地球本体。
-    const next = 0.76 + 0.2 * Math.sin(Date.now() * 0.004 + dt);
+    elapsedRef.current += dt;
+    // 主线呼吸更明确，突出"最长距离"；频率低，避免变成刺眼闪烁。
+    const next = 0.74 + 0.26 * Math.sin(elapsedRef.current * 2 * Math.PI * 0.9);
     mat.opacity = next;
   });
 
@@ -460,10 +468,11 @@ function Arc({
       <primitive attach="geometry" object={geometry} />
       <meshBasicMaterial
         ref={materialRef}
-        color={kind === "primary" ? COLOR_HONEY : COLOR_SAGE}
+        color={kind === "primary" ? COLOR_ROUTE_PRIMARY : COLOR_ROUTE_SECONDARY}
         transparent
-        opacity={kind === "primary" ? 0.92 : 0.32}
+        opacity={kind === "primary" ? 0.98 : 0.78}
         depthWrite={false}
+        toneMapped={false}
       />
     </mesh>
   );

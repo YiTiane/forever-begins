@@ -148,7 +148,7 @@ const story = defineCollection({
 // ─────────────────────────────────────────────────────────────────
 // journey · 地理叙事
 // 兼容两种 entry shape：
-//   ① long-distance.json — { from, to, distanceKm?, routes? }
+//   ① long-distance.json — { from, to, distanceKm?, comparisonCn?, routes? }
 //   ② cities.json (可选历史归档) — { cities: [...] }
 // 用 .refine() 校验"二选一"约束，不引入 discriminator 字段污染数据。
 // ─────────────────────────────────────────────────────────────────
@@ -166,6 +166,7 @@ const journey = defineCollection({
       from: journeyPlace.optional(),
       to: journeyPlace.optional(),
       distanceKm: z.number().positive().optional(),
+      comparisonCn: z.string().min(1).optional(),
       routes: z
         .array(
           z.object({

@@ -5,7 +5,7 @@
  *
  * 数据流（DESIGN §15.1 单一源）：
  *   - poem lines / kind=globe 来自 src/content/story-poem/main.json beat 11
- *   - from / to / distanceKm / routes 来自 src/content/journey/long-distance.json
+ *   - from / to / distanceKm / comparisonCn / routes 来自 src/content/journey/long-distance.json
  *   - 两源在本组件 props 与 collection 处合流，不在 React 岛里再 fetch
  *
  * 渲染机制：
@@ -48,7 +48,7 @@ if (!longDistance) {
     "GlobeBeat.astro: src/content/journey/long-distance.json missing — schema 已严约束 from/to/distanceKm",
   );
 }
-const { from, to, distanceKm, routes = [] } = longDistance.data;
+const { from, to, distanceKm, comparisonCn, routes = [] } = longDistance.data;
 if (!from || !to || distanceKm === undefined) {
   throw new Error(
     "GlobeBeat.astro: long-distance.json 缺 from/to/distanceKm —— DESIGN §15.1 单一源契约",
@@ -65,9 +65,11 @@ const ariaHeadingId = "beat-11-aria-heading";
 // 完整句："我们最远时相距 10,755 公里"。aria-label 同步用同款叙述，避免
 // AT 朗读到的"球面大圆距离"等技术语让叙事失味。
 const distancePrefix = "我们最远时相距";
+const comparisonLabel = comparisonCn ?? "";
+const comparisonClause = comparisonLabel.replace(/[。.]$/, "");
 const routeLabel =
   routes.length > 1 ? `，并连起重庆、合肥、杭州、新加坡等共同走过的地方` : "";
-const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里${routeLabel}`;
+const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里${comparisonClause ? `，${comparisonClause}` : ""}${routeLabel}`;
 ---
 
 <section
@@ -115,6 +117,11 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
           <span class="globe-km-prefix">{distancePrefix}</span>
           <span class="globe-km-num">{distanceLabel}</span>
           <span class="globe-km-unit">公里</span>
+          {
+            comparisonLabel && (
+              <span class="globe-km-comparison">{comparisonLabel}</span>
+            )
+          }
         </span>
       </p>
     </div>
@@ -122,7 +129,7 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     <noscript>
       <p class="globe-fallback">
         {from.name} ↔ {to.name}，{distancePrefix}
-        {distanceLabel} 公里。
+        {distanceLabel} 公里{comparisonLabel && `，${comparisonLabel}`}
       </p>
     </noscript>
   </div>
@@ -258,6 +265,13 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
   .globe-km-unit {
     font-size: 1rem;
     color: var(--c-sage);
+  }
+  .globe-km-comparison {
+    width: 100%;
+    margin-top: 0.15rem;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--c-sage-deep);
   }
 
   /* v1.79：grid 不再 1×1 overlay；fallback 直接占 row 1 (canvas 位置) 居中 */
