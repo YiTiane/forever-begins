@@ -111,15 +111,75 @@ function readJpegDimensions(
   return null;
 }
 
+/**
+ * v0.2（v1.65 audit P2-A 修）：单一 jsDelivr fetch 没 timeout / 没 backup CDN
+ * 在区域性卡顿时整个 build 被阻断。改为复用 build-time-check 的 dual-CDN +
+ * 5s timeout 模式：primary / backup 任一拿到 + 解析成功就返回；双败才 fail。
+ */
+const FETCH_TIMEOUT_MS = 5000;
+
+async function fetchWithTimeout(url: string): Promise<Buffer> {
+  // AbortController 显式拼，与 scripts/build-time-check.ts 同款（Node 22 AbortSignal.timeout
+  // 已稳定但保留 manual ctrl 兼容性 / 一致性）
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface SourceAttempt {
+  cdn: "primary" | "backup";
+  url: string;
+  error?: string;
+  dim?: { width: number; height: number };
+}
+
+/**
+ * 同时跑 primary + backup CDN；任一成功（fetch + JPEG parse 都过）就返回它的 dim。
+ * 双败 → throw 综合错误，列出两侧具体原因。
+ */
 async function probeOne(
-  url: string,
-): Promise<{ width: number; height: number }> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  const dim = readJpegDimensions(buf);
-  if (!dim) throw new Error(`Could not parse JPEG dimensions of ${url}`);
-  return dim;
+  cdnTarget: CdnTarget,
+  stem: string,
+): Promise<{
+  dim: { width: number; height: number };
+  sourceCdn: "primary" | "backup";
+}> {
+  const path = `jpg/${stem}-${PROBE_W}.jpg`;
+  const primaryUrl = cdnUrl("primary", cdnTarget, path);
+  const backupUrl = cdnUrl("backup", cdnTarget, path);
+
+  const tryOne = async (
+    cdn: "primary" | "backup",
+    url: string,
+  ): Promise<SourceAttempt> => {
+    try {
+      const buf = await fetchWithTimeout(url);
+      const dim = readJpegDimensions(buf);
+      if (!dim) return { cdn, url, error: "JPEG SOF parse failed" };
+      return { cdn, url, dim };
+    } catch (err) {
+      return { cdn, url, error: (err as Error).message };
+    }
+  };
+
+  // 并发探两侧 —— 任一成功即用；双败才报错
+  const [pAtt, bAtt] = await Promise.all([
+    tryOne("primary", primaryUrl),
+    tryOne("backup", backupUrl),
+  ]);
+
+  if (pAtt.dim) return { dim: pAtt.dim, sourceCdn: "primary" };
+  if (bAtt.dim) return { dim: bAtt.dim, sourceCdn: "backup" };
+
+  throw new Error(
+    `dual-CDN both failed: primary ${primaryUrl} (${pAtt.error}); backup ${backupUrl} (${bAtt.error})`,
+  );
 }
 
 async function main() {
@@ -140,11 +200,12 @@ async function main() {
         );
         continue;
       }
-      // 构造 jsDelivr primary URL（与 CdnImage 同源）
-      const path = `jpg/${photo.stem}-${PROBE_W}.jpg`;
-      const url = cdnUrl("primary", photo.cdnTarget, path);
+      // v0.2：dual-CDN + 5s timeout；任一边解出 + aspect 匹配 → 通过；双败才 fail
       try {
-        const cdnDim = await probeOne(url);
+        const { dim: cdnDim, sourceCdn } = await probeOne(
+          photo.cdnTarget,
+          photo.stem,
+        );
         const sourceAspect = photo.width / photo.height;
         const cdnAspect = cdnDim.width / cdnDim.height;
         const aspectDelta = Math.abs(sourceAspect - cdnAspect);
@@ -152,12 +213,12 @@ async function main() {
         if (relErr > ASPECT_TOLERANCE) {
           errors.push(
             `Beat ${beat.id} / ${photo.stem}: main.json ${photo.width}×${photo.height} (aspect ${sourceAspect.toFixed(4)}) ` +
-              `↔ CDN ${PROBE_W}px 派生品 ${cdnDim.width}×${cdnDim.height} (aspect ${cdnAspect.toFixed(4)}) — relErr ${(relErr * 100).toFixed(2)}% > ${(ASPECT_TOLERANCE * 100).toFixed(0)}%。` +
+              `↔ CDN(${sourceCdn}) ${PROBE_W}px 派生品 ${cdnDim.width}×${cdnDim.height} (aspect ${cdnAspect.toFixed(4)}) — relErr ${(relErr * 100).toFixed(2)}% > ${(ASPECT_TOLERANCE * 100).toFixed(0)}%。` +
               ` 修法：把 main.json 的 width/height 改成与 CDN 派生品同 aspect（如 1600×2400 portrait 应写 2000×3000）。`,
           );
         } else {
           checked.push(
-            `${beat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN ${cdnDim.width}×${cdnDim.height} ✓`,
+            `${beat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
           );
         }
       } catch (err) {

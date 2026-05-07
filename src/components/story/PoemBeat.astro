@@ -135,12 +135,15 @@ const headingId = `beat-${id}-heading`;
 const firstLine = lines[0] ?? "";
 
 /**
- * v1.65 SSR 默认 data-text-placement（JS 接管 applyLayout 后仍会覆写）。
- * 各 layout 的 portrait 模式默认 placement，匹配 solver 在 portrait 下的输出，
- * 减轻 first-paint 与 hydrate 之间的 layout shift。
+ * v1.66 SSR 默认 data-text-placement（JS 接管 applyLayout 后仍会覆写）。
+ * 与 solver 在 portrait 模式下的输出对齐，减轻 first-paint 与 hydrate 之间
+ * 的 layout shift。wooden 在 wide 才走 side-text-photo，SSR 默认 portrait
+ * → below 即可（JS 在 wide 设备 hydrate 后切到 side-text-photo）。
  */
 function getSsrTextPlacement(l: BeatLayout | undefined): string {
   if (l === "vignette") return "overlay-bottom";
+  if (l === "overlap") return "overlay-center";
+  if (l === "reveal" || l === "pearl") return "overlay-top";
   if (l === "parallax-pair" || l === "diagonal-gaze") return "between";
   return "below";
 }
@@ -800,6 +803,133 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     pointer-events: none;
     z-index: 3;
     border-radius: var(--radius-sm);
+    /* v1.66 P3 修：mix-blend-mode: screen 让 canvas 雪粒子真正与下方
+       photo / 暗角混合发光，而非只是普通透明白点。screen 比 add 柔，
+       夜色暗部白雪发亮、亮部不爆色。v1.65 注释里的"screen blend"承诺
+       由此真正生效（之前只在 canvas 内 globalCompositeOperation 不影响外部）。*/
+    mix-blend-mode: screen;
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* v1.66 textPlacement 通用规则（按 data-text-placement 选择器）    */
+  /*                                                                   */
+  /* 各 layout 的 base CSS 仍是 "flex column 图 + 文居中 below"；        */
+  /* 这些规则用更具体的 selector 在特定 layout 上覆盖为 overlay-* /     */
+  /* side-* 模式，让 textPlacement 真正参与构图。                       */
+  /* ──────────────────────────────────────────────────────────────  */
+
+  /* —— overlap 单行短诗 → overlay-center（夜色 ghost 收敛之上浮卡） —— */
+  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
+    .poem-stage {
+    position: relative;
+  }
+  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
+    .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+  }
+  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
+    .poem-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) translateY(calc((1 - var(--p, 0)) * 6px));
+    width: min(var(--text-max-w), 76%);
+    z-index: 4;
+    padding: 1rem 1.75rem;
+    background: rgba(245, 240, 230, 0.7);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    color: var(--c-olive-ink);
+  }
+
+  /* —— reveal 竖幅展开 → overlay-top（文字浮在顶端，photo 由内向外露出） —— */
+  .poem-beat[data-layout="reveal"][data-text-placement="overlay-top"]
+    .poem-stage {
+    position: relative;
+  }
+  .poem-beat[data-layout="reveal"][data-text-placement="overlay-top"]
+    .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+  }
+  .poem-beat[data-layout="reveal"][data-text-placement="overlay-top"]
+    .poem-text {
+    position: absolute;
+    top: clamp(1.5rem, 5vh, 3rem);
+    left: 50%;
+    transform: translateX(-50%) translateY(calc((1 - var(--p, 0)) * -6px));
+    width: min(var(--text-max-w), 84%);
+    z-index: 4;
+    padding: 0.75rem 1.5rem;
+    background: rgba(245, 240, 230, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    color: var(--c-olive-ink);
+  }
+
+  /* —— pearl 竖幅人像 + 高光 sweep → overlay-top（与 reveal 对称） —— */
+  .poem-beat[data-layout="pearl"][data-text-placement="overlay-top"]
+    .poem-stage {
+    position: relative;
+  }
+  .poem-beat[data-layout="pearl"][data-text-placement="overlay-top"]
+    .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+  }
+  .poem-beat[data-layout="pearl"][data-text-placement="overlay-top"]
+    .poem-text {
+    position: absolute;
+    top: clamp(1.5rem, 5vh, 3rem);
+    left: 50%;
+    transform: translateX(-50%) translateY(calc((1 - var(--p, 0)) * -6px));
+    width: min(var(--text-max-w), 84%);
+    z-index: 4;
+    padding: 0.75rem 1.5rem;
+    background: rgba(245, 240, 230, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    color: var(--c-olive-ink);
+  }
+
+  /* —— wooden 横幅木门 + 3 行长诗 → wide 模式 side-text-photo（信件式） —— */
+  /* 仅 wide 生效；portrait/compact 走默认 below */
+  .poem-beat[data-layout="wooden"][data-text-placement="side-text-photo"]
+    .poem-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--photo-w));
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: center;
+    justify-items: center;
+  }
+  .poem-beat[data-layout="wooden"][data-text-placement="side-text-photo"]
+    .poem-text {
+    grid-column: 1;
+    align-self: center;
+    justify-self: end;
+    text-align: left;
+    max-width: var(--text-max-w);
+    transform: translateX(calc((1 - var(--p, 0)) * -8px));
+  }
+  .poem-beat[data-layout="wooden"][data-text-placement="side-text-photo"]
+    .poem-photos {
+    grid-column: 2;
+    align-self: center;
+    width: var(--photo-w);
+    max-width: var(--photo-w);
   }
 
   /* ──────────────────────────────────────────────────────────────  */

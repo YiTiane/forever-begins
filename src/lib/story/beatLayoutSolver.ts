@@ -389,16 +389,20 @@ function solveSinglePhoto(
   if (!photo) return { vars: {} };
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
-  // overlay-bottom 时 photo 几乎占满 stage（text 浮在底部），不再扣减 textReserve
+  // overlay-* / side-* 都不再纵向扣减 textReserve：overlay 的 text 浮于 photo 之上；
+  // side 的 text 在隔壁列，photo 高度由 stage 全高决定（与 text 同高对齐）。
   const isOverlay =
     textPlacement === "overlay-bottom" ||
     textPlacement === "overlay-top" ||
     textPlacement === "overlay-center";
-  const textReserveH = isOverlay
+  const isSide =
+    textPlacement === "side-text-photo" || textPlacement === "side-photo-text";
+  const reservesNoVText = isOverlay || isSide;
+  const textReserveH = reservesNoVText
     ? 0
     : (textHeight ?? clampPx(vh * opts.textTopReserveFactor, 96, 200));
   const photoMaxW = Math.min(stageW * opts.photoMaxWFactor, opts.photoMaxAbs);
-  const photoMaxH = stageH - textReserveH - (isOverlay ? 0 : opts.gap);
+  const photoMaxH = stageH - textReserveH - (reservesNoVText ? 0 : opts.gap);
   const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
   return {
     vars: {
@@ -428,62 +432,76 @@ function solveVignette(input: SolverInput): SolverResult {
 }
 
 // ─── overlap（beat 07 · snow_09 契合双层 ghost）────────────────────────
+// v1.66（v1.65 audit P2-B 修）：横幅 ghost 双合 + 单行短诗 → overlay-center
+//   "两个契合的灵魂" 单行 → 文字浮卡居中漂在 ghost 收敛的图上，更具戏剧性
 function solveOverlap(input: SolverInput): SolverResult {
   return solveSinglePhoto(
     input,
     {
-      photoMaxWFactor: 0.78,
-      photoMaxAbs: 660,
-      gap: 24,
-      textTopReserveFactor: 0.14,
-      textOverhang: 60,
+      photoMaxWFactor: 0.86,
+      photoMaxAbs: 760,
+      gap: 0,
+      textTopReserveFactor: 0,
+      textOverhang: 80,
     },
-    "below",
+    "overlay-center",
   );
 }
 
 // ─── reveal（beat 08 · snow_12 clip-path 展开）─────────────────────────
+// v1.66：竖幅人物图 + clip-path 由内向外展开 → overlay-top
+//   "卸下防备" 由 text-floats-on-emerging-photo 表达：文字从顶端浮起，photo 从中心展开
 function solveReveal(input: SolverInput): SolverResult {
   return solveSinglePhoto(
     input,
     {
-      photoMaxWFactor: 0.85,
-      photoMaxAbs: 720,
-      gap: 24,
-      textTopReserveFactor: 0.14,
-      textOverhang: 60,
+      photoMaxWFactor: 0.92,
+      photoMaxAbs: 760,
+      gap: 0,
+      textTopReserveFactor: 0,
+      textOverhang: 80,
     },
-    "below",
+    "overlay-top",
   );
 }
 
 // ─── wooden（beat 09 · Wooden_door_01 缝线包边）────────────────────────
+// v1.66：横幅木门 + 3 行长诗 → wide 模式 side-text-photo（信件式 letterbox 阅读
+//   节奏：诗左 + 木门右）；portrait/compact 退回 below（窄屏单列堆叠更易读）
 function solveWooden(input: SolverInput): SolverResult {
+  const mode = getStoryLayoutMode(input.vw, input.vh);
+  const placement: TextPlacement =
+    mode === "wide" ? "side-text-photo" : "below";
+  // wide 模式 photo 占 ~50% 宽（与文字共享 stage）；其它模式按原 0.7 单图比例
+  const photoMaxWFactor = placement === "side-text-photo" ? 0.5 : 0.7;
+  const photoMaxAbs = placement === "side-text-photo" ? 600 : 560;
   return solveSinglePhoto(
     input,
     {
-      photoMaxWFactor: 0.7,
-      photoMaxAbs: 560,
+      photoMaxWFactor,
+      photoMaxAbs,
       gap: 26,
       textTopReserveFactor: 0.22,
       textOverhang: 40,
     },
-    "below",
+    placement,
   );
 }
 
 // ─── pearl（beat 10 · Pearl_03 高光横扫）───────────────────────────────
+// v1.66：竖幅人物图 + 珍珠高光 sweep → overlay-top
+//   "抱紧你时, 世界莺莺燕燕" 浮起在珍珠光带之上，珠宝杂志封面感
 function solvePearl(input: SolverInput): SolverResult {
   return solveSinglePhoto(
     input,
     {
-      photoMaxWFactor: 0.78,
-      photoMaxAbs: 640,
-      gap: 24,
-      textTopReserveFactor: 0.16,
-      textOverhang: 50,
+      photoMaxWFactor: 0.86,
+      photoMaxAbs: 700,
+      gap: 0,
+      textTopReserveFactor: 0,
+      textOverhang: 60,
     },
-    "below",
+    "overlay-top",
   );
 }
 
