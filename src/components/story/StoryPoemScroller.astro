@@ -1,8 +1,24 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.7 · v1.62 batch 4：lift maxBeats + 5 layouts + audit fixes）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.8 · v1.71 batch 7：globe beat 11 实接入）
  *
- * v0.7 新增（v1.62）：
+ * v0.8 新增（v1.71）：
+ *   - **§2.B GlobeDistanceScene 实接入**：v1.54 起 beats 11/12 占位注释明确
+ *     "globe 留待 §2.B GlobeDistanceScene"。v1.71 batch 7 把 GlobeBeat.astro
+ *     真正挂在 photo-poem 之后、end-cap 之前，渲染 .globe-beat#beat-11-heading
+ *     并 client:visible 懒 hydrate R3F 岛。本 wrapper 现在的责任不再只是
+ *     "10 个 photo-poem beat 渲染"，而是"photo-poem × 10 + globe × 1 +
+ *     temporary end-cap (临时取代 finale 直到 §2.C 接入)"
+ *   - 加 `globeBeat = main.data.beats.find(kind==="globe")` + `globeLines` 数据
+ *     拉取；GlobeBeat 内部再去 journey/long-distance.json 拿 from/to/distanceKm
+ *     —— DESIGN §15.1 单一源（地球场景的"来源/目的/距离"事实只在
+ *     long-distance.json 一处，不重复定义）
+ *
+ * v0.7（v1.62）：批次扩展 maxBeats 4→10 / 5 套新 layout (vignette / overlap /
+ *   reveal / wooden / pearl) solver + CSS / finale Pearl_04 priority high→auto /
+ *   finale 文案从 schema 拉
+ *
+ * v0.6（v1.61）新增：
  *   - **批次扩展**：`maxBeats` 默认 4 → 10，渲染全部 10 个 photo-poem beat
  *     (snow_03/07 远近 → snow_14/15 对视 → snow_05 晕散 → snow_11 锚点 →
  *     snow_13 [N]天 → snow_08 夜色 → snow_09 契合 → snow_12 卸下防备 →
@@ -15,7 +31,6 @@
  *     拉，不再硬编码到组件里 —— DESIGN §15.1 单一源；同时为 batch 5 接入
  *     StarCarouselFinale 时统一接缝
  *
- * v0.6 新增（v1.61）：
  *   - 接入 getStoryLayoutMode(vw, vh) 单一布局模式来源（compact/portrait/wide）
  *   - 在 applyLayout 内把判定结果写入 `data-story-mode` 给 CSS 跟随
  *   - portrait 模式下 .poem-stage 释放 sticky / 100vh，回归自然纵向流式构图
@@ -28,39 +43,48 @@
  *
  * v0.4 修 v1.56 审计 P2 #2 + P3：scroll-event driven 替代常驻 rAF tick；写头注释。
  *
- * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，按 batch 范围
- * 渲染前 N 个 photo-poem beat（默认 N=10，覆盖全部 photo-poem）；beats 11/12（globe/
- * finale）数据保留 schema —— globe 留待 §2.B GlobeDistanceScene；finale.lines 已被
- * .story-end-cap 消费作为临时收束句（等 batch 5 StarCarouselFinale 接入后这块自然取代）。
+ * 上层 wrapper（v1.71 现状）：从 src/content/story-poem/main.json 读 12 beats，
+ * 渲染顺序：
+ *   1. photo-poem × maxBeats (默认 10 = 全部 photo-poem) → <PoemBeat>
+ *   2. globe (beat 11) → <GlobeBeat>（v1.71 起实接入；R3F 岛 client:visible
+ *      懒 hydrate）
+ *   3. <div class="story-end-cap">：Pearl_04 主海报 + finale.lines (临时收束，
+ *      等 §2.C StarCarouselFinale 接入后取代)
  *
- * 运行机制（v1.62 现状）：
- *   ✓ 渲染前 maxBeats (默认 10) 个 photo-poem beat 用 `<PoemBeat>`
+ * 运行机制（v1.71 现状）：
+ *   ✓ photo-poem beat：solver + applyLayout + scroll-progress choreography
  *     - wide 模式（≥900px 且 vw/vh ≥ 0.85）→ sticky 100vh cinematic stage
  *     - portrait 模式 → 自然纵向流式（释放 sticky）
  *     - compact 模式（≤540px）→ 静态 flow stack，去掉 transform/mask 等
- *   ✓ applyLayout 跑 solver 输出 size 变量 + 写 data-story-mode；CSS 只消费
- *   ✓ 单 IO 报告 in/out；scroll / resize / ResizeObserver 三路事件 → scheduleUpdate
- *     单帧 dirty flag rAF flush 写 phase 变量 (--p / --p-photo-1 / --p-photo-2 / --p-text)
- *   ✓ textRO 单独观察每个 beat 的 .poem-text，字体加载 / 断行重排时主动重跑 solver
- *   ✓ prefers-reduced-motion → 不绑事件、不跑 rAF，所有 beat 写 --p:1 终态
- *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉) + "To be continued" kicker
+ *     - 单 IO + scroll + resize + textRO 四源事件 → scheduleUpdate dirty flag
+ *       rAF flush 写 --p / --p-photo-1 / --p-photo-2 / --p-text
+ *   ✓ globe beat (v1.71)：GlobeBeat 内部独立的 IO + scroll listener 自驱 progress；
+ *     不参与本 wrapper 的 applyLayout / phase 变量管理（R3F 岛自治）
+ *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉) + "To be continued"
  *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat
+ *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe 内部独立处理
  *
  * **NOT in current batch**（仍留 §2 后续刀）：
- *   ✗ globe (beat 11) → §2.B GlobeDistanceScene · 等 R3F + Three.js + 水彩贴图地球
- *   ✗ finale 完整版 (beat 12) → §2.C StarCarouselFinale Shader Dissolve · end cap 是临时
+ *   ✗ §2.B GlobeDistanceScene v0.2：水彩贴图 / Bloom postprocessing / CountUp
+ *     同步 / 3D <Html> 城市标签
+ *   ✗ §2.C StarCarouselFinale (beat 12) Shader Dissolve · end cap 仍是临时
  *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
- *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（动效细化 motion polish）
+ *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
  * 数据流（DESIGN §15.1 数据接缝唯一原则）：
  *   - getCollection('storyPoem') → main.json
  *   - photoPoemBeats = beats.filter(kind==='photo-poem').slice(0, maxBeats)
- *   - finaleLines = beats.find(kind==='finale').lines
+ *   - globeBeat = beats.find(kind==='globe')；globeLines 喂给 GlobeBeat
+ *     （GlobeBeat 自己再去 getCollection('journey') 拉 long-distance.json
+ *     里的 from/to/distanceKm）
+ *   - finaleLines = beats.find(kind==='finale').lines（临时给 end-cap 用，
+ *     §2.C 接入后由 StarCarouselFinale 自取）
  *   - anchor_date 当前未消费（beat 05 [N] 天 CountUp 留独立小刀）
  *
  * 调试：window.__storyPoem.progress() / .list() / .active() —— 看进度 / 全部 beat /
- *   当前 inView beats。
+ *   当前 inView beats。globe beat 不进 __storyPoem（自治岛）；其内部状态走
+ *   GlobeDistanceScene 自身的 dataset[data-progress]。
  */
 import { getCollection } from "astro:content";
 import CdnImage from "@/components/CdnImage.astro";

@@ -22,7 +22,7 @@
 
 import * as React from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -235,6 +235,52 @@ function AutoRotate({
   return <group ref={groupRef}>{children}</group>;
 }
 
+/* ─────────────────────── Responsive camera ─────────────────────── */
+/** 相机垂直 fov（与 <Canvas camera={{ fov: ... }}> 一致；改这里要同步两处） */
+const CAMERA_FOV = 38;
+/** globe 在 canvas 上"目标占满"的比例（沿约束维度量，约束维度 = min(canvas w, h)） */
+const GLOBE_FILL_FRACTION = 0.82;
+
+/**
+ * v0.2（v1.71 audit 视觉诉求修）：让 camera.position.z 跟着 canvas aspect 自适应。
+ *
+ * 原 Canvas camera={{ position: [0,0,3.2], fov:38 }} 是固定 z；垂直 fov 不变 →
+ * 球的"垂直像素占比"恒定 = canvasH × const，不随 canvas 宽变化。窄 canvas
+ * （aspect<1，竖屏 / 小窗）下球会被横向裁，宽 canvas (aspect>>1) 下球只填中央
+ * 一小块，左右大段空白。
+ *
+ * 这里按 aspect 显式求解 z：
+ *   - 约束维度 = min(canvas w, h)；目标 globe 直径 = GLOBE_FILL_FRACTION × 约束维度
+ *   - 垂直 frustum 半高 = z · tan(fov/2)；水平 frustum 半宽 = z · tan(fov/2) · aspect
+ *   - aspect ≥ 1（宽 canvas）：约束 = height → z = R / (fillFraction · tan(fov/2))
+ *   - aspect <  1（窄 canvas）：约束 = width  → z = R / (aspect · fillFraction · tan(fov/2))
+ *
+ * 实测影响：
+ *   - 1920×1080 (aspect=1.78)：z ≈ 3.55，globe 占垂直 82%（与 1.7 同款占比，
+ *     但水平不再"被左右大段空白稀释"——同样的视觉权重）
+ *   - 1366×768  (aspect=1.78)：同上 z ≈ 3.55
+ *   - 768×1024  (aspect=0.75)：z ≈ 4.73，globe 占水平 82%、垂直 ~62%（窄屏
+ *     不再贴边裁）
+ *   - 360×800   (aspect=0.45)：z ≈ 7.89，globe 占水平 82%、垂直 ~37%
+ */
+function ResponsiveCamera(): null {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const aspect = size.width / Math.max(1, size.height);
+    const tanHalfFov = Math.tan((CAMERA_FOV * Math.PI) / 360);
+    const z =
+      aspect >= 1
+        ? GLOBE_RADIUS / (GLOBE_FILL_FRACTION * tanHalfFov)
+        : GLOBE_RADIUS / (aspect * GLOBE_FILL_FRACTION * tanHalfFov);
+    camera.position.z = z;
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+    }
+  }, [camera, size.width, size.height]);
+  return null;
+}
+
 /* ─────────────────────── Scene root ─────────────────────── */
 function SceneInner({
   from,
@@ -264,6 +310,7 @@ function SceneInner({
 
   return (
     <>
+      <ResponsiveCamera />
       <ambientLight intensity={0.55} color={COLOR_PAPER} />
       <directionalLight
         position={[3, 2, 4]}
@@ -378,7 +425,9 @@ export function GlobeDistanceScene({
       data-progress={effectiveProgress.toFixed(3)}
     >
       <Canvas
-        camera={{ position: [0, 0, 3.2], fov: 38 }}
+        // 初始相机 z 是个 sensible default；ResponsiveCamera 在 useEffect 里
+        // 按真实 canvas aspect 重算（v0.2 / v1.72 audit 视觉诉求修）
+        camera={{ position: [0, 0, 3.55], fov: CAMERA_FOV }}
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 2]}
       >
