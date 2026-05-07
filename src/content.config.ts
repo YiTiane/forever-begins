@@ -278,6 +278,25 @@ const storyPoemPhoto = z.object({
    */
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
+  /**
+   * v1.63 新增（v1.62 audit P2-A 修）：渲染策略。
+   *   - "contain"：人像 / 主体不可裁切的照片（婚礼站默认对竖幅人像）
+   *   - "cover"：横向氛围图 / 背景图，可允许 box 边缘裁剪
+   * 缺省时调用方按 width/height 自动推导：portrait (w<h) → contain，
+   * landscape (w≥h) → cover。schema 不强制，因为合理默认可由 PoemBeat 推导。
+   */
+  fit: z.enum(["contain", "cover"]).optional(),
+  /**
+   * v1.63 新增：focal point (0..1, 0..1) 用于 cover 模式下的 object-position。
+   * contain 模式下被忽略。婚礼人像若必须 cover，应给 focal point 锁主体头部。
+   * 缺省 (0.5, 0.5) 即图像几何中心。
+   */
+  focalPoint: z
+    .object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+    })
+    .optional(),
 });
 
 /**

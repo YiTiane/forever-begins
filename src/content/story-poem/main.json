@@ -38,7 +38,8 @@
           "alt": "雪山系列 · 女生独身像",
           "role": "top-left",
           "width": 2000,
-          "height": 3000
+          "height": 3000,
+          "fit": "contain"
         },
         {
           "stem": "Snow_15",
@@ -46,7 +47,8 @@
           "alt": "雪山系列 · 男生独身像",
           "role": "bottom-right",
           "width": 2000,
-          "height": 3000
+          "height": 3000,
+          "fit": "contain"
         }
       ],
       "note": "女生独身像左上、男生独身像右下，形成对视斜线；中间留给文字"
