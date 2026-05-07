@@ -1,5 +1,18 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.1 · v1.90 batch 8）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.2 · v1.91 修 v1.90 audit 4 P2）
+ *
+ * v0.2 修 v1.90 audit：
+ *   - **progress 源换 closest('.finale-beat')**：v0.1 用 containerRef.parentElement
+ *     拿到的是 hydrated island 自身，不是外层 700vh scroll spacer，结果 progress
+ *     一次 wheel 就 0 → 1 跳过走马灯
+ *   - **Canvas 不透明 + clearColor 深色**：v0.1 alpha=true 让 SSR Pearl_04 fallback
+ *     穿透到走马灯之下混色；alpha=false + clearColor `#1d1d18` 给"夜空 starfield"
+ *     opaque 底，DESIGN "背景从地球的深色星场延续下来" 落到位
+ *   - **PhotoPlane 限定到 currentI ± 1**：v0.1 一次性挂载 15 张 useTexture，岛
+ *     hydrate 后立刻请求 15 张 1600px JPG（~3MB）；v0.2 SceneInner 按 globalProgress
+ *     算 currentI，只渲染 ±1 active 范围的 PhotoPlane，其它不挂载（也不 fetch
+ *     纹理）。每张 PhotoPlane 有自己的 <Suspense fallback={null}>，相邻照片
+ *     纹理加载不阻塞当前帧
  *
  * 视觉契约（DESIGN §2.C · v2.21）：
  *   - 15 张照片按钦定顺序串接：grassland × 5 → wooden-door × 3 → pearl × 2 →
@@ -312,23 +325,41 @@ function SceneInner({
   const N = FINALE_PHOTO_SEQUENCE.length;
   // 全局 progress 0..1 → 每张照片 lifecycle = globalProgress × N - i
   // 让相邻两张有一段 overlap：i 张 lifecycle 进入 EXIT 阶段时，i+1 张同时进入 ENTER
+
+  // v0.2（v1.90 audit P2-5 修）：只挂载 currentI ± ACTIVE_RANGE 的 PhotoPlane。
+  // 每张 PhotoPlane 内部 useTexture 会触发对应 1600px JPG 的 fetch + Suspense；
+  // 限制活跃集合到 3 张避免初次 hydrate 就请求 15 × ~200KB = ~3MB 图片。
+  // currentI 跟 globalProgress 走，自动 swap：滚到第 5 张时活跃 = [3, 4, 5, 6]，
+  // 再滚 [4, 5, 6, 7] ……
+  const ACTIVE_RANGE = 1;
+  const currentI = Math.min(N - 1, Math.max(0, Math.floor(globalProgress * N)));
+  const activeIndices: number[] = [];
+  for (let i = currentI - ACTIVE_RANGE; i <= currentI + ACTIVE_RANGE; i += 1) {
+    if (i >= 0 && i < N) activeIndices.push(i);
+  }
+
   return (
     <>
       <ambientLight intensity={0.65} />
       <StarField progress={globalProgress} />
-      {FINALE_PHOTO_SEQUENCE.map((photo, i) => {
+      {activeIndices.map((i) => {
+        const photo = FINALE_PHOTO_SEQUENCE[i];
+        if (!photo) return null;
         const life = globalProgress * N - i;
         const isFinal = i === N - 1;
         const url = finalePhotoUrl(photo);
+        // 每张 PhotoPlane 自带 <Suspense fallback={null}>：纹理加载期间该
+        // 单张隐形，不阻塞相邻照片或 StarField / 背景渲染
         return (
-          <PhotoPlane
-            key={`${photo.cdnTarget}-${photo.stem}`}
-            photo={photo}
-            textureUrl={url}
-            lifecycle={life}
-            isFinal={isFinal}
-            reducedMotion={reducedMotion}
-          />
+          <Suspense key={`${photo.cdnTarget}-${photo.stem}`} fallback={null}>
+            <PhotoPlane
+              photo={photo}
+              textureUrl={url}
+              lifecycle={life}
+              isFinal={isFinal}
+              reducedMotion={reducedMotion}
+            />
+          </Suspense>
         );
       })}
     </>
@@ -362,13 +393,16 @@ export function StarCarouselFinale(): React.ReactElement {
     let raf = 0;
     const compute = () => {
       raf = 0;
-      const root = containerRef.current?.parentElement;
+      // v0.2（v1.90 audit P2-1 修）：progress 源是 .finale-beat 700vh scroll
+      // spacer，不是 React 岛自身（旧 parentElement = hydrated 岛 = 100vh 内层
+      // sticky stage，结果 progress 一次 wheel 就 0→1 跳过走马灯）
+      const root =
+        containerRef.current?.closest<HTMLElement>(".finale-beat") ?? null;
       if (!root) return;
       const rect = root.getBoundingClientRect();
       const vh = window.innerHeight || 1;
       // root.top 在视口底（rect.top = vh）→ progress 0
-      // root.bottom 接近视口底（rect.bottom = vh + rect.height·1）→ progress 1
-      // 使用 root.height 与窗口高度的差作为可滚距离
+      // root.bottom 离开视口底 → progress 1
       const scrollable = rect.height - vh;
       if (scrollable <= 0) {
         setProgress(1);
@@ -400,7 +434,13 @@ export function StarCarouselFinale(): React.ReactElement {
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
         frameloop={reducedMotion ? "demand" : "always"}
-        gl={{ antialias: true, alpha: true }}
+        // v0.2（v1.90 audit P2-3 修）：alpha=false 让 canvas 不透明，clearColor
+        // 设深 olive 给"夜空 starfield"opaque 底；不再让 SSR Pearl_04 fallback
+        // 在透明区漏底下来污染走马灯
+        gl={{ antialias: true, alpha: false }}
+        onCreated={({ gl }) => {
+          gl.setClearColor("#1d1d18", 1);
+        }}
         dpr={[1, 2]}
       >
         <Suspense fallback={null}>

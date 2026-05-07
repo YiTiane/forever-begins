@@ -1,8 +1,13 @@
 /**
  * verify-story-photo-dimensions.ts · § 2 Story photo 尺寸合约 build-time gate
- *   v0.4（Phase 2 §2 batch 6 · v1.69 收 v1.68 audit P3 头注释收口 ·
- *        v1.65 起 v0.1 → v1.66 dual-CDN v0.2 → v1.67 first-success-wins v0.3 →
- *        v1.68 abort losers v0.4；本次只更新顶部契约描述，逻辑不变）
+ *   v0.5（Phase 2 §2 batch 8 · v1.91 修 v1.90 audit P2-4：覆盖 §2.C finale 15 张）
+ *
+ * v0.5：extends gate 到 §2.C StarCarouselFinale 序列。除原 §2 photo-poem 12 张
+ * 外，本批次还把 src/lib/story/finalePhotos.ts 的 15 张照片 (grassland × 5 +
+ * wooden-door × 3 + pearl × 3 + retro × 4) aspectRatio 与 CDN 1600px 派生品
+ * 实测做相同的 dual-CDN first-valid + abort losers 比对；finalePhoto.aspectRatio
+ * 与 CDN 派生不一致 → build 直接 fail（防 v1.90 audit 那种 14/15 错标 1.5
+ * 横幅、实测 0.667 portrait 的元数据漂移再次发生）。
  *
  * 动机：v1.63 audit 实测 main.json 把 5 张实际 1600×2400 (portrait) 竖幅人像
  * 错标成 3000×2000 (landscape)，solver 据此求横幅 box，cover 模式裁掉人物主体。
@@ -48,6 +53,7 @@ import {
   cdnUrl,
   type CdnTarget,
 } from "../src/lib/images/asset-versions.ts";
+import { FINALE_PHOTO_SEQUENCE } from "../src/lib/story/finalePhotos.ts";
 
 interface Photo {
   stem: string;
@@ -317,6 +323,28 @@ async function main() {
     }
   }
 
+  // v0.5（v1.91 修 v1.90 audit P2-4）：finale 15 张走 finalePhotos.ts 元数据；
+  // 没有 main.json 的 width/height 概念，直接用 aspectRatio 做 expectedAspect。
+  // 任一 CDN 通过即过；双 CDN 都失败 / aspect 漂移 → build fail。
+  for (const photo of FINALE_PHOTO_SEQUENCE) {
+    const expectedAspect = photo.aspectRatio;
+    try {
+      const { dim: cdnDim, sourceCdn } = await probeOne(
+        photo.cdnTarget,
+        photo.stem,
+        expectedAspect,
+        ASPECT_TOLERANCE,
+      );
+      checked.push(
+        `finale/${photo.stem}: aspect ${expectedAspect.toFixed(3)} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
+      );
+    } catch (err) {
+      errors.push(
+        `finale ${photo.stem} (finalePhotos.ts aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`,
+      );
+    }
+  }
+
   if (errors.length > 0) {
     console.error(
       "\n[verify-story-photo-dimensions] ✗ Story photo 尺寸合约校验失败：",
@@ -333,7 +361,7 @@ async function main() {
   }
 
   console.log(
-    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story photo 与 CDN ${PROBE_W}px 派生品 aspect 一致`,
+    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story photo (含 finale ${FINALE_PHOTO_SEQUENCE.length}) 与 CDN ${PROBE_W}px 派生品 aspect 一致`,
   );
   // 把通过列表也打到 stdout（CI log 可读 + 本地 quick visual confirm）
   for (const c of checked) console.log("  -", c);

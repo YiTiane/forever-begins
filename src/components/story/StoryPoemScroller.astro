@@ -92,18 +92,21 @@
  *   ✓ [N] 天 CountUp (v1.74-v1.75)：本 wrapper 第二个 <script> IIFE 单 IO 监
  *     visible .days-together span，入场动画 0 → client-time N over 1.4s ease-out；
  *     visible span aria-hidden + .sr-only sibling 拿稳定终值给 AT
- *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉)
+ *   ✓ §2.C StarCarouselFinale (beat 12)：v1.90 接入 FinaleBeat（15 张照片走马灯
+ *     + Shader Dissolve + final Pearl_04 定格），取代旧 .story-end-cap 静态占位
  *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat /
- *     [N] 天 visible aria-hidden + sr-only stable
- *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe Canvas frameloop
- *     "demand" + 自旋 / 脉冲全停；[N] CountUp 钉终值不动画
- *   ✓ hash deep-link：公开 id 仍在 .poem-beat / .globe-beat，但浏览器完成原生
- *     hash scroll 后会再对齐到稳定 composed frame；审计 URL 不再落在上一段残片
+ *     [N] 天 visible aria-hidden + sr-only stable + finale role="img" aria-label
+ *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe / finale
+ *     Canvas frameloop "demand" + 自旋 / 脉冲 / dissolve 全停；[N] CountUp 钉终值
+ *   ✓ hash deep-link：公开 id 仍在 .poem-beat / .globe-beat / .finale-beat，
+ *     hash 浏览器原生 scroll 后由 alignHashToComposedFrame 再对齐到稳定 composed frame
+ *     —— v1.91 起 finale 也接入对齐
  *
  * **NOT in current batch**（仍留 §2 后续刀）：
- *   ✗ §2.B GlobeDistanceScene v0.5+：水彩贴图 / Bloom postprocessing / 距离 CountUp
+ *   ✗ §2.B GlobeDistanceScene v1.3+：水彩贴图 / Bloom postprocessing / 距离 CountUp
  *     同步弧线 / 3D <Html> 城市标签
- *   ✗ §2.C StarCarouselFinale (beat 12) Shader Dissolve · end cap 仍是临时
+ *   ✗ §2.C StarCarouselFinale v0.3+：高端机 GPU 粒子星尘 / 入场方位变化 / 文字
+ *     stagger
  *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
@@ -111,17 +114,16 @@
  *   - getCollection('storyPoem') → main.json
  *   - photoPoemBeats = beats.filter(kind==='photo-poem').slice(0, maxBeats)
  *   - globeBeat = beats.find(kind==='globe')；globeLines 喂给 GlobeBeat
- *     （GlobeBeat 自己再去 getCollection('journey') 拉 long-distance.json
- *     里的 from/to/distanceKm）
- *   - finaleLines = beats.find(kind==='finale').lines（临时给 end-cap 用，
- *     §2.C 接入后由 StarCarouselFinale 自取）
+ *     （GlobeBeat 自己再去 getCollection('journey') 拉 long-distance.json）
+ *   - finaleBeat = beats.find(kind==='finale')；finaleLines 喂给 FinaleBeat
+ *     （FinaleBeat 自己再去 src/lib/story/finalePhotos.ts 拉 15 张照片序列）
  *   - anchorDate = main.data.anchor_date：透传给每个 PoemBeat；含 [N] 的行
  *     在 PoemBeat 内部拆分渲染（v1.74 起）
  *
  * 调试：window.__storyPoem.progress() / .list() / .active() —— 看进度 / 全部 beat /
- *   当前 inView beats。globe beat / [N] CountUp 不进 __storyPoem（各自自治）；
- *   GlobeDistanceScene 状态走自身 dataset[data-progress]，[N] 状态走
- *   .days-together textContent。
+ *   当前 inView beats。globe / finale / [N] CountUp 不进 __storyPoem（各自自治）；
+ *   GlobeDistanceScene 状态走 dataset[data-progress]，FinaleBeat 同款，[N] 状态
+ *   走 .days-together textContent。
  */
 import { getCollection } from "astro:content";
 import PoemBeat from "@/components/story/PoemBeat.astro";
@@ -532,6 +534,22 @@ const anchorDate = main.data.anchor_date;
         const scrollable = Math.max(0, globeBeat.offsetHeight - vh);
         const top =
           scrollable > 0 ? absoluteTop + scrollable * 0.22 : absoluteTop;
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        return;
+      }
+
+      // v1.91（修 v1.90 audit P2-2）：finale 走马灯。落点是 spacer 的中段
+      // ~0.07（globalProgress × 15 ≈ 1，第 1 张 grassland 入场已基本完成、
+      // 紧接着第 2 张接力），让 hash 直达"导演帧"而不是 fallback / 走马灯
+      // 起步前的 paper 空帧。
+      const finaleBeat = anchor.closest<HTMLElement>(".finale-beat");
+      if (finaleBeat) {
+        const rect = finaleBeat.getBoundingClientRect();
+        const absoluteTop = window.scrollY + rect.top;
+        const vh = window.innerHeight || 1;
+        const scrollable = Math.max(0, finaleBeat.offsetHeight - vh);
+        const top =
+          scrollable > 0 ? absoluteTop + scrollable * 0.07 : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       }
     }
