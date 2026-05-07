@@ -10,8 +10,8 @@
  *   ④ **完整 SEO meta**（v0.4 §1.1.13）：
  *      - charset / viewport (含 viewport-fit=cover for iOS 刘海) / generator / title / description
  *      - link rel=canonical（基于 Astro.site + Astro.url.pathname 一份斜杠归一）
- *      - theme-color 双态（亮 #FAF6EC paper / 暗 #1F2118 paper-night），让 iOS / Android 顶栏跟随
- *      - color-scheme: light dark
+ *      - theme-color 固定 #FAF6EC paper，保留婚礼站浅纸面设计
+ *      - color-scheme: light（v1.83：禁止 iOS / Safari 夜间自动切 dark palette）
  *      - robots（noindex Prop 用于 dev-only 路由）
  *   ⑤ **Open Graph + Twitter Card**（v0.4）：
  *      - og:* 8 条（type/title/description/url/image[+w/h/alt]/locale/site_name）
@@ -144,18 +144,9 @@ const eventSchema = {
     {noindex && <meta name="robots" content="noindex,nofollow" />}
     <link rel="canonical" href={canonicalURL} />
 
-    {/* —— 主题色（亮 / 暗 双态，iOS / Android 浏览器顶栏跟随）—— */}
-    <meta
-      name="theme-color"
-      content="#FAF6EC"
-      media="(prefers-color-scheme: light)"
-    />
-    <meta
-      name="theme-color"
-      content="#1F2118"
-      media="(prefers-color-scheme: dark)"
-    />
-    <meta name="color-scheme" content="light dark" />
+    {/* —— 主题色固定浅纸面（v1.83：保留设计，不随系统 dark mode 切黑）—— */}
+    <meta name="theme-color" content="#FAF6EC" />
+    <meta name="color-scheme" content="light" />
 
     {
       /* —— Open Graph + Twitter Card + JSON-LD（v0.5：suppressSocialMeta=true 时整组跳过）—— */

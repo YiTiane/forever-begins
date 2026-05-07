@@ -9,14 +9,14 @@
  *      让两套写法都成立、未来不必返工 DESIGN 全文
  *   ③ 字号阶梯（DESIGN §2.3.5 v2.21 三档表 10 行 × 3 档纯 rem）
  *   ④ 行高 / 字族 / 间距 / 容器 / 圆角 / 阴影 / 缓动 / 断点 / z-index
- *   ⑤ 夜读（prefers-color-scheme: dark）—— **仅切色板，不切字号**
+ *   ⑤ v1.83 起不再自动夜读：系统 dark preference 下仍保留浅纸面设计
  *   ⑥ Tailwind v4 `@theme` 块映射 → utility 命名空间
  *      （text-display-xl / bg-paper / font-cn-song / shadow-paper / tablet: …）
  *
  * ⛔ 严禁（v1.26 / v1.27 收紧的硬约束 · 违反请改回来）：
  *   ❌ `vw` / `vh` / `vmin` / `vmax` 出现在任何 `--text-*` token 中
  *   ❌ `clamp(min, Xvw, max)` / `clamp(min, calc(1rem + Nvw), max)` 把字号绑 viewport
- *   ❌ `prefers-color-scheme` 切字号（颜色偏好不应改变字体尺寸）
+ *   ❌ `prefers-color-scheme` 切字号或切暗色背景（颜色偏好不应改变婚礼站视觉）
  *   ❌ 任何非零 `letter-spacing` token 或 utility（DESIGN §2.3.6 v2.20：项目级默认 0；
  *      极少数视觉特例只在组件作用域内单独写）
  *   ❌ `@font-face` —— 字体单一源在 src/components/FontFaces.astro（v1.24）
@@ -235,26 +235,31 @@
 }
 
 /* ────────────────────────────────────────────────────────── */
-/* 5. 夜读 / Dark Mode —— 仅切色板，不切字号                   */
-/* DESIGN §2.3.5：颜色偏好不应改变字体尺寸                      */
-/* 只覆写"语义角色 token"和阴影；--text-* / --spacing-* /       */
-/* --leading-* 全部不动；--c-* 别名也不动（原始色板不变）        */
-/* 验收：发现夜读下字号变大/变小即为回归                        */
+/* 5. iOS / Safari dark preference guard —— 保留浅纸面          */
+/* v1.83：用户实测 iOS 夜间访问会把浅黄色背景切黑，破坏 §0-§2   */
+/* 的纸面、水彩与照片叙事。因此本站不再响应自动 dark palette。   */
+/* 这里仍保留 media guard，是为了在浏览器进入 dark preference 时 */
+/* 显式重申 light 语义 token，防止旧缓存 / UA heuristics 读到     */
+/* 深色角色。若用户启用系统级强制反色，本 CSS 只能尽量提供明确底色 */
+/* 与文字颜色，无法完全阻止浏览器级像素反转。                    */
 /* ────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: var(--color-paper-night);
-    --fg: var(--color-petal);
-    --muted: oklch(45% 0.013 90);
-    --accent: oklch(72% 0.05 121); /* sage 在暗底略提亮 */
-    --link: oklch(72% 0.05 121);
-    --link-hover: oklch(80% 0.05 121);
+    color-scheme: light;
+    --bg: var(--color-paper);
+    --fg: var(--color-olive-ink);
+    --muted: var(--color-mist);
+    --accent: var(--color-sage);
+    --link: var(--color-sage);
+    --link-hover: var(--color-sage-deep);
     --rule: var(--color-honey); /* 烫金在暗底依然成立 */
 
-    /* 阴影改用更深"墨黑"投影，在 paper-night 上仍可感 */
+    /* 阴影保持浅纸面语义，避免 iOS dark preference 下组件忽明忽暗 */
     --shadow-paper:
-      0 0.5px 1px 0 oklch(0% 0 0 / 0.4), 0 4px 16px -2px oklch(0% 0 0 / 0.3);
+      0 0.5px 1px 0 oklch(20% 0.005 95 / 0.08),
+      0 4px 16px -2px oklch(20% 0.005 95 / 0.06);
     --shadow-card:
-      0 1px 2px 0 oklch(0% 0 0 / 0.3), 0 8px 24px -8px oklch(0% 0 0 / 0.4);
+      0 1px 2px 0 oklch(20% 0.005 95 / 0.06),
+      0 8px 24px -8px oklch(20% 0.005 95 / 0.08);
   }
 }

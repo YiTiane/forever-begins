@@ -12,7 +12,7 @@
  *   ③ body 全局排版默认（DESIGN §2.3.6 A/B）：
  *      - line-height: var(--leading-cn) = 1.7           （A：中文段落 ≥ 1.7）
  *      - letter-spacing: 0                              （B：项目级默认 0；非零是组件特例）
- *   ④ 主题感知：color-scheme + accent-color + ::selection 与 token 系统挂钩
+ *   ④ 主题约束：color-scheme 固定 light + accent-color + ::selection 与 token 系统挂钩
  *   ⑤ a11y：:focus-visible 项目化轮廓 + prefers-reduced-motion 降级
  *
  * ⛔ 严禁（与 tokens.css 同档约束 · 违反请改回来）：
@@ -40,8 +40,9 @@
 /* 1. html / 顶层文档行为                                      */
 /* ────────────────────────────────────────────────────────── */
 html {
-  /* 让 UA 能根据 prefers-color-scheme 自动选对滚动条 / 表单控件配色 */
-  color-scheme: light dark;
+  /* v1.83：婚礼站强制保留浅纸面，不让 iOS / Safari 夜间偏好自动切黑 */
+  color-scheme: light;
+  background: var(--bg);
 
   /* 内置平滑滚动；Phase 5 Lenis 接管时会通过 JS 把它改回 auto，再用自己的曲线 */
   scroll-behavior: smooth;
@@ -61,7 +62,7 @@ html {
 /* 2. body —— 全站排版基线                                     */
 /* ────────────────────────────────────────────────────────── */
 body {
-  /* 主题感知颜色（tokens.css 提供 var；夜读由 prefers-color-scheme 在 :root 切换） */
+  /* 固定浅纸面颜色（tokens.css 提供 var；dark preference 不再切换 palette） */
   background: var(--bg);
   color: var(--fg);
 
