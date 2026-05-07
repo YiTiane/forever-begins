@@ -25,18 +25,22 @@ export default defineConfig({
     plugins: [tailwindcss()],
     build: {
       /**
-       * v1.72（修 v1.71 audit P3 chunk 预算口径）：
+       * v1.72 落地 / v1.73 收口注释（修 v1.71 audit P3 chunk 预算口径）：
        *
-       * §2.B GlobeDistanceScene 是 client:visible 懒岛，整体 ~890KB 是 R3F + drei
-       * + three.js 三件套绑在一起的产物。把它们拆成独立 chunk 后：
-       *   - `three`     ~600KB · 站点全周期内只下载一次；将来加 §2.C / §2.D R3F
-       *     场景可复用（不重复下载 three core）
-       *   - `r3f-drei`  ~200KB · @react-three/{fiber,drei}；类似复用边界
-       *   - 业务 chunk  ~50KB  · 仅 GlobeDistanceScene.tsx 自身（材质 + 弧线 + 端点）
+       * §2.B GlobeDistanceScene 是 client:visible 懒岛，**未拆**前整体 ~890KB
+       * 是 R3F + drei + three.js 三件套绑在一起的产物。把它们拆成独立 chunk 后
+       * （v1.72 实测）：
+       *   - `three`               714KB · 站点全周期内只下载一次；将来加
+       *     §2.C / §2.D R3F 场景可复用（不重复下载 three core）
+       *   - `r3f-drei`            357KB · @react-three/{fiber,drei,postprocessing}；
+       *     类似复用边界
+       *   - 业务 chunk             ~5KB · 仅 GlobeDistanceScene.tsx 自身（材质 +
+       *     弧线 + 端点 + ResponsiveCamera + frameloop demand 切换 ~ 165× 缩减）
        *
-       * 拆完后单 chunk 不再触发 vite 的 500KB 警告；显式把 chunkSizeWarningLimit 拉
-       * 到 700 给 three core 留余量；超 700 必须主动 review（postprocessing /
-       * 真贴图等下批次就在边界附近）。
+       * 拆完后单 chunk 不再触发 vite 默认 500KB 警告；显式把 chunkSizeWarningLimit
+       * 拉到 750（three core ~714KB minified 是不可拆解的物理下限；750 给小幅
+       * 版本浮动留余地，但保证业务 chunk 不会无意中漂大）。超 750 必须主动 review
+       * （v0.4+ 加 postprocessing / 真贴图 useTexture 时仍可能挑战该边界）。
        *
        * Astro client:visible 走 dynamic import → 多 chunk 不影响主初屏；初屏访客
        * 完全不下载这些 chunk。

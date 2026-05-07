@@ -1,17 +1,33 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.1 · v1.71 batch 7）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.3 · v1.73 reduced-motion 真静态化）
  *
  * 视觉契约（DESIGN §2.B · v2.21）：
- *   - 球体：深墨绿/纸白低饱和；v0.1 暂用纯色 + 柔和环境光（2K 水彩贴图
+ *   - 球体：深墨绿/纸白低饱和；v0.x 暂用纯色 + 柔和环境光（2K 水彩贴图
  *     `globe-watercolor-2k.jpg` 在 misc CDN 仓 Phase 3 上线后切到 useTexture）
  *   - 端点：乌鲁木齐 / 墨尔本，柔和金色脉冲（不用红色 pin）
  *   - 弧线：从乌 → 墨的球面大圆弧，sage → honey 渐变；按 progress 0→1 动画
  *   - 数字：与弧线同步 CountUp（在 GlobeBeat.astro 外壳渲染）
  *   - 交互：桌面鼠标轻微拖拽（OrbitControls 阻尼 + 限位）；移动端自动慢速旋转
- *   - reduced motion：跳过自旋 / 弧线动画，渲染完整终态
+ *   - reduced motion：跳过自旋 / 弧线动画，渲染完整终态 + frameloop=demand
+ *
+ * v0.3 新增（v1.73 修 v1.72 audit P2 reduced-motion 仍跑 WebGL 帧循环）：
+ *   - **Canvas frameloop 跟 reducedMotion 走**："always"（普通）vs "demand"
+ *     （reduced-motion）。demand 模式 rAF 不再常驻 → 静态终态期间 GPU/CPU
+ *     工作量降到接近 0；只在 invalidate() 显式触发时重绘（OrbitControls
+ *     change / ResponsiveCamera resize / mq.change 都会触发）
+ *   - **Endpoint reduced-motion 不再每帧写同样静态值**：原 useFrame 每帧
+ *     写 halo scale=1.4 / opacity=0.55；改 useEffect 只跑一次设定终态，
+ *     useFrame body 第一行 if (reducedMotion) return —— 即便 frameloop 出 bug
+ *     回到 always，也不会重复 work
+ *   - **reducedMotion 用 lazy initializer 同步读 matchMedia**：useState 初值
+ *     就是 mq.matches，确保首次 Canvas 渲染就用正确的 frameloop 值（旧实现
+ *     useEffect 异步赋值导致挂载瞬间仍跑了一次 60fps rAF）
+ *
+ * v0.2（v1.72 audit 视觉诉求修）：ResponsiveCamera 按 canvas aspect 求 z，
+ *   保证 globe 在 1920/1366/768/360 各 viewport 都填到约束维度的 82%
  *
  * v0.1（v1.71 batch 7）落地：geometry / endpoints / arc / progress-driven
- * draw / OrbitControls / reduced-motion fallback；**deferred to v0.2**：
+ *   draw / OrbitControls / reduced-motion fallback（首版）；**deferred to v0.4+**：
  *   - `globe-watercolor-2k.jpg` 真贴图（misc CDN 仓需 Phase 3 资产 push）
  *   - Bloom + Vignette + ToneMapping postprocessing（DESIGN 提的 halo 视感）
  *   - 高密度 GPU 粒子星尘
@@ -99,16 +115,33 @@ function Endpoint({
   const haloRef = useRef<THREE.Mesh>(null);
   const dotRef = useRef<THREE.Mesh>(null);
 
-  useFrame((state) => {
-    if (reducedMotion) {
-      // 静态终态：halo 钉在最大尺寸 + 中等不透明
-      if (haloRef.current) {
-        haloRef.current.scale.setScalar(1.4);
-        const mat = haloRef.current.material as THREE.MeshBasicMaterial;
-        mat.opacity = 0.55;
-      }
-      return;
+  /**
+   * v0.3（v1.72 audit P2 修）：reduced-motion 不再每帧写同样的静态值。
+   * 旧实现：useFrame 每帧检查 reducedMotion，若是则把 halo scale/opacity 写
+   * 到同样的常量；R3F 默认 frameloop=always 仍然在 60fps 调用，搭配 Canvas
+   * 的 GPU 重绘 → reduced-motion 用户每秒仍跑 ~60 次 rAF + WebGL 提交，
+   * 违反"不要做不必要的工作"。
+   * 新实现：reduced-motion → useEffect 只跑一次写静态终态；useFrame 在
+   * reducedMotion 分支提前 return，**完全不进每帧 work**。SceneInner 还会
+   * 把 Canvas frameloop 切到 "demand"，多重保险。
+   */
+  useEffect(() => {
+    if (!reducedMotion) return;
+    // 静态终态：halo 钉在最大 1.4 倍 + 0.55 不透明；dot 钉 0.85
+    if (haloRef.current) {
+      haloRef.current.scale.setScalar(1.4);
+      const mat = haloRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.55;
     }
+    if (dotRef.current) {
+      const dotMat = dotRef.current.material as THREE.MeshBasicMaterial;
+      dotMat.opacity = 0.85;
+    }
+  }, [reducedMotion]);
+
+  useFrame((state) => {
+    // reduced-motion：完全跳过每帧 work（静态终态由 useEffect 一次性写入）
+    if (reducedMotion) return;
     // 1.4 Hz 心跳脉冲；progress 从 0→1 决定亮度峰值
     const t = state.clock.getElapsedTime();
     const pulse = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.4);
@@ -264,7 +297,7 @@ const GLOBE_FILL_FRACTION = 0.82;
  *   - 360×800   (aspect=0.45)：z ≈ 7.89，globe 占水平 82%、垂直 ~37%
  */
 function ResponsiveCamera(): null {
-  const { camera, size } = useThree();
+  const { camera, size, invalidate } = useThree();
   useEffect(() => {
     const aspect = size.width / Math.max(1, size.height);
     const tanHalfFov = Math.tan((CAMERA_FOV * Math.PI) / 360);
@@ -277,7 +310,10 @@ function ResponsiveCamera(): null {
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
     }
-  }, [camera, size.width, size.height]);
+    // v0.3（v1.72 audit P2 修）：frameloop="demand" 模式下 camera 改动需要主动
+    // 通知 R3F 渲染一次；frameloop="always" 时 invalidate() 是 no-op
+    invalidate();
+  }, [camera, size.width, size.height, invalidate]);
   return null;
 }
 
@@ -367,12 +403,24 @@ export function GlobeDistanceScene({
   to,
   progress,
 }: GlobeDistanceSceneProps): React.ReactElement {
-  // reduced motion：在 client 实测一次，不做反馈循环
-  const [reducedMotion, setReducedMotion] = useState(false);
+  /**
+   * v0.3（v1.72 audit P2 修）：reduced-motion 状态用 lazy initializer 同步读
+   * matchMedia，确保第一次 Canvas 渲染就拿到正确的 frameloop 值。
+   *
+   * 旧实现 useState(false) + 在 useEffect 里 setReducedMotion(mq.matches)：
+   *   - 第一帧 frameloop="always" → 即使用户 prefers-reduced-motion，挂载瞬间
+   *     仍跑了一次 60fps rAF；
+   *   - 后续 setReducedMotion(true) re-render → frameloop 变 "demand"。
+   * 新实现：初值就是 mq.matches，整个组件生命周期内只在 mq.change 时切换。
+   * 本组件仅在 client:visible 加载，渲染必在浏览器，window 一定可用。
+   */
+  const [reducedMotion, setReducedMotion] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(mq.matches);
     const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
@@ -428,6 +476,12 @@ export function GlobeDistanceScene({
         // 初始相机 z 是个 sensible default；ResponsiveCamera 在 useEffect 里
         // 按真实 canvas aspect 重算（v0.2 / v1.72 audit 视觉诉求修）
         camera={{ position: [0, 0, 3.55], fov: CAMERA_FOV }}
+        // v0.3（v1.72 audit P2 修）：reduced-motion → "demand" 帧循环
+        // - 普通模式 "always"：60fps rAF 渲染，Endpoint 心跳脉冲 / AutoRotate 慢转都靠它
+        // - reduced-motion "demand"：rAF 不再常驻；首帧渲染后只在显式 invalidate()
+        //   时才重绘（drei OrbitControls change 事件、ResponsiveCamera resize 都会
+        //   主动 invalidate），WebGL/GPU 工作量降到接近 0
+        frameloop={reducedMotion ? "demand" : "always"}
         gl={{ antialias: true, alpha: true }}
         dpr={[1, 2]}
       >
