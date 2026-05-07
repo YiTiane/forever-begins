@@ -13,7 +13,8 @@
           "alt": "雪山系列 · 远景",
           "role": "far",
           "width": 3000,
-          "height": 2000
+          "height": 2000,
+          "fit": "cover"
         },
         {
           "stem": "Snow_07",
@@ -21,7 +22,8 @@
           "alt": "雪山系列 · 近景",
           "role": "near",
           "width": 3000,
-          "height": 2000
+          "height": 2000,
+          "fit": "cover"
         }
       ],
       "note": "两张雪山图一远一近，低速 parallax，像记忆被慢慢推近"
@@ -64,11 +66,12 @@
           "cdnTarget": "snow-a",
           "alt": "雪山系列 · 居中柔焦",
           "role": "center",
-          "width": 3000,
-          "height": 2000
+          "width": 2000,
+          "height": 3000,
+          "fit": "contain"
         }
       ],
-      "note": "单图居中偏后，柔焦边缘 + radial mask，像晕散"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅人像；contain 保人物完整 + radial mask 给柔焦"
     },
     {
       "id": "04",
@@ -82,7 +85,8 @@
           "alt": "雪山系列 · 日期锚点",
           "role": "anchor",
           "width": 3000,
-          "height": 2000
+          "height": 2000,
+          "fit": "cover"
         }
       ],
       "note": "日期数字 CountUp 前，照片先出现为锚点"
@@ -98,11 +102,12 @@
           "cdnTarget": "snow-b",
           "alt": "雪山系列 · 携手",
           "role": "anchor",
-          "width": 3000,
-          "height": 2000
+          "width": 2000,
+          "height": 3000,
+          "fit": "contain"
         }
       ],
-      "note": "[N] 实时计算 (DESIGN §2.D daysTogether)；数字与照片轻微同步放大"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅；contain 保人物完整。[N] 实时计算 (DESIGN §2.D daysTogether) 留独立小刀。"
     },
     {
       "id": "06",
@@ -115,11 +120,12 @@
           "cdnTarget": "snow-a",
           "alt": "雪山系列 · 夜色",
           "role": "vignette",
-          "width": 3000,
-          "height": 2000
+          "width": 2000,
+          "height": 3000,
+          "fit": "contain"
         }
       ],
-      "note": "夜色感 vignette，文字逐行亮起"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅人像；contain 保人物。雪粒子 / 重点舞台动画留 motion polish 刀。"
     },
     {
       "id": "07",
@@ -133,7 +139,8 @@
           "alt": "雪山系列 · 契合",
           "role": "overlap",
           "width": 3000,
-          "height": 2000
+          "height": 2000,
+          "fit": "cover"
         }
       ],
       "note": "两个半透明图层短暂重合，暗示契合"
@@ -149,11 +156,12 @@
           "cdnTarget": "snow-b",
           "alt": "雪山系列 · 卸下防备",
           "role": "reveal",
-          "width": 3000,
-          "height": 2000
+          "width": 2000,
+          "height": 3000,
+          "fit": "contain"
         }
       ],
-      "note": "图像从裁切中展开，像卸下防备"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅人像；contain 保人物。clip-path 展开伴随主体显现。"
     },
     {
       "id": "09",
@@ -171,7 +179,8 @@
           "alt": "木门系列 · 缝补",
           "role": "wooden",
           "width": 3000,
-          "height": 2000
+          "height": 2000,
+          "fit": "cover"
         }
       ],
       "note": "木门质感增强，照片边缘有细微缝线式 SVG path"
@@ -187,11 +196,12 @@
           "cdnTarget": "pearl",
           "alt": "珍珠系列 · 高光",
           "role": "pearl",
-          "width": 3000,
-          "height": 2000
+          "width": 2000,
+          "height": 3000,
+          "fit": "contain"
         }
       ],
-      "note": "珍珠高光与文字同步闪动，但保持克制"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅人像；contain 保人物。珍珠高光 sweep 在主体上自然横扫。"
     },
     {
       "id": "11",

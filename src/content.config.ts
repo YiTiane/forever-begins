@@ -279,13 +279,19 @@ const storyPoemPhoto = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   /**
-   * v1.63 新增（v1.62 audit P2-A 修）：渲染策略。
-   *   - "contain"：人像 / 主体不可裁切的照片（婚礼站默认对竖幅人像）
-   *   - "cover"：横向氛围图 / 背景图，可允许 box 边缘裁剪
-   * 缺省时调用方按 width/height 自动推导：portrait (w<h) → contain，
-   * landscape (w≥h) → cover。schema 不强制，因为合理默认可由 PoemBeat 推导。
+   * v1.64（v1.63 audit P2 修）：渲染策略**强制必填**。
+   *   - "contain"：人像 / 主体不可裁切的照片（婚礼站对竖幅人像默认）
+   *   - "cover"：横向氛围图 / 背景图，可允许 box 边缘裁剪（必须配 focalPoint
+   *     若主体不在几何中心）
+   *
+   * 为什么从 optional 升级为 required：v1.63 之前 fit 可缺省 + 自动推导；但
+   * v1.63 audit 实测发现 main.json 把 5 张实际 1600×2400 竖幅人像写成 3000×2000
+   * 横幅，自动推导只能基于这份错误 metadata 把它们推成 cover，导致人物被裁。
+   * 强制必填让"明确选择"变成 schema 层面的契约：每张 photo 必须显式表态它要不要
+   * 保主体完整。schema 不能保证 metadata 与 CDN 真实尺寸一致（那需要构建期 probe），
+   * 但至少能保证 fit 决策是显式的。
    */
-  fit: z.enum(["contain", "cover"]).optional(),
+  fit: z.enum(["contain", "cover"]),
   /**
    * v1.63 新增：focal point (0..1, 0..1) 用于 cover 模式下的 object-position。
    * contain 模式下被忽略。婚礼人像若必须 cover，应给 focal point 锁主体头部。

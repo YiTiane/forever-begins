@@ -147,15 +147,20 @@ const finaleLines = finaleBeat?.lines ?? [];
           /* v1.62 P2-A 修：priority 从 high → auto。Pearl_04 在 §2 末尾，
             滚到时再 lazy-load；不与 §0 part_1（真正 LCP）抢 HTTP/2 头几个连接。 */
         }
+        {
+          /* v1.64：CDN 实测 Pearl_04 是 1600×2400 竖幅，非 3000×2000；
+            修正 width/height 让 CLS 几何预留正确，避免画面跳动。
+            竖幅人像照默认 object-fit: contain（在 .story-end-photo CSS 兜底）。*/
+        }
         <CdnImage
           cdnTarget="pearl"
           stem="Pearl_04"
           alt="珍珠系列主海报 · 两个人相拥"
           priority="auto"
           widths={[320, 640, 1024, 1600, 2400]}
-          sizes="(min-width: 960px) 520px, (min-width: 540px) 58vw, 82vw"
-          width={3000}
-          height={2000}
+          sizes="(min-width: 960px) 480px, (min-width: 540px) 56vw, 80vw"
+          width={2000}
+          height={3000}
         />
       </figure>
       <div class="story-end-copy">
@@ -218,7 +223,8 @@ const finaleLines = finaleBeat?.lines ?? [];
   }
   .story-end-card {
     display: grid;
-    grid-template-columns: minmax(0, 520px) minmax(16rem, 24rem);
+    /* v1.64：Pearl_04 实际 2:3 portrait；左列收紧到 380-460 给竖幅留合适宽度 */
+    grid-template-columns: minmax(0, 460px) minmax(16rem, 24rem);
     align-items: center;
     gap: clamp(2rem, 6vw, 4.5rem);
     max-width: min(1080px, calc(100vw - 3rem));
@@ -227,12 +233,21 @@ const finaleLines = finaleBeat?.lines ?? [];
   .story-end-photo {
     margin: 0;
     box-shadow: var(--shadow-paper);
+    /* v1.64：竖幅人像 max-height 防 wide stage 把图撑得过高 */
+    max-height: min(70vh, 700px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
   }
   .story-end-photo :global(picture),
   .story-end-photo :global(img) {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
+    /* v1.64：portrait 主海报用 contain 保人物完整，不裁切 */
+    object-fit: contain;
     border-radius: var(--radius-sm);
   }
   .story-end-copy {
@@ -260,7 +275,9 @@ const finaleLines = finaleBeat?.lines ?? [];
       max-width: min(640px, calc(100vw - 2rem));
     }
     .story-end-photo {
-      width: min(82vw, 520px);
+      width: min(72vw, 380px);
+      /* portrait 模式下让 max-height 自由长高，依靠 width 控制大小 */
+      max-height: none;
     }
     .story-end-copy {
       text-align: center;

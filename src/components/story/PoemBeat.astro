@@ -101,8 +101,9 @@ interface BeatPhoto {
     | "pearl";
   width?: number;
   height?: number;
-  /** v1.63: 渲染策略；缺省按 aspect 自动推导（portrait→contain，landscape→cover）*/
-  fit?: "contain" | "cover";
+  /** v1.64（v1.63 audit P2 修）：fit 升级为必填，schema 强约束。
+   *  人像 / 主体不可裁切 → "contain"；横向氛围图 → "cover"（必要时配 focalPoint） */
+  fit: "contain" | "cover";
   /** v1.63: cover 模式下 box 偏移 (0..1)；contain 时忽略 */
   focalPoint?: { x: number; y: number };
 }
@@ -141,19 +142,14 @@ function getAspectRatio(p: BeatPhoto): string {
 }
 
 /**
- * v1.63（v1.62 audit P2-A 修）：渲染策略 contract。
- *   1) photo.fit 显式指定 → 用之
- *   2) 缺省时按 aspect 推导：portrait (w<h) → "contain"（人像 / 主体不可裁切）
- *      landscape (w≥h) → "cover"（横向氛围图）
- *   3) role 是 top-left / bottom-right（diagonal-gaze 双人像）的，无论像素如何
- *      都视作 portrait 强制 contain —— 这是婚礼站对人物照的最低承诺
- * 婚礼叙事照片不应默认裁人主体；contain 边缘有留白也比裁掉脸/上半身好。
+ * v1.64（v1.63 audit P2 修）：fit 升级为 schema 必填字段。
+ *   组件层不再做"自动推导 fallback"——schema validator 已强约束 photo 必带 fit；
+ *   getFit 直接 return p.fit。这样视觉契约从"凭 metadata 推导"改为"显式声明"，
+ *   防止 metadata 与 CDN 真实尺寸不一致（v1.63 audit 实测发现 5 张 1600×2400
+ *   竖幅人像被错标 3000×2000 横幅）时静默裁掉人物主体。
  */
 function getFit(p: BeatPhoto): "contain" | "cover" {
-  if (p.fit) return p.fit;
-  if (p.role === "top-left" || p.role === "bottom-right") return "contain";
-  if (p.width && p.height && p.width < p.height) return "contain";
-  return "cover";
+  return p.fit;
 }
 
 /**
@@ -415,46 +411,63 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* ──────────────────────────────────────────────────────────────  */
   /* layout = parallax-pair · beat 01                                 */
   /*                                                                  */
-  /* v1.63（v1.62 audit P3 修：narrow 注释 → compact/portrait/wide）   */
+  /* v1.64（v1.63 audit P2 修）：absolute overlap frame 仅 wide 模式。  */
+  /*                                                                  */
   /* photo 尺寸（all modes）：solver 输出的 --photo-far/near-w/h       */
   /*   compact (≤540)：mobile fallback 单列堆叠                         */
-  /*   portrait (541-899 / 高瘦视口)：默认 flex column，photos 容器     */
-  /*     依然 absolute 远近重叠（box 已 solver 求解，box 不撑出 stage）│
+  /*   portrait (541-899 / 高瘦视口)：display: contents + flex order，  */
+  /*     真自然流：far photo（右对齐）→ 文字（居中）→ near photo        │
+  /*     （左对齐）；align-self 暗示远近，不再 absolute overlap。        │
+  /*     窄屏不再两图压叠破坏阅读节奏。                                 │
   /*   wide (≥900 + aspect ≥0.85)：grid 双列 + far/near 绝对定位重叠   */
-  /*     + 入场 transform                                              */
+  /*     + 入场 transform —— "记忆被慢慢推近"由 wide cinematic 表达。   │
   /* ──────────────────────────────────────────────────────────────  */
-  .poem-beat[data-layout="parallax-pair"] .poem-photos {
-    position: relative;
-    width: min(var(--photos-col-w), 100%);
-    height: var(--photos-col-h);
-    max-width: 100%;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
+  /* photo 尺寸 baseline（所有模式都用 solver 输出的 box）*/
   .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
-    position: absolute;
-    top: 0;
-    right: 4%;
     width: var(--photo-far-w);
     height: var(--photo-far-h);
     filter: saturate(0.92);
-    transform: translateY(calc((1 - var(--p, 0)) * -8%))
-      scale(calc(0.98 + var(--p, 0) * 0.02));
   }
   .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
-    position: absolute;
-    bottom: 0;
-    left: 4%;
-    z-index: 1;
     width: var(--photo-near-w);
     height: var(--photo-near-h);
-    transform: translateY(calc((1 - var(--p, 0)) * 8%))
-      scale(calc(0.98 + var(--p, 0) * 0.02));
+  }
+  /* portrait 模式：display: contents 让 photos 子元素直接进 stage flex column；
+     order 排"far → text → near"；align-self 暗示远近；不 absolute overlap */
+  .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
+    .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: clamp(1.25rem, 3vh, 2rem);
+  }
+  .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
+    .poem-photos {
+    display: contents;
+  }
+  .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
+    .poem-photo[data-role="far"] {
+    order: 1;
+    align-self: flex-end;
+    margin-right: clamp(0px, 4vw, 32px);
+    transform: translateY(calc((1 - var(--p, 0)) * -8px));
   }
   .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
     .poem-text {
+    order: 2;
+    align-self: center;
     max-width: var(--text-max-w);
+    text-align: center;
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
   }
+  .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
+    .poem-photo[data-role="near"] {
+    order: 3;
+    align-self: flex-start;
+    margin-left: clamp(0px, 4vw, 32px);
+    transform: translateY(calc((1 - var(--p, 0)) * 8px));
+  }
+  /* wide 模式：grid 双列 + far/near 绝对重叠 + 入场 transform */
   .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] .poem-stage {
     display: grid;
     grid-template-columns: var(--stage-cols);
