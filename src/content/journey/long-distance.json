@@ -10,7 +10,6 @@
     "lng": 144.9631
   },
   "distanceKm": 10755,
-  "comparisonCn": "是新加坡东西跨度的 215 倍。",
   "routes": [
     {
       "from": { "name": "乌鲁木齐", "lat": 43.7689, "lng": 87.6283 },
