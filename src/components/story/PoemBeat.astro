@@ -1,18 +1,32 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.8 · v1.61 layout-mode engine）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.9 · v1.62 batch 4：5 套新 layout 全量上线）
+ *
+ * v0.9 新增（v1.62）：
+ *   - **5 套新 layout 视觉**：vignette / overlap / reveal / wooden / pearl，与 schema enum
+ *     九项一一对应，从此 beat 06-10 不再回退到通用样式
+ *     · vignette (06)：edge 暗角 vignette 圈（夜色感）+ 文字三行 stagger fade-in
+ *     · overlap (07)：双层 drop-shadow 模拟"两个灵魂"位错重合 → settle 到一张
+ *     · reveal  (08)：clip-path inset 从内向外展开图像（"卸下防备"）
+ *     · wooden  (09)：dashed 缝线包边 + 入场 fade-in
+ *     · pearl   (10)：linear-gradient 高光横扫
+ *   - **SSR 默认 data-story-mode="portrait"** 减轻 FOUC：在 JS 决定 actual mode 前，
+ *     大多数访客（手机 / 小平板竖屏）已在 portrait 视觉下；wide 桌面用户仅一帧
+ *     re-layout（acceptable）。runtime applyLayout 始终覆写。
+ *
+ * 视觉模式责任划分（v1.61 起的契约）：
+ *   - compact：≤540 phone，static flow，所有 layout 退化为单列堆叠
+ *   - portrait：large phone / small tablet portrait → 自然纵向流式（非 sticky）
+ *   - wide：landscape tablet / desktop → sticky 100vh cinematic stage + 双列 / 对角
+ *
+ *   **sticky 100vh stage 仅 wide 模式生效**：portrait 模式 .poem-stage 的 position
+ *   被覆盖为 relative + height auto，整个 beat 在自然文档流中以一帧紧凑构图存在。
+ *   compact 模式更进一步取消 absolute / mask / transform，回退纯流式。
  *
  * v0.8 修 v1.60 后续截图审计：把视觉模式拆成 compact / portrait / wide。
  *   真实市场视口不是单一 breakpoint：604 / 705 / 820 这类窄版、小平板竖屏不能硬套
  *   desktop wide frame，也不能退回纯手机流式。StoryPoemScroller 现在把 solver 判定出的
  *   `data-story-mode` 写到 beat 上；CSS 只跟这个模式走，不再自行决定核心布局。
- *   - compact：≤540 phone，static flow
- *   - portrait：large phone / small tablet portrait，非 sticky 竖屏导演帧
- *   - wide：landscape tablet / desktop，宽版双列 / 对角构图
- *
- *   portrait 模式下不再使用 sticky scroll-spacer：窄版 / 小平板竖屏的市场标准是
- *   "完整内容帧自然排布"，不是桌面长卷式 pinned stage。parallax-pair /
- *   diagonal-gaze 仍保留角色关系，但在自然文档流中形成竖屏复合帧。
  *
  * v0.7 修 v1.58 审计两处 P2（窄屏 / 小平板纵向构图碎掉 + exit-fade 反而留空白）：
  *
@@ -127,6 +141,7 @@ function getAspectRatio(p: BeatPhoto): string {
   class="poem-beat"
   data-beat-id={id}
   data-layout={layout}
+  data-story-mode="portrait"
   aria-labelledby={headingId}
 >
   <div class="poem-stage">
@@ -214,6 +229,23 @@ function getAspectRatio(p: BeatPhoto): string {
   .poem-beat[data-layout="anchor-single"] {
     min-height: 130vh;
   }
+  /* v1.62 batch 4：新 5 套 single-photo layout（仅 wide 模式给 sticky scroll spacer 高度，
+     portrait / compact 由后续 [data-story-mode="..."] 重置回 auto） */
+  .poem-beat[data-layout="vignette"] {
+    min-height: 130vh;
+  }
+  .poem-beat[data-layout="overlap"] {
+    min-height: 130vh;
+  }
+  .poem-beat[data-layout="reveal"] {
+    min-height: 130vh;
+  }
+  .poem-beat[data-layout="wooden"] {
+    min-height: 130vh;
+  }
+  .poem-beat[data-layout="pearl"] {
+    min-height: 130vh;
+  }
   .poem-beat[data-story-mode="compact"],
   .poem-beat[data-story-mode="compact"][data-layout] {
     min-height: auto;
@@ -230,7 +262,12 @@ function getAspectRatio(p: BeatPhoto): string {
     min-height: 152vh;
   }
   .poem-beat[data-story-mode="wide"][data-layout="radial-mask"],
-  .poem-beat[data-story-mode="wide"][data-layout="anchor-single"] {
+  .poem-beat[data-story-mode="wide"][data-layout="anchor-single"],
+  .poem-beat[data-story-mode="wide"][data-layout="vignette"],
+  .poem-beat[data-story-mode="wide"][data-layout="overlap"],
+  .poem-beat[data-story-mode="wide"][data-layout="reveal"],
+  .poem-beat[data-story-mode="wide"][data-layout="wooden"],
+  .poem-beat[data-story-mode="wide"][data-layout="pearl"] {
     min-height: 125vh;
   }
 
@@ -565,6 +602,216 @@ function getAspectRatio(p: BeatPhoto): string {
   }
 
   /* ──────────────────────────────────────────────────────────────  */
+  /* layout = vignette · beat 06（夜色 vignette + 文字逐行亮起）        */
+  /*                                                                   */
+  /* 视觉：photo 边缘 radial darken 暗角；文字三行 stagger 借            */
+  /*   :nth-child + clamp 把 --p-text 拆成 3 段映射，                  */
+  /*   line 1 ↗ p-text 0..0.7，line 2 ↗ 0.2..0.85，line 3 ↗ 0.4..1。   */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="vignette"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="vignette"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+    position: relative;
+  }
+  .poem-beat[data-layout="vignette"] .poem-photo[data-role="vignette"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+  }
+  .poem-beat[data-layout="vignette"] .poem-photo[data-role="vignette"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 30, 0) 30%,
+      rgba(0, 0, 30, 0.35) 75%,
+      rgba(0, 0, 30, 0.6) 100%
+    );
+    border-radius: var(--radius-sm);
+  }
+  .poem-beat[data-layout="vignette"] .poem-text {
+    max-width: var(--text-max-w);
+  }
+  /* 文字三行 stagger：每行用不同的 --p-text 区段 */
+  .poem-beat[data-layout="vignette"] .poem-text p {
+    transition: opacity 80ms linear;
+  }
+  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(1) {
+    opacity: clamp(0, calc(var(--p-text, 0) * 1.4), 1);
+  }
+  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(2) {
+    opacity: clamp(0, calc((var(--p-text, 0) - 0.18) * 1.6), 1);
+  }
+  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(3) {
+    opacity: clamp(0, calc((var(--p-text, 0) - 0.36) * 1.8), 1);
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = overlap · beat 07（双层 ghost 重合 → 收敛单图）           */
+  /*                                                                   */
+  /* 视觉：双侧白色 drop-shadow ghost；--p 0→1 把 ghost 偏移 12px→0     */
+  /*   合到单图。"两个契合的灵魂" 由两层错位渐合表达。                 */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="overlap"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="overlap"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+  }
+  .poem-beat[data-layout="overlap"] .poem-photo[data-role="overlap"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    /* 用 filter drop-shadow 实现"双层 ghost"——纯 CSS，不需要复制 DOM */
+    filter: drop-shadow(
+        calc((1 - var(--p, 0)) * 12px) 0 0 rgba(255, 255, 255, 0.32)
+      )
+      drop-shadow(calc((1 - var(--p, 0)) * -12px) 0 0 rgba(245, 240, 230, 0.32));
+    transition: filter 120ms linear;
+  }
+  .poem-beat[data-layout="overlap"] .poem-text {
+    max-width: var(--text-max-w);
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = reveal · beat 08（clip-path inset 从中心向外展开）        */
+  /*                                                                   */
+  /* 视觉：图像四周 inset clip 从 8% → 0；--p 0→1 完整露出。            */
+  /* "卸下防备" 由"图像层从遮蔽中展开"表达。                          */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="reveal"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="reveal"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+  }
+  .poem-beat[data-layout="reveal"] .poem-photo[data-role="reveal"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    --reveal-inset: calc((1 - var(--p, 0)) * 9%);
+    clip-path: inset(
+      var(--reveal-inset) var(--reveal-inset) var(--reveal-inset)
+        var(--reveal-inset) round 6px
+    );
+    transform: scale(calc(0.98 + var(--p, 0) * 0.02));
+    transition:
+      clip-path 120ms linear,
+      transform 120ms linear;
+  }
+  .poem-beat[data-layout="reveal"] .poem-text {
+    max-width: var(--text-max-w);
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = wooden · beat 09（木门 + dashed 缝线包边）                */
+  /*                                                                   */
+  /* 视觉：photo 包一层 dashed 缝线 border（::after 伪元素）；          */
+  /*   --p 0→1 缝线 opacity 0→0.85，scale 0.96→1.02。                  */
+  /* "缝缝补补" 由 stitched 边表达。                                  */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="wooden"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="wooden"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+  }
+  .poem-beat[data-layout="wooden"] .poem-photo[data-role="wooden"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+  }
+  .poem-beat[data-layout="wooden"] .poem-photo[data-role="wooden"]::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    pointer-events: none;
+    border: 2px dashed rgba(180, 130, 80, 0.78);
+    border-radius: 4px;
+    opacity: clamp(0, calc(var(--p, 0) * 1.2), 0.92);
+    transform: scale(calc(0.96 + var(--p, 0) * 0.04));
+    transform-origin: center;
+    transition:
+      opacity 140ms linear,
+      transform 140ms linear;
+  }
+  .poem-beat[data-layout="wooden"] .poem-text {
+    max-width: var(--text-max-w);
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = pearl · beat 10（珍珠高光横扫）                            */
+  /*                                                                   */
+  /* 视觉：linear-gradient 高光斜带覆盖在 photo 上，沿 --p 从左到右      */
+  /*   平移 -100% → 100%；gradient 中段 12% 半透明白让光带有"珍珠光泽"。│
+  /* "克制" 由 mix-blend-mode: soft-light 表达。                       */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="pearl"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="pearl"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+  }
+  .poem-beat[data-layout="pearl"] .poem-photo[data-role="pearl"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+  }
+  .poem-beat[data-layout="pearl"] .poem-photo[data-role="pearl"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      105deg,
+      transparent 38%,
+      rgba(255, 255, 255, 0.28) 50%,
+      transparent 62%
+    );
+    transform: translateX(calc(var(--p, 0) * 200% - 100%));
+    mix-blend-mode: soft-light;
+    transition: transform 140ms linear;
+  }
+  .poem-beat[data-layout="pearl"] .poem-text {
+    max-width: var(--text-max-w);
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
   /* 移动端 · ≤ 540px（windows 取消 sticky / absolute，单列流式堆叠） */
   /* solver 在窄屏依然给出尺寸值，但视觉上简化为竖向流式             */
   /* ──────────────────────────────────────────────────────────────  */
@@ -613,11 +860,21 @@ function getAspectRatio(p: BeatPhoto): string {
       filter: none !important;
       mask-image: none !important;
       -webkit-mask-image: none !important;
+      clip-path: none !important;
     }
     .poem-photo :global(picture),
     .poem-photo :global(img) {
       height: auto !important;
       object-fit: contain;
+    }
+    /* v1.62：新 5 套 layout 的 ::after 视觉特效在 compact 模式下静默 */
+    .poem-photo[data-role="vignette"]::after,
+    .poem-photo[data-role="pearl"]::after,
+    .poem-photo[data-role="wooden"]::after {
+      display: none !important;
+    }
+    .poem-beat[data-layout="vignette"] .poem-text p {
+      opacity: 1 !important;
     }
   }
 

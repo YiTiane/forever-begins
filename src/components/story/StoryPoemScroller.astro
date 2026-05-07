@@ -1,55 +1,62 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.5 · v1.59 接入 layout solver）
+ * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.7 · v1.62 batch 4：lift maxBeats + 5 layouts + audit fixes）
  *
- * v0.5 新增（v1.59 P2 #1+#2 修）：接入 src/lib/story/beatLayoutSolver.ts。
- *   v1.58 之前 PoemBeat 的 4 套 layout 用 magic % / clamp + 媒体查询断点硬编码 photo 宽 /
- *   文字最大宽 / gap，结果窄屏 / 小平板纵向几乎必崩（市场视口矩阵 360-820px portrait
- *   多档都报失败：空屏 / 文字图距离失衡 / radial 单图脱顶）。v0.5 让 init / window.resize
- *   时跑一次 solver，把 viewport × layout × photo aspectRatio 求出的尺寸 / gap 写到 beat
- *   元素的 CSS 自定义属性上；CSS 只消费变量。layout 不再依赖断点凑型。
+ * v0.7 新增（v1.62）：
+ *   - **批次扩展**：`maxBeats` 默认 4 → 10，渲染全部 10 个 photo-poem beat
+ *     (snow_03/07 远近 → snow_14/15 对视 → snow_05 晕散 → snow_11 锚点 →
+ *     snow_13 [N]天 → snow_08 夜色 → snow_09 契合 → snow_12 卸下防备 →
+ *     wooden_door_01 缝补 → pearl_03 珍珠)
+ *   - **新 5 套 layout** 的 solver + CSS 接入（vignette / overlap / reveal / wooden / pearl）
+ *     —— solver 单图分支 + PoemBeat 视觉特效；从此 schema enum 9 项全部上线
+ *   - **修 v1.61 audit P2-A**：finale Pearl_04 priority="high" → "auto"
+ *     （滚到时 lazy-load；不与 §0 Cover part_1 hero 抢 LCP）
+ *   - **修 v1.61 audit P2-B**：finale 文案从 main.data.beats.find(b => b.kind === "finale").lines
+ *     拉，不再硬编码到组件里 —— DESIGN §15.1 单一源；同时为 batch 5 接入
+ *     StarCarouselFinale 时统一接缝
  *
- * v0.4 修 v1.56 审计 P2 #2 + P3：
- *   - **P2 #2（rAF 常驻空跑）**：v1.56 / v0.3 inView 时每帧
- *     `requestAnimationFrame(tick)` 无条件再调度，访客在 stage 上停下来读时 rAF 仍
- *     60Hz 空跑、与 §0 Parallax / §1 Countdown 的"idle 0 CPU"承诺不一致。v0.4 把
- *     rAF 改为 **scroll / resize 事件驱动**：单帧 dirty flag `rafScheduled`，
- *     scroll/resize 事件触发时 `requestAnimationFrame(flushUpdate)` 一次；flush 完
- *     帧后 dirty=false，无新事件就不再 schedule。滚动停 → 0 rAF / 0 CPU。同时配
- *     ResizeObserver 监 `.poem-beat` 自身高度变化（图片懒加载、字体回流），保证
- *     布局 shift 也能触发更新。
- *   - **P3（头注释 stale）**：v0.2 注释还在描述 v1.54 的"一次性 IO + .visible +
- *     unobserve"行为，与 v1.56 起的 sticky stage + scroll-progress driven
- *     choreography 已脱节。v0.4 重写头注释，描述真实运行机制：rAF flush / phase
- *     变量 / IO + scroll + RO 三条触发路径 / debug hook。
+ * v0.6 新增（v1.61）：
+ *   - 接入 getStoryLayoutMode(vw, vh) 单一布局模式来源（compact/portrait/wide）
+ *   - 在 applyLayout 内把判定结果写入 `data-story-mode` 给 CSS 跟随
+ *   - portrait 模式下 .poem-stage 释放 sticky / 100vh，回归自然纵向流式构图
+ *   - finale "未完待续" 弱占位升级为 Pearl_04 主海报 + cn-kaishu 收束句的 .story-end-cap 大画面
+ *
+ * v0.5 新增（v1.59 P2 #1+#2 修）：接入 src/lib/story/beatLayoutSolver.ts
+ *   纯函数，把"viewport × layout × photo aspectRatio × textHeight" 求解为 CSS 自定义属性
+ *   写到 .poem-beat 上；CSS 只消费 var(--photo-w) 这种变量，不再 magic % / clamp 硬编码。
+ *   v1.60 P2 #2 在此基础上加入 textHeight 实测 + textRO 反馈环。
+ *
+ * v0.4 修 v1.56 审计 P2 #2 + P3：scroll-event driven 替代常驻 rAF tick；写头注释。
  *
  * 上层 wrapper：从 src/content/story-poem/main.json 读全部 beats，按 batch 范围
- * 渲染前 N 个 photo-poem beat（默认 N=4，可由 prop 调整）；beats 11/12（globe/
- * finale）数据保留 schema 但不渲染 DOM —— 后续 batch 在 JSX 注释挂点处插入对应组件。
+ * 渲染前 N 个 photo-poem beat（默认 N=10，覆盖全部 photo-poem）；beats 11/12（globe/
+ * finale）数据保留 schema —— globe 留待 §2.B GlobeDistanceScene；finale.lines 已被
+ * .story-end-cap 消费作为临时收束句（等 batch 5 StarCarouselFinale 接入后这块自然取代）。
  *
- * 当前批次 §2 落地范围（v1.57）：
- *   ✓ 渲染前 maxBeats (默认 4) 个 photo-poem beat 用 `<PoemBeat>`，每个是 sticky
- *     cinematic stage（外层 scroll spacer + 内层 100vh sticky 舞台）
- *   ✓ 文字 + 照片 baseline opacity 1，整个 stage 任意停留点都看得到完整 composed 帧
- *     （v1.57 P2 #1 修 v1.56 broken visual frame）
- *   ✓ 单 IO 报告 in/out；scroll / resize / ResizeObserver 三路事件统一进
- *     scheduleUpdate；单帧 dirty flag 防多次 rAF；写 4 个 CSS 变量到 beat 元素：
- *     `--p` / `--p-photo-1` / `--p-photo-2` / `--p-text`（PoemBeat 的 layout CSS
- *     用 calc(var(--p)) 表达 transform / mask-radius / scale / filter）
- *   ✓ prefers-reduced-motion → 不绑事件、不跑 rAF，直接给所有 beat 写 --p:1 终态
- *   ✓ a11y：`<section aria-labelledby="story-poem-heading">` + h2 'Our Story'
- *     latin-italic
- *   ✓ stacking 隔离：position: relative + isolation: isolate（与 §0/§1 同款）
+ * 运行机制（v1.62 现状）：
+ *   ✓ 渲染前 maxBeats (默认 10) 个 photo-poem beat 用 `<PoemBeat>`
+ *     - wide 模式（≥900px 且 vw/vh ≥ 0.85）→ sticky 100vh cinematic stage
+ *     - portrait 模式 → 自然纵向流式（释放 sticky）
+ *     - compact 模式（≤540px）→ 静态 flow stack，去掉 transform/mask 等
+ *   ✓ applyLayout 跑 solver 输出 size 变量 + 写 data-story-mode；CSS 只消费
+ *   ✓ 单 IO 报告 in/out；scroll / resize / ResizeObserver 三路事件 → scheduleUpdate
+ *     单帧 dirty flag rAF flush 写 phase 变量 (--p / --p-photo-1 / --p-photo-2 / --p-text)
+ *   ✓ textRO 单独观察每个 beat 的 .poem-text，字体加载 / 断行重排时主动重跑 solver
+ *   ✓ prefers-reduced-motion → 不绑事件、不跑 rAF，所有 beat 写 --p:1 终态
+ *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉) + "To be continued" kicker
+ *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat
  *
- * **NOT in current batch**（明确留 §2 后续刀）：
- *   ✗ globe (beat 11) → 等 R3F + Three.js + 水彩贴图地球到位（独立刀）
- *   ✗ finale (beat 12) → 等 StarCarouselFinale Shader Dissolve 到位（独立刀）
- *   ✗ 后 6 个 photo-poem beat (05-10) → batch 1-3 视觉收口后再 lift maxBeats
+ * **NOT in current batch**（仍留 §2 后续刀）：
+ *   ✗ globe (beat 11) → §2.B GlobeDistanceScene · 等 R3F + Three.js + 水彩贴图地球
+ *   ✗ finale 完整版 (beat 12) → §2.C StarCarouselFinale Shader Dissolve · end cap 是临时
+ *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
+ *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（动效细化 motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
  * 数据流（DESIGN §15.1 数据接缝唯一原则）：
  *   - getCollection('storyPoem') → main.json
- *   - 取 entry.data.beats，filter kind === 'photo-poem'，slice(0, N)
+ *   - photoPoemBeats = beats.filter(kind==='photo-poem').slice(0, maxBeats)
+ *   - finaleLines = beats.find(kind==='finale').lines
  *   - anchor_date 当前未消费（beat 05 [N] 天 CountUp 留独立小刀）
  *
  * 调试：window.__storyPoem.progress() / .list() / .active() —— 看进度 / 全部 beat /
@@ -60,11 +67,12 @@ import CdnImage from "@/components/CdnImage.astro";
 import PoemBeat from "@/components/story/PoemBeat.astro";
 
 interface Props {
-  /** 渲染前 N 个 photo-poem beat（batch 1 默认 4，未来批次可上调）。 */
+  /** 渲染前 N 个 photo-poem beat。v1.62 默认 10（覆盖全部 photo-poem）；
+   *  调试 / 截图复审需要更小批次时可显式传入。 */
   maxBeats?: number;
 }
 
-const { maxBeats = 4 } = Astro.props;
+const { maxBeats = 10 } = Astro.props;
 
 const storyPoemEntries = await getCollection("storyPoem");
 const main = storyPoemEntries.find((e) => e.id === "main");
@@ -78,6 +86,12 @@ if (!main) {
 const photoPoemBeats = main.data.beats
   .filter((b) => b.kind === "photo-poem")
   .slice(0, maxBeats);
+
+// v1.62 P2-B 修：finale 文案改从 schema 取（beats[11].lines），不再硬编码到组件里。
+// schema 已严约束 11=globe / 12=finale，编辑 main.json 即生效；同时为后续 batch
+// 接 StarCarouselFinale 时统一接缝（不会有"修组件 vs 修 JSON"两条改路）。
+const finaleBeat = main.data.beats.find((b) => b.kind === "finale");
+const finaleLines = finaleBeat?.lines ?? [];
 
 /*
  * v1.54（v1.53 P2 #1 修）：删除可见的 deferred-beats 占位区。v1.53 把
@@ -129,11 +143,15 @@ const photoPoemBeats = main.data.beats
   <div class="story-end-cap" aria-label="故事临时收束">
     <div class="story-end-card">
       <figure class="story-end-photo">
+        {
+          /* v1.62 P2-A 修：priority 从 high → auto。Pearl_04 在 §2 末尾，
+            滚到时再 lazy-load；不与 §0 part_1（真正 LCP）抢 HTTP/2 头几个连接。 */
+        }
         <CdnImage
           cdnTarget="pearl"
           stem="Pearl_04"
           alt="珍珠系列主海报 · 两个人相拥"
-          priority="high"
+          priority="auto"
           widths={[320, 640, 1024, 1600, 2400]}
           sizes="(min-width: 960px) 520px, (min-width: 540px) 58vw, 82vw"
           width={3000}
@@ -142,8 +160,12 @@ const photoPoemBeats = main.data.beats
       </figure>
       <div class="story-end-copy">
         <p class="story-end-kicker latin-roman">To be continued</p>
-        <p class="story-end-line cn-kaishu">还好我们有牢牢抱紧。</p>
-        <p class="story-end-line cn-kaishu">幸好最终是你。</p>
+        {/* v1.62 P2-B 修：finale 文案从 schema beat 12 拉，不再硬编码 */}
+        {
+          finaleLines.map((line) => (
+            <p class="story-end-line cn-kaishu">{line}</p>
+          ))
+        }
       </div>
     </div>
   </div>

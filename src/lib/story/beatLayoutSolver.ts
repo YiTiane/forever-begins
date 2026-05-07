@@ -39,7 +39,12 @@ export type BeatLayout =
   | "parallax-pair"
   | "diagonal-gaze"
   | "radial-mask"
-  | "anchor-single";
+  | "anchor-single"
+  | "vignette" // beat 06：夜色 vignette
+  | "overlap" // beat 07：契合双层重合
+  | "reveal" // beat 08：clip-path 展开
+  | "wooden" // beat 09：木门 + 缝线包边
+  | "pearl"; // beat 10：珍珠高光横扫
 
 export type StoryLayoutMode = "compact" | "portrait" | "wide";
 
@@ -309,6 +314,101 @@ function solveAnchorSingle(input: SolverInput): SolverOutput {
   };
 }
 
+// ─── Shared single-photo helper（beats 06-10 共享几何骨架）─────────────
+// 五个新 layout 都是"一图 + 文本下方"结构，差异在视觉层（mask / overlap / clip /
+// stitched border / pearl highlight），几何尺寸用同一支 helper 求。每个 layout
+// 的 photoMaxWFactor / photoMaxAbs / gap / textTopReserveFactor 略不同，对应
+// 视觉上的"克制 vs 主导"差异。
+interface SinglePhotoOpts {
+  /** photo 最大宽相对于 stage 宽的比例（0..1）；vignette 偏大、wooden 偏小 */
+  photoMaxWFactor: number;
+  /** photo 最大宽绝对上限（px），保留主图不超过设计上限 */
+  photoMaxAbs: number;
+  /** stage gap（text 与 photo 间距） */
+  gap: number;
+  /** text 估算高占 vh 的比例（实测 textHeight 时优先实测；这只是缺省 fallback） */
+  textTopReserveFactor: number;
+  /** text-max-w 加成：photoW + extra（保持 text 不超 photo 太多） */
+  textOverhang: number;
+}
+
+function solveSinglePhoto(
+  input: SolverInput,
+  opts: SinglePhotoOpts,
+): SolverOutput {
+  const { vw, vh, photos, textHeight } = input;
+  const photo = photos[0];
+  if (!photo) return {};
+  const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
+  const stageH = vh - STAGE_PAD_Y * 2;
+  const textReserveH =
+    textHeight ?? clampPx(vh * opts.textTopReserveFactor, 96, 200);
+  const photoMaxW = Math.min(stageW * opts.photoMaxWFactor, opts.photoMaxAbs);
+  const photoMaxH = stageH - textReserveH - opts.gap;
+  const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
+  return {
+    "--photo-w": `${photoW}px`,
+    "--photo-h": `${photoH}px`,
+    "--text-max-w": `${Math.min(photoW + opts.textOverhang, stageW)}px`,
+    "--stage-gap": `${opts.gap}px`,
+  };
+}
+
+// ─── vignette（beat 06 · snow_08 夜色 + 文字三行 stagger）─────────────
+function solveVignette(input: SolverInput): SolverOutput {
+  return solveSinglePhoto(input, {
+    photoMaxWFactor: 0.85,
+    photoMaxAbs: 720,
+    gap: 28,
+    textTopReserveFactor: 0.2,
+    textOverhang: 60,
+  });
+}
+
+// ─── overlap（beat 07 · snow_09 契合双层 ghost）────────────────────────
+function solveOverlap(input: SolverInput): SolverOutput {
+  return solveSinglePhoto(input, {
+    photoMaxWFactor: 0.78,
+    photoMaxAbs: 660,
+    gap: 24,
+    textTopReserveFactor: 0.14,
+    textOverhang: 60,
+  });
+}
+
+// ─── reveal（beat 08 · snow_12 clip-path 展开）─────────────────────────
+function solveReveal(input: SolverInput): SolverOutput {
+  return solveSinglePhoto(input, {
+    photoMaxWFactor: 0.85,
+    photoMaxAbs: 720,
+    gap: 24,
+    textTopReserveFactor: 0.14,
+    textOverhang: 60,
+  });
+}
+
+// ─── wooden（beat 09 · Wooden_door_01 缝线包边）────────────────────────
+function solveWooden(input: SolverInput): SolverOutput {
+  return solveSinglePhoto(input, {
+    photoMaxWFactor: 0.7,
+    photoMaxAbs: 560,
+    gap: 26,
+    textTopReserveFactor: 0.22,
+    textOverhang: 40,
+  });
+}
+
+// ─── pearl（beat 10 · Pearl_03 高光横扫）───────────────────────────────
+function solvePearl(input: SolverInput): SolverOutput {
+  return solveSinglePhoto(input, {
+    photoMaxWFactor: 0.78,
+    photoMaxAbs: 640,
+    gap: 24,
+    textTopReserveFactor: 0.16,
+    textOverhang: 50,
+  });
+}
+
 /**
  * Solve a single beat's layout for the current viewport + photo specs.
  * 调用方：StoryPoemScroller 在 init / window.resize 时跑一次，把结果写到 `.poem-beat` 上。
@@ -323,5 +423,15 @@ export function solveBeatLayout(input: SolverInput): SolverOutput {
       return solveRadialMask(input);
     case "anchor-single":
       return solveAnchorSingle(input);
+    case "vignette":
+      return solveVignette(input);
+    case "overlap":
+      return solveOverlap(input);
+    case "reveal":
+      return solveReveal(input);
+    case "wooden":
+      return solveWooden(input);
+    case "pearl":
+      return solvePearl(input);
   }
 }
