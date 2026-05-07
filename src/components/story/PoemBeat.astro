@@ -256,17 +256,30 @@ const ariaHeadingId = `beat-${id}-aria-heading`;
 const firstLine = lines[0] ?? "";
 
 /**
- * v1.76（v1.75 audit P2 修）：sr-only h3 用的 firstLine 也要把 [N] 占位换成
- * 真实数字，否则 AT 会朗读"第 05 段，不知不觉，已携手走过括号 N 天"——这是
- * 实现细节直接泄漏到访客层。`firstLineLabel` 与 .days-together 走同一份
- * build-time N（initialDaysCount），SSR 阶段就把"[N]"原地替换；不含 [N]
- * 或没传 anchorDate 的 beat 退化回 firstLine。客户端脚本不再回写 h3 的
- * textContent（一次 SSR 写定 → AT 一次性朗读，无 aria-live 抖动风险）。
+ * v1.77（v1.76 audit P2 修）：sr-only h3 的标签**不**用 build-time N，改用
+ * 静态非数字描述，永不漂移。
+ *
+ * 背景：v1.76 把 [N] 替换为 build-time initialDaysCount（如 2657），这在 SSR
+ * 当下 OK；但站点是 GitHub Pages 静态部署，下次 +08:00 午夜过后 client-time N
+ * 已经变成 2658，CountUp 视觉数字 + .sr-only sibling 都被脚本同步到 2658，
+ * 唯独 sr-only h3 还停在 build-time 的 2657 → AT 朗读 section 标签时会读到
+ * 昨天的数，紧接着段落里读到今天的数，前后矛盾。
+ *
+ * 两个修法（用户审计列）：
+ *   (a) 客户端脚本一并回写 h3 textContent
+ *   (b) heading 改为稳定 / 非数字
+ *
+ * 选 (b)：heading 是给 AT 导航用的"section 标题"，不需要精确天数；精确数字
+ * 已经在段落正文（.days-together-wrap 里 sr-only sibling）传达。把 " [N] 天"
+ * 整体替换为 "的每一天" → 句意完整、永不漂移、不需要客户端二次回写。
+ *
+ * 例：beat 05 firstLine "不知不觉，已携手走过 [N] 天。" →
+ *     headingLabel  "不知不觉，已携手走过的每一天。"
+ *
+ * 不含 [N] 的 beat 退化回 firstLine 原文（regex 不命中）；未来若加新的
+ * `[N] X` 占位（如 `[N] 周`），按需补 regex 分支。
  */
-const firstLineLabel =
-  initialDaysCount !== null && firstLine.includes("[N]")
-    ? firstLine.replace("[N]", String(initialDaysCount))
-    : firstLine;
+const headingLabel = firstLine.replace(/\s*\[N\]\s*天/, "的每一天");
 
 /**
  * v1.66 SSR 默认 data-text-placement（JS 接管 applyLayout 后仍会覆写）。
@@ -325,7 +338,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
 >
   <div class="poem-stage">
     <h3 id={ariaHeadingId} class="sr-only">
-      第 {id} 段 · {firstLineLabel}
+      第 {id} 段 · {headingLabel}
     </h3>
 
     <div class="poem-text cn-song">

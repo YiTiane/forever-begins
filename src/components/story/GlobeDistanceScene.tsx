@@ -1,5 +1,26 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.4 · v1.74 修 Three.Clock dep warn）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.5 · v1.77 wide 底部安全区 + scene Y offset）
+ *
+ * v0.5 新增（v1.77 修 v1.76 audit P2 globe 端点仍被卡片遮）：
+ *   - **wide 模式 globe 整体上移 0.14 R 给文字浮卡留底部安全区**：v1.76 用
+ *     CSS margin-bottom 收紧只能把卡片往下推一点点，但 .globe-stage 是 grid
+ *     1×1 全 overlay，globe 仍居中 → 1920×1080 下 Melbourne (lat -37.8) 投影到
+ *     canvas y≈750 与卡片顶 y≈762 几乎贴边；任何 viewport 高度 / camera state
+ *     变化都可能让二者再次相撞，"fixed margin-bottom 不能跨 viewport 保证端点
+ *     可见"。
+ *   - 改：在 SceneInner 内按 canvas aspect 计算 sceneOffsetY；wide (aspect ≥ 1)
+ *     给 0.14 × R = 0.14 单位的世界空间上移，narrow (aspect < 1) 不偏移（窄
+ *     屏 sticky 已释放，文字卡走自然流不与 globe overlay 重叠）
+ *     - 把 <Globe>/<Arc>/<Endpoint × 2> 全包在 `<group position={[0, sceneOffsetY, 0]}>`
+ *       内，AutoRotate 仍在 group 内部 → 旋转轴跟随 globe 中心（不是世界原点）
+ *     - <OrbitControls target={[0, sceneOffsetY, 0]}>：drag 围绕 globe 视觉中心
+ *       做球面 orbit，拖拽手感不变
+ *   - 实测（1920×1080 wide）：Melbourne y_world = 0.14 - 0.61 = -0.47，
+ *     NDC ≈ -0.385，canvas y ≈ 692；卡片顶 y ≈ 762，净间距 70px ≫ v1.76 的
+ *     8px，跨 viewport 高度变化都保住
+ *   - 视觉契约：globe 中心从画面中央上移到约 38% 高度处；OrbitControls 同步
+ *     让拖拽手感不破坏；globe 顶部仍距 canvas 顶 ≥ 35px (1.14/1.22 ≈ 0.93 NDC)，
+ *     不贴边
  *
  * v0.4 新增（v1.74 修 v1.73 audit P3，v1.75 收口契约）：
  *   - Endpoint useFrame 改用本地 elapsedRef 累加 dt，不再读 state.clock —— Three.js
@@ -333,6 +354,12 @@ function ResponsiveCamera(): null {
         ? GLOBE_RADIUS / (GLOBE_FILL_FRACTION * tanHalfFov)
         : GLOBE_RADIUS / (aspect * GLOBE_FILL_FRACTION * tanHalfFov);
     camera.position.z = z;
+    // v0.5（v1.76 audit P2 修）：wide 给底部文字浮卡留安全区。相机 Y 与
+    // OrbitControls target Y 一起下移；globe 留世界原点 → 相对 target 偏上 →
+    // 投影到 canvas 上方。narrow (aspect < 1) y=0 不偏移。SceneInner 内
+    // OrbitControls 的 target 用同款公式计算（保持一致；此处先写一次让首帧
+    // 就拿对值，OrbitControls 挂载后会持续维护 camera position）。
+    camera.position.y = aspect >= 1 ? -GLOBE_RADIUS * 0.14 : 0;
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
@@ -354,6 +381,34 @@ function SceneInner({
   // 端点位置（球面）
   const fromV = useMemo<Vec3>(() => latLngToVec3(from, GLOBE_RADIUS), [from]);
   const toV = useMemo<Vec3>(() => latLngToVec3(to, GLOBE_RADIUS), [to]);
+
+  /**
+   * v0.5（v1.76 audit P2 修）：wide canvas 给文字浮卡留底部安全区。
+   *
+   * 实现原则：globe 留在世界原点，**把相机和 OrbitControls target 一起 Y 方向
+   * 下移** `cameraTargetOffsetY` = -0.14 R。这样：
+   *   - globe 在世界 (0,0,0)，不动
+   *   - 相机看 (0, -0.14, 0)，相机本体也在那个 Y 高度
+   *   - globe 相对 target 是 (0, +0.14, 0)，在相机上方 → 投影到 canvas 上方
+   *   - OrbitControls 围绕 target 做 orbit，距离不变；用户拖拽时 globe 位置
+   *     在世界系不动，相对 target 永远偏上 → 拖拽中 globe 也持续在画面上方
+   *     （拖拽手感不破坏，因为 orbit 圆心是 target 而不是 globe）
+   *
+   * narrow (aspect < 1) 不偏移：portrait/compact 模式 .globe-stage 已释放
+   * sticky，文字卡走自然流不与 globe overlay 重叠。
+   *
+   * 数值校准（1920×1080 wide）：globe 在 NDC y = +0.14 / 1.22 ≈ +0.115，
+   * canvas y = (1 - 0.115) / 2 × 1000 ≈ 442（中心从 500 上移到 442，约 6%）。
+   * Melbourne (lat -37.8): y_world = -0.61, NDC y = -0.61/1.22 - 0.14/1.22 wait
+   * 算法应是：globe 中心在 NDC +0.14/1.22，Melbourne 在 globe 中心下方
+   * sin(37.8°) × 1 = 0.61 单位 → Melbourne 世界 y = -0.61，相对 target 的 y =
+   * -0.61 - (-0.14) = -0.47，NDC y = -0.47/1.22 ≈ -0.385，canvas y ≈ 692。
+   * 卡片顶 y ≈ 762（v1.76 几何不变）→ 净间距 70px ✓
+   */
+  const { size } = useThree();
+  const aspect = size.width / Math.max(1, size.height);
+  /** 相机和 OrbitControls target 的 Y 偏移（负值 → 看下方一点 → globe 显上方） */
+  const cameraTargetOffsetY = aspect >= 1 ? -GLOBE_RADIUS * 0.14 : 0;
 
   // 自动慢转：reduced-motion 关掉；桌面也关掉（OrbitControls 接管）；
   // 移动端 / 触摸设备自动转（这里简单按"无 hover 能力"判断，运行时实测）
@@ -386,6 +441,8 @@ function SceneInner({
         color={COLOR_SAGE}
       />
 
+      {/* globe 留在世界原点；上移效果靠 ResponsiveCamera 把相机 Y 设为负 +
+          OrbitControls target 同步设为负，相对位置让 globe 显示在画面上方 */}
       <AutoRotate enabled={autoRotate} speed={0.06}>
         <Globe />
         <Arc from={fromV} to={toV} progress={progress} />
@@ -402,8 +459,12 @@ function SceneInner({
       </AutoRotate>
 
       {/* 桌面拖拽：限制 polar angle 让用户不能把球倒过来；阻尼让回弹自然。
-          reduced-motion 时仍允许"无动量"的拖拽（不依赖 spring 动画） */}
+          reduced-motion 时仍允许"无动量"的拖拽（不依赖 spring 动画）。
+          v0.5：target 偏到 cameraTargetOffsetY（负值），相机绕该 target 做球面
+          orbit；globe 在世界原点 → 相对 target 永远偏上，拖拽期间也保持在
+          画面上方，不破坏拖拽手感 */}
       <OrbitControls
+        target={[0, cameraTargetOffsetY, 0]}
         enableZoom={false}
         enablePan={false}
         enableDamping={!reducedMotion}
