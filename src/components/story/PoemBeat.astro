@@ -171,9 +171,42 @@ interface Props {
   photos: BeatPhoto[];
   /** 第一帧首屏内（极少数：仅 §2 第 01 个 beat 紧邻 §1）→ priority 'high'；其它 'auto' lazy。 */
   firstAboveFold?: boolean;
+  /** v1.74：main.json `anchor_date`（"YYYY-MM-DD"），用于 beat 05 [N] 天的实时计算 +
+   *  入场 CountUp。父组件 StoryPoemScroller 从 main.data.anchor_date 透传；不传则不
+   *  做替换（保留 "[N]" 字面量，相当于 v1.73 之前的行为）。 */
+  anchorDate?: string;
 }
 
-const { id, layout, lines, photos, firstAboveFold = false } = Astro.props;
+const {
+  id,
+  layout,
+  lines,
+  photos,
+  firstAboveFold = false,
+  anchorDate,
+} = Astro.props;
+
+/**
+ * v1.74：beat 05 "不知不觉，已携手走过 [N] 天" 的 [N] 实时计算 + CountUp。
+ *
+ * 这里在 SSR 阶段算一次"build time / SSR time"的 N，写到 .days-together 的
+ * textContent 里，让无 JS 访客也能看到合理的数字（不会读出"[N] 天"占位符）。
+ * 客户端有 JS 时，StoryPoemScroller 内的 inline script 会在 IO 入场时根据
+ * data-anchor 重新计算 + 从 0 CountUp 到 client-time 的 N（CountUp 替代 SSR
+ * 写入的静态数字）。reduced-motion 模式下不动画、直接写最终值。
+ *
+ * 拆分约定：源行含 "[N]" → 前后切分为 prefix / suffix；中间渲染 <span
+ * class="days-together" data-days-anchor={anchorDate}>{n}</span>。aria 默认
+ * 朗读组装好的"前缀 + 数字 + 后缀"（aria-live: polite 让数字 CountUp 也朗读
+ * 给 AT，但只在动画结束的最终值；动画中不刷屏读）。
+ */
+let initialDaysCount: number | null = null;
+if (anchorDate) {
+  // 复用 lib：与客户端脚本同款解析（避免"build time 用 ISO，runtime 用别的"漂移）
+  const { parseAnchorDate, daysTogether } =
+    await import("@/lib/story/daysTogether");
+  initialDaysCount = daysTogether(parseAnchorDate(anchorDate));
+}
 
 /**
  * v1.68（v1.67 audit P2 修）：把 `#beat-XX-heading` 这个公开 deep-link 锚点
@@ -254,7 +287,30 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     </h3>
 
     <div class="poem-text cn-song">
-      {lines.map((line) => <p>{line}</p>)}
+      {
+        lines.map((line) => {
+          // v1.74 [N] 占位：含 "[N]" 的行拆成 prefix / 数字 span / suffix；其它行原样
+          const idx = line.indexOf("[N]");
+          if (idx === -1 || initialDaysCount === null || !anchorDate) {
+            return <p>{line}</p>;
+          }
+          const prefix = line.slice(0, idx);
+          const suffix = line.slice(idx + 3);
+          return (
+            <p>
+              {prefix}
+              <span
+                class="days-together"
+                data-days-anchor={anchorDate}
+                aria-live="polite"
+              >
+                {initialDaysCount}
+              </span>
+              {suffix}
+            </p>
+          );
+        })
+      }
     </div>
 
     {
@@ -446,6 +502,21 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
   .poem-text p {
     margin: 0.35em 0;
+  }
+
+  /* v1.74 §2.D：[N] 天 实时数字（StoryPoemScroller 内 IIFE 的 IO + ease-out 动画
+     会改写 textContent，从 0 计到当前 N）。视觉上比正文更厚重 + honey 色让
+     "携手 N 天"在低饱和 sage 背景里立得起来；inline 不破坏行高。 */
+  .poem-text .days-together {
+    display: inline-block;
+    color: var(--c-honey, #c69d4e);
+    font-weight: 400;
+    /* 数字 tabular 等宽，CountUp 改写时不会让上下行抖动 */
+    font-variant-numeric: tabular-nums;
+    /* 数字稍大 + 字距收紧让"天"贴近数字 */
+    font-size: 1.18em;
+    margin: 0 0.18em;
+    letter-spacing: 0.01em;
   }
 
   /* 移动端字号收一档 */

@@ -125,6 +125,11 @@ const finaleLines = finaleBeat?.lines ?? [];
 const globeBeat = main.data.beats.find((b) => b.kind === "globe");
 const globeLines = globeBeat?.lines ?? [];
 
+// v1.74 §2.D [N] 实时计算：anchor_date 在 main.json 顶层，传给每个 PoemBeat；
+// 含 "[N]" 的行（当前仅 beat 05）会被 PoemBeat 拆成 prefix / .days-together
+// span / suffix，SSR 写 build-time 数字 + 客户端在 IO 入场时 CountUp 重算。
+const anchorDate = main.data.anchor_date;
+
 /*
  * v1.54（v1.53 P2 #1 修）：删除可见的 deferred-beats 占位区。v1.53 把
  * "§2.B · globe · beat 11 · 后续 batch 实装" 渲染成 `<p>` 留在公开页面，aria-hidden
@@ -154,6 +159,7 @@ const globeLines = globeBeat?.lines ?? [];
         layout={beat.layout}
         lines={beat.lines}
         photos={beat.photos}
+        anchorDate={anchorDate}
       />
     ))
   }
@@ -568,5 +574,113 @@ const globeLines = globeBeat?.lines ?? [];
           .map((b) => b.dataset.beatId ?? "?")
           .sort(),
     };
+  })();
+</script>
+
+<script>
+  /**
+   * v1.74 §2.D · `[N]` 天 daysTogether CountUp · 独立 IIFE
+   *
+   * PoemBeat.astro 含 "[N]" 的行（当前仅 beat 05）会被 SSR 拆成
+   *   ...prefix...<span class="days-together" data-days-anchor="2019-01-27"
+   *                     aria-live="polite">{build-time-N}</span>...suffix...
+   *
+   * 本脚本：
+   *   1. 找到所有 .days-together[data-days-anchor]
+   *   2. 重新算 client-time 的 N（避访客在 build 之后访问导致 N 漂老）
+   *   3. 单 IO 监每个 span 是否进视口；进入时 CountUp 0 → N over ~1.4s ease-out
+   *      （reduced-motion 直接钉到 N，不动画）
+   *   4. 离开 / 重新进入：保持已写入的最终值（不重复触发动画）
+   *
+   * 与 PoemBeat 的 [N] SSR 拆分约定耦合在 lib：parseAnchorDate("YYYY-MM-DD")
+   * 等价于 `new Date("YYYY-MM-DDT00:00:00+08:00")`，与服务端同款时区，避免
+   * "build 算 +08 / runtime 算 UTC"差一天。
+   */
+  (function setupDaysTogetherCountUp() {
+    if (typeof window === "undefined") return;
+    const spans = document.querySelectorAll<HTMLSpanElement>(
+      ".days-together[data-days-anchor]",
+    );
+    if (spans.length === 0) return;
+
+    const MS_PER_DAY = 86_400_000;
+    const prefersReduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    function parseAnchor(iso: string): Date {
+      // 与 src/lib/story/daysTogether.ts:parseAnchorDate 同款语义
+      return new Date(iso + "T00:00:00+08:00");
+    }
+    function daysBetween(anchor: Date, now: Date): number {
+      const diff = now.getTime() - anchor.getTime();
+      if (diff <= 0) return 0;
+      return Math.floor(diff / MS_PER_DAY);
+    }
+
+    // 缓存每个 span 的目标值 + 是否已动画过
+    const meta = new WeakMap<
+      HTMLSpanElement,
+      { target: number; animated: boolean }
+    >();
+    spans.forEach((span) => {
+      const iso = span.dataset.daysAnchor;
+      if (!iso) return;
+      const target = daysBetween(parseAnchor(iso), new Date());
+      meta.set(span, { target, animated: false });
+      // reduced-motion / 无 IO 支持 → 立即写最终值（不等入场）
+      if (prefersReduced) {
+        span.textContent = String(target);
+        meta.set(span, { target, animated: true });
+      } else {
+        // 非 reduced：先把 SSR 写的 build-time 数字替换成 client-time 的最新
+        // 终值，CountUp 入场动画从 0 → target 期间会反复改写它；离开视口
+        // 后保持 target，不再动画（重复触发让人晃眼）
+        span.textContent = String(target);
+      }
+    });
+
+    if (prefersReduced) return; // 全部已写终值，无需 IO
+
+    // ease-out cubic 让数字结尾"减速"，不像 linear 那么机械
+    function easeOut(t: number): number {
+      const c = 1 - t;
+      return 1 - c * c * c;
+    }
+
+    function animate(span: HTMLSpanElement, target: number): void {
+      const duration = 1400; // ms
+      const start = performance.now();
+      function tick(now: number): void {
+        const elapsed = now - start;
+        if (elapsed >= duration) {
+          span.textContent = String(target);
+          return;
+        }
+        const t = elapsed / duration;
+        const value = Math.floor(target * easeOut(t));
+        span.textContent = String(value);
+        window.requestAnimationFrame(tick);
+      }
+      // 起始帧把内容打到 0，避免 SSR 终值闪一下再跳回 0 反向跳
+      span.textContent = "0";
+      window.requestAnimationFrame(tick);
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const span = entry.target as HTMLSpanElement;
+          const m = meta.get(span);
+          if (!m || m.animated) continue;
+          m.animated = true;
+          animate(span, m.target);
+          io.unobserve(span);
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: [0, 0.3] },
+    );
+    spans.forEach((span) => io.observe(span));
   })();
 </script>

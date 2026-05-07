@@ -58,7 +58,11 @@ const distanceLabel = distanceKm.toLocaleString("en-US");
 const headingId = "beat-11-heading";
 const ariaHeadingId = "beat-11-aria-heading";
 
-const ariaLabel = `从 ${from.name} 到 ${to.name}，球面大圆距离 ${distanceLabel} 公里`;
+// v1.74 文案收口：用户审计要求"10,755 公里"前加"我们最远时相距"
+// 完整句："我们最远时相距 10,755 公里"。aria-label 同步用同款叙述，避免
+// AT 朗读到的"球面大圆距离"等技术语让叙事失味。
+const distancePrefix = "我们最远时相距";
+const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里`;
 ---
 
 <section
@@ -90,6 +94,7 @@ const ariaLabel = `从 ${from.name} 到 ${to.name}，球面大圆距离 ${distan
       <p class="globe-distance">
         <span class="globe-cities">{from.name} ↔ {to.name}</span>
         <span class="globe-km">
+          <span class="globe-km-prefix">{distancePrefix}</span>
           <span class="globe-km-num">{distanceLabel}</span>
           <span class="globe-km-unit">公里</span>
         </span>
@@ -98,7 +103,8 @@ const ariaLabel = `从 ${from.name} 到 ${to.name}，球面大圆距离 ${distan
 
     <noscript>
       <p class="globe-fallback">
-        从 {from.name} 到 {to.name}，球面大圆距离 {distanceLabel} 公里。
+        {from.name} ↔ {to.name}，{distancePrefix}
+        {distanceLabel} 公里。
       </p>
     </noscript>
   </div>
@@ -206,10 +212,26 @@ const ariaLabel = `从 ${from.name} 到 ${to.name}，球面大圆距离 ${distan
     font-size: 1.65rem;
     line-height: 1.2;
     font-weight: 400;
+    /* v1.74：prefix + num + unit 横向排成一句，让 "我们最远时相距 10,755 公里"
+       视觉上是连贯的一行；过窄屏 wrap 自然换行（flex-wrap 让标签换行不破坏对齐） */
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.35em;
+  }
+  .globe-km-prefix {
+    /* prefix "我们最远时相距" —— 比数字克制，sage 色让数字自己抓眼 */
+    font-size: 1rem;
+    color: var(--c-sage);
+    letter-spacing: 0.04em;
+    /* 与数字之间留一个字宽 */
+    margin-right: 0.05em;
   }
   .globe-km-num {
     /* 数字 cn-kaishu 不合适——保持站点 default 衬线/sans 字族 */
-    margin-right: 0.35em;
+    /* 数字 tabular 防 CountUp（如果将来加）抖动 */
+    font-variant-numeric: tabular-nums;
   }
   .globe-km-unit {
     font-size: 1rem;

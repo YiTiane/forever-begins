@@ -1,5 +1,10 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.3 · v1.73 reduced-motion 真静态化）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.4 · v1.74 修 Three.Clock dep warn）
+ *
+ * v0.4 新增（v1.74 修 v1.73 audit P3）：
+ *   - Endpoint useFrame 改用本地 elapsedRef 累加 dt，不再读 state.clock —— Three.js
+ *     0.184 把 THREE.Clock 进 deprecated（推荐 THREE.Timer），原 .getElapsedTime()
+ *     调用每帧都把 dep warning 写到 console；改本地 ref 累加完全绕开 → console 干净
  *
  * 视觉契约（DESIGN §2.B · v2.21）：
  *   - 球体：深墨绿/纸白低饱和；v0.x 暂用纯色 + 柔和环境光（2K 水彩贴图
@@ -114,6 +119,15 @@ function Endpoint({
 }: EndpointProps): React.ReactElement {
   const haloRef = useRef<THREE.Mesh>(null);
   const dotRef = useRef<THREE.Mesh>(null);
+  /**
+   * v0.4（v1.73 audit P3 修）：本地累计 elapsed time，不读 state.clock。
+   * Three.js 0.184 起 THREE.Clock 进入 deprecated（推荐 THREE.Timer），R3F
+   * 内部仍把 state.clock 暴露在 useFrame 回调里，但每次 .getElapsedTime() 都
+   * 触发一次 deprecation warn 写到 console（开发者工具持续刷红）。改本地 ref
+   * 累加 useFrame 回调的第二参数 dt（秒），完全绕开 state.clock 的访问 →
+   * console 干净，pulse 节奏不受影响。
+   */
+  const elapsedRef = useRef(0);
 
   /**
    * v0.3（v1.72 audit P2 修）：reduced-motion 不再每帧写同样的静态值。
@@ -139,12 +153,13 @@ function Endpoint({
     }
   }, [reducedMotion]);
 
-  useFrame((state) => {
+  useFrame((_state, dt) => {
     // reduced-motion：完全跳过每帧 work（静态终态由 useEffect 一次性写入）
     if (reducedMotion) return;
+    // v0.4：dt 以秒计；累加到本地 ref 不读 state.clock（避 THREE.Clock dep warn）
+    elapsedRef.current += dt;
     // 1.4 Hz 心跳脉冲；progress 从 0→1 决定亮度峰值
-    const t = state.clock.getElapsedTime();
-    const pulse = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.4);
+    const pulse = 0.5 + 0.5 * Math.sin(elapsedRef.current * 2 * Math.PI * 1.4);
     const peak = 0.3 + 0.55 * progress;
     if (haloRef.current) {
       haloRef.current.scale.setScalar(1 + pulse * 0.6);
