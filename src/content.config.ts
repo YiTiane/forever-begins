@@ -236,8 +236,14 @@ const cats = defineCollection({
  *   有人把 main.json 写成 "topLeft" / "bottomright" / "nearer" 等 typo，schema 会通过、
  *   组件会丢掉那张照片的定位规则、Story 视觉静默碎掉。v1.56 用 enum 锁住合法值；
  *   再用 beats array 上的 refine 强约束"role 必须属于 layout 的 VALID_ROLES_BY_LAYOUT"。
+ *
+ * v1.58（P2 #1 修）：原 v1.56 用 `z.infer<typeof photoRoleSchema>` 取 TS 类型，
+ *   但 astro:content 重导出的 `z` 在某些 TS 解析路径下不暴露 `infer` 命名空间，
+ *   `pnpm exec tsc --noEmit` 报 TS2503 "Cannot find namespace 'z'"。改为先声明
+ *   `as const` tuple，从 tuple 推导 TS 字面量联合类型，再把同一个 tuple 喂给
+ *   `z.enum(...)`。两侧由同一份单一源生成，schema 与 type 不会漂移。
  */
-const photoRoleSchema = z.enum([
+const PHOTO_ROLES = [
   "far", // parallax-pair (beat 01)
   "near", // parallax-pair (beat 01)
   "top-left", // diagonal-gaze (beat 02)
@@ -249,7 +255,9 @@ const photoRoleSchema = z.enum([
   "reveal", // reveal (beat 08)
   "wooden", // wooden (beat 09)
   "pearl", // pearl (beat 10)
-]);
+] as const;
+type PhotoRole = (typeof PHOTO_ROLES)[number];
+const photoRoleSchema = z.enum(PHOTO_ROLES);
 
 const storyPoemPhoto = z.object({
   /** 派生品 stem，例：'Snow_03' / 'Wooden_door_01'。共用 stemSchema 防错。 */
@@ -280,7 +288,11 @@ const storyPoemPhoto = z.object({
  *   v1.55 让 PoemBeat 根据本字段切换 4 套真正不同的 CSS 布局 + per-photo stagger 动画。
  *   globe / finale beat 不需要 layout（由专属组件渲染）。
  */
-const photoPoemLayout = z.enum([
+/**
+ * v1.58（P2 #1 修）：同 photoRoleSchema，原 `z.infer<typeof photoPoemLayout>` 触发
+ * tsc TS2503，改为 const tuple → typeof[number] 推导 type，同一份 tuple 喂 z.enum。
+ */
+const PHOTO_POEM_LAYOUTS = [
   "parallax-pair", // beat 01：远 + 近，上下错位形成纵深推近感
   "diagonal-gaze", // beat 02：左上 + 右下，对视斜线，中间留白给文字
   "radial-mask", // beat 03：单图居中，radial gradient mask 让边缘柔焦"晕散"
@@ -290,7 +302,9 @@ const photoPoemLayout = z.enum([
   "reveal", // beat 08：图像从裁切中展开（同上）
   "wooden", // beat 09：木门质感 + 缝线 SVG（同上）
   "pearl", // beat 10：珍珠高光闪动（同上）
-]);
+] as const;
+type PhotoPoemLayout = (typeof PHOTO_POEM_LAYOUTS)[number];
+const photoPoemLayout = z.enum(PHOTO_POEM_LAYOUTS);
 
 const storyPoemBeat = z.object({
   /** 序号字符串，例 '01'..'12'；必须按 DESIGN §2.A 表格顺序。 */
@@ -346,9 +360,7 @@ const EXPECTED_BEAT_KINDS = [
  * 改 main.json 时 layout 必须严格匹配下列分配，未来 batch 2 加新 layout
  * 时只需改这张表 + photoPoemLayout enum，组件 CSS 自动获益。
  */
-const EXPECTED_BEAT_LAYOUTS: readonly (z.infer<
-  typeof photoPoemLayout
-> | null)[] = [
+const EXPECTED_BEAT_LAYOUTS: readonly (PhotoPoemLayout | null)[] = [
   "parallax-pair", // 01 · snow_03 + snow_07 远近推近
   "diagonal-gaze", // 02 · snow_14 + snow_15 对视斜线
   "radial-mask", // 03 · snow_05 居中柔焦晕散
@@ -369,10 +381,7 @@ const EXPECTED_BEAT_LAYOUTS: readonly (z.infer<
  * absolute 位置；role 写错的话 CSS 不匹配、photo 会回到默认流式位置 —— 视觉静默碎掉。
  * v1.56 用此表 + beats 上的第 4 条 refine 拦住 role × layout 不匹配的输入。
  */
-const VALID_ROLES_BY_LAYOUT: Record<
-  z.infer<typeof photoPoemLayout>,
-  readonly z.infer<typeof photoRoleSchema>[]
-> = {
+const VALID_ROLES_BY_LAYOUT: Record<PhotoPoemLayout, readonly PhotoRole[]> = {
   "parallax-pair": ["far", "near"],
   "diagonal-gaze": ["top-left", "bottom-right"],
   "radial-mask": ["center"],
@@ -428,7 +437,13 @@ const storyPoem = defineCollection({
           beats.every((b) => {
             // globe / finale beat：允许 photos 为空，此处不强约束 role × layout
             if (!b.layout) return true;
+            // v1.58 P2 #2 修：tsconfig `noUncheckedIndexedAccess` 让 Record 索引返回
+            // `T | undefined`。VALID_ROLES_BY_LAYOUT 在 TS 层面对全部 PhotoPoemLayout
+            // 都已总，但 TS 不能从 Record<K, V> 构造同时推出"全键覆盖"。显式 guard：
+            // 若上层 enum / refine #3 都通过、b.layout 又非空，理论上一定能查到；
+            // 这里的 false fallback 是给未来误编辑（漏写一项）时拦下的最后一层。
             const validRoles = VALID_ROLES_BY_LAYOUT[b.layout];
+            if (!validRoles) return false;
             return b.photos.every((p) => validRoles.includes(p.role));
           }),
         {

@@ -1,6 +1,19 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.5 · v1.57 复合帧重构 + 始终可见基线）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.6 · v1.58 tablet 断点 + stage exit fade）
+ *
+ * v0.6 修 v1.57 审计两处视觉 P2：
+ *   - **P2 #3（541-719px tablet 断点缺失）**：v1.57 把 parallax-pair / diagonal-gaze
+ *     的 layout CSS 用 `@media (min-width: 720px)` 守门，而 mobile fallback 用
+ *     `@media (max-width: 540px)`。541-719px 这段 portrait/tablet 视口 既不进 mobile
+ *     堆叠也不进 desktop 真布局，回落到通用单列 grid → photos 列没高度、absolute 子元素
+ *     脱顶，构图碎掉。v0.6 把 desktop 守门下沉到 `@media (min-width: 541px)`，无中间
+ *     gap：≤ 540 mobile 单列；≥ 541 layout-aware desktop。
+ *   - **P2 #4（beat 跨转时 broken transition frames）**：sticky beat 释放钉位后、下一个
+ *     beat sticky 接管前，视口会同时显示"半截上一段 + 半截下一段"。v0.6 在 `.poem-stage`
+ *     上加 exit-fade：`opacity: clamp(0, calc((1 - --p) * 10), 1)` —— --p 0..0.9 期间 ≥ 1
+ *     被 clamp 保持 1（满帧可见），0.9..1 期间线性降到 0。sticky 释放那一刻本 beat 已
+ *     隐形，下一 beat 以"干净视口"接管。配 will-change: opacity 走 GPU 合成。
  *
  * v0.5 修 v1.56 审计 P2 #1（"sticky stage 仍产生 broken visual frames：text 跟 photo 被
  *      grid align-self start/end 拆到 100vh 两端"）：
@@ -229,6 +242,15 @@ const firstLine = lines[0] ?? "";
 
   /* ────────────────────────────────────────────────────────────── */
   /* sticky 100vh stage · 单视口构图舞台                              */
+  /*                                                                  */
+  /* v1.58 P2 #4 修（broken transition frames）：                     */
+  /*   sticky beat 在 --p 越过 0.9 后即将释放钉位；释放完到下一 beat  */
+  /*   sticky 接管之间，旧 beat 内容会在视口顶部继续向上滑离、新 beat │
+  /*   头部从下方进入 → 视口同时显示半截上下两段，破坏导演帧。       */
+  /*   解：让 stage 在 p ∈ [0.9, 1] 区间 opacity 1 → 0 退场，sticky    */
+  /*   释放时本帧已隐形，下个 beat 以"干净视口"接管。                 */
+  /*   公式 `(1 - --p) * 10` 在 p=0..0.9 一直 ≥ 1 (clamp 后保持 1)，   */
+  /*   p=0.9..1 内线性降到 0。                                       */
   /* ────────────────────────────────────────────────────────────── */
   .poem-stage {
     position: sticky;
@@ -244,6 +266,10 @@ const firstLine = lines[0] ?? "";
     max-width: 1280px;
     margin: 0 auto;
     box-sizing: border-box;
+    /* exit-fade · 防 beat 跨转时半截上下两段并存（v1.58 P2 #4） */
+    opacity: clamp(0, calc((1 - var(--p, 0)) * 10), 1);
+    /* GPU 合成（避免 opacity 改变触发 paint pipeline 上的非合成层重绘） */
+    will-change: opacity;
   }
 
   /* sr-only 兜底 */
@@ -323,8 +349,10 @@ const firstLine = lines[0] ?? "";
   /* 视觉契约：text 左列居中 + 双图右列上下错位重叠（70vh 卡死高度）   */
   /* 任意停留点：text + 双图必同视口；photos 列内部 absolute 不外溢    */
   /* choreography：远近沿 Y 轴向中心小幅 settle（--p 0→1）             */
+  /* v1.58 P2 #3 修：min-width 从 720px 下沉到 541px，补 541-719px    */
+  /* tablet/portrait 断点（v1.57 这段会回落到通用单列 grid 出现脱顶）  */
   /* ────────────────────────────────────────────────────────────── */
-  @media (min-width: 720px) {
+  @media (min-width: 541px) {
     .poem-beat[data-layout="parallax-pair"] .poem-stage {
       grid-template-columns: minmax(0, min(540px, 40vw)) minmax(0, 1fr);
       gap: 3rem;
@@ -380,8 +408,9 @@ const firstLine = lines[0] ?? "";
   /* 视觉契约：左上 + 右下两人像 + 中间文字 backdrop-blur 浮起          */
   /* 任意停留点：所有元素 opacity 始终 1；choreography 只驱动位移。     */
   /* 入场动作：照片从 ±15% 位置 settle 到 (0,0)；文字 translateY 6→0px  */
+  /* v1.58 P2 #3 修：min-width 从 720px 下沉到 541px，补 tablet 断点  */
   /* ────────────────────────────────────────────────────────────── */
-  @media (min-width: 720px) {
+  @media (min-width: 541px) {
     .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
       grid-template-columns: 1fr;
       grid-template-rows: 1fr;
