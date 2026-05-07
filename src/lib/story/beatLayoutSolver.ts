@@ -177,18 +177,24 @@ function solveParallaxPair(input: SolverInput): SolverResult {
   const stageH = vh - STAGE_PAD_Y * 2;
 
   if (isWide) {
-    const textColW = clampPx(stageW * 0.4, 320, 540);
-    const gap = Math.max(MIN_GAP, stageW * 0.04);
+    /**
+     * v1.81：宽屏 parallax-pair 改为 equal-size pair。
+     * Snow_03 / Snow_07 都是 3:2 横幅，视觉上应像同一组记忆切片，而不是一张
+     * 小远景 + 一张稍大的近景。solver 现在只求一次 photo box，然后写给 far/near
+     * 两张图；photosColH 至少容纳 2×photoH + gap，最终态上下分离不重叠。
+     */
+    const textColW = clampPx(stageW * 0.34, 320, 460);
+    const gap = Math.max(MIN_GAP, stageW * 0.035);
     const photosColW = stageW - textColW - gap;
-    const photosColH = Math.min(stageH * 0.95, vh * 0.7);
-
-    const farMaxW = photosColW * 0.55;
-    const farMaxH = photosColH * 0.62;
-    const [farW, farH] = fitAspect(farMaxW, farMaxH, farPhoto.aspectRatio);
-
-    const nearMaxW = photosColW * 0.66;
-    const nearMaxH = photosColH * 0.7;
-    const [nearW, nearH] = fitAspect(nearMaxW, nearMaxH, nearPhoto.aspectRatio);
+    const photosColH = Math.min(stageH * 0.88, vh * 0.78);
+    const pairGap = Math.max(24, stageH * 0.035);
+    const pairMaxW = Math.min(photosColW * 0.78, 640);
+    const pairMaxH = (photosColH - pairGap) / 2;
+    const [photoW, photoH] = fitAspect(
+      pairMaxW,
+      pairMaxH,
+      farPhoto.aspectRatio,
+    );
 
     return {
       vars: {
@@ -196,13 +202,14 @@ function solveParallaxPair(input: SolverInput): SolverResult {
         "--stage-gap": `${gap}px`,
         "--text-col-w": `${textColW}px`,
         "--photos-col-w": `${photosColW}px`,
-        "--photos-col-h": `${photosColH}px`,
-        "--photo-far-w": `${farW}px`,
-        "--photo-far-h": `${farH}px`,
-        "--photo-near-w": `${nearW}px`,
-        "--photo-near-h": `${nearH}px`,
+        "--photos-col-h": `${Math.max(photosColH, photoH * 2 + pairGap)}px`,
+        "--photo-pair-gap": `${pairGap}px`,
+        "--photo-far-w": `${photoW}px`,
+        "--photo-far-h": `${photoH}px`,
+        "--photo-near-w": `${photoW}px`,
+        "--photo-near-h": `${photoH}px`,
       },
-      // 宽屏：双列 cinematic — 文字左 reading column，双图右 parallax stack
+      // 宽屏：双列 cinematic — 文字左 reading column，双图右 equal-size parallax stack
       dataAttrs: { textPlacement: "side-text-photo" },
     };
   }
@@ -261,29 +268,17 @@ function solveDiagonalGaze(input: SolverInput): SolverResult {
 
   if (isWide) {
     /**
-     * v0.6（v1.69 audit P2 修）：宽屏 diagonal-gaze 安全构图收紧。
-     * 原 photoMaxW=stageW*0.3 / photoMaxH=stageH*0.5 + 4% 角落 inset + ±15%
-     * 入场 transform 在 1375×997 实测两人像被 sticky stage overflow:hidden
-     * 裁切 33px（vertical clipping at p=0）。photos at top:4% with translate
-     * (-15%,-15%) → top edge = stageH*0.04 - photoH*0.15 = 37 - 70 = -33px。
-     *
-     * 改：photoMaxW 0.3→0.28 / photoMaxH 0.5→0.42 收紧人像最大盒；CSS 把
-     * 角落 inset 4%→6% / transform ±15%→±8%，三者合一保证 p=0 时 photo 顶部
-     * （top-left）/底部（bottom-right）边缘距 stage 边缘 ≥ 25px，不再被 sticky
-     * stage overflow:hidden 裁切。textW 540→520 给 photo 与文字浮卡留 ≥20px
-     * 横向呼吸；center 文字浮卡仍 z-index:2 在 photo 之上（设计契约保留）。
-     *
-     * 校验区间（手算几个常见 viewport，photoH/2 = stageH*0.21；transformY
-     * = photoH*0.08）：
-     *   1366×768: stageH=704, photoH=296, top@p=0 = 704*0.06 - 296*0.08 ≈ 19px ✓
-     *   1375×997: stageH=933, photoH=392, top@p=0 = 933*0.06 - 392*0.08 ≈ 25px ✓
-     *   1920×1080: stageH=1016, photoH=427, top@p=0 ≈ 27px ✓
+     * v1.81 宽屏复审：人像不只要不裁切，还要在完成帧里更有存在感。
+     * 旧 v1.70 安全修把人像收得偏小；本轮改为 photoMaxW=stageW*0.32 /
+     * photoMaxH=stageH*0.48，CSS 同步改 9% corner inset + ±5% entrance
+     * transform。这样 top-left / bottom-right 能更靠近中央文字，但 p=0
+     * 仍有足够边界，不会被 sticky stage overflow:hidden 裁掉。
      */
-    const photoMaxW = stageW * 0.28;
-    const photoMaxH = stageH * 0.42;
+    const photoMaxW = stageW * 0.32;
+    const photoMaxH = stageH * 0.48;
     const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
     const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
-    const textW = clampPx(stageW * 0.42, 360, 520);
+    const textW = clampPx(stageW * 0.32, 340, 400);
 
     return {
       vars: {
@@ -365,9 +360,13 @@ function solveAnchorSingle(input: SolverInput): SolverResult {
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
+  const mode = getStoryLayoutMode(vw, vh);
   const textReserveH = textHeight ?? clampPx(vh * 0.16, 96, 180);
-  const gap = 20;
-  const photoMaxW = Math.min(stageW * 0.7, 460);
+  const gap = mode === "wide" && photo.aspectRatio > 1 ? 26 : 20;
+  const photoMaxW =
+    mode === "wide" && photo.aspectRatio > 1
+      ? Math.min(stageW * 0.78, 900)
+      : Math.min(stageW * 0.7, 460);
   const photoMaxH = stageH - textReserveH - gap;
   const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
 

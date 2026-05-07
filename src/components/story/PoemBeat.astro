@@ -1,6 +1,6 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.5 · v1.74-v1.75 [N] 天 CountUp + a11y 收口）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.6 · v1.81 wide story frame 调整）
  *
  * v1.5 新增（v1.74 §2.D 落地 / v1.75 修 v1.74 audit P2）：
  *   - **beat 05 "[N] 天" 占位实时计算**：lines.map 检 "[N]"，含的行 SSR 拆成
@@ -16,14 +16,13 @@
  *   - 新增 .days-together-wrap (display:inline) + .days-together (honey 色 +
  *     tabular-nums + 1.18em + font-weight 400) CSS
  *
- * v1.4（v1.70 修 v1.69 audit P2）：
- *   - **wide diagonal-gaze beat 02 photo 不再被 sticky stage overflow 裁切**：
- *     原 4% 角落 inset + ±15% 入场 transform 在 1375×997 实测人像顶部 / 底部
- *     超出 stage ~33px，hash landing (#beat-02-heading) 看到上半人 / 下半人
- *     被切。改：solver photoMaxH 0.5→0.42 / photoMaxW 0.3→0.28（人像盒收紧
- *     ~16%）、textW 540→520（与人像横向呼吸 ≥20px）、CSS 角落 inset 4%→6%、
- *     transform ±15%→±8%。手算覆盖 1366×768 / 1375×997 / 1920×1080 三档
- *     宽屏：p=0 时 photo 边缘距 stage 边缘 ≥ 19/25/27px，p=0/p=1 都不再裁切。
+ * v1.6（v1.81 宽屏视觉复审）：
+ *   - **wide parallax-pair / diagonal-gaze / anchor-single 三处照片尺度重调**：
+ *     Snow_03 / Snow_07 改为同一 solver box，初始与完成帧尺寸一致且更大；
+ *     Snow_14 / Snow_15 放大并收近中央文字，但保留 9% inset + ±5% entrance
+ *     transform 防 sticky 裁切；Snow_11 宽屏横幅 photoMaxW 提升并加 clip/scale/
+ *     saturate 开场动画。所有改动限定 wide 或 cover-landscape 路径，不改变
+ *     portrait / compact 的流式排布。
  *
  * v1.3 新增（v1.69 修 v1.68 audit P2）：
  *   - **vignette 文字 stagger：第 1 行 = 锚句 (opacity:1 不接 --p-text gate)，
@@ -451,6 +450,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     --photo-far-h: auto;
     --photo-near-w: 64%;
     --photo-near-h: auto;
+    --photo-pair-gap: 24px;
     --photo-tl-w: 240px;
     --photo-tl-h: auto;
     --photo-br-w: 240px;
@@ -839,31 +839,27 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     gap: 0;
     z-index: 1;
   }
-  /* v1.70 修 v1.69 audit P2：宽屏 diagonal-gaze photo 安全构图。
-     原 4% 角落 inset + ±15% 入场 transform 在 sticky stage overflow:hidden
-     下让 hash landing (p=0) 时两人像被裁掉 ~33px（top-left 顶部超出 stage 顶
-     边、bottom-right 底部超出 stage 底边）。改 6% 角落 inset + ±8% transform
-     —— 数值已在 solver photoMaxH=stageH*0.42 一起验算过，常见宽屏（1366×768
-     / 1375×997 / 1920×1080）上 p=0 时 photo 边缘距 stage 边缘 ≥ 19/25/27px。
-     入场 settle 仍可见但更克制；composed frame 在 p=0 / p=1 都不再裁切。 */
+  /* v1.81 宽屏复审：diagonal-gaze 从“安全不裁切”推进到“更大、更近”。
+     solver 给 top-left / bottom-right 更大的 portrait box，CSS 用 9% 角落 inset
+     + ±5% entrance transform 保留对角入场，同时避免人物被 sticky stage 裁掉。 */
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="top-left"] {
     position: absolute;
-    top: 6%;
-    left: 6%;
+    top: 9%;
+    left: 9%;
     transform: translate(
-      calc((1 - var(--p, 0)) * -8%),
-      calc((1 - var(--p, 0)) * -8%)
+      calc((1 - var(--p, 0)) * -5%),
+      calc((1 - var(--p, 0)) * -5%)
     );
   }
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="bottom-right"] {
     position: absolute;
-    bottom: 6%;
-    right: 6%;
+    bottom: 9%;
+    right: 9%;
     transform: translate(
-      calc((1 - var(--p, 0)) * 8%),
-      calc((1 - var(--p, 0)) * 8%)
+      calc((1 - var(--p, 0)) * 5%),
+      calc((1 - var(--p, 0)) * 5%)
     );
   }
 
@@ -925,6 +921,14 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     height: var(--photo-h);
     transform: scale(calc(0.94 + var(--p, 0) * 0.06))
       translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+  .poem-beat[data-layout="anchor-single"]
+    .poem-photo[data-role="anchor"][data-fit="cover"] {
+    clip-path: inset(calc((1 - var(--p, 0)) * 7%) round var(--radius-sm));
+    transform: translateY(calc((1 - var(--p, 0)) * 16px))
+      scale(calc(0.9 + var(--p, 0) * 0.1));
+    filter: saturate(calc(0.82 + var(--p, 0) * 0.18))
+      contrast(calc(0.94 + var(--p, 0) * 0.06));
   }
   .poem-beat[data-layout="anchor-single"] .poem-text {
     max-width: var(--text-max-w);

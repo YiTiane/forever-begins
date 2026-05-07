@@ -1,12 +1,11 @@
 /**
  * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.8 · v1.80 canvas landmask + safe-zone layout）
  *
- * v0.8 新增（v1.80 修用户截图审计：纯噪声阈值读不成地图）：
- *   - **<Globe> 用 browser-side canvas 生成 equirectangular landmask 贴图**：
- *     不标国家、不画国界，只画低精度大陆轮廓 + 柔和 coastline stroke + 纸粒。
- *     这是为了让截图能读成"世界地图"，而不是 v1.78/v1.79 的噪声 / blob
- *     shader。Phase 3 push `globe-watercolor-2k.jpg` 后可把 createGlobeTexture
- *     替换为 useTexture。
+ * v0.9 新增（v1.81 修宽屏 Globe 审计）：
+ *   - **<Globe> 贴图改用 Natural Earth 1:110m land polygons**：browser-side
+ *     canvas 直接绘制标准经纬数据集，不标国家、不画国界，只保留大陆 / 海岸
+ *     轮廓。乌鲁木齐与墨尔本端点现在与中国 / 澳大利亚大陆轮廓共享同一
+ *     lon/lat 坐标系，避免 v1.80 手绘近似多边形的落点可信度不足。
  *
  * v0.7 新增（v1.79 修 v1.78 audit P2-3 globe card overlay）：
  *   - GlobeBeat 把 stage 从 grid 1×1 overlay 改成 `grid-template-rows: 1fr auto`。
@@ -27,7 +26,7 @@
  *     连带屏蔽其它有用 warn）
  *
  * 视觉契约（DESIGN §2.B · v2.21）：
- *   - 球体：深墨绿/纸白低饱和；v1.80 暂用 canvas landmask 贴图（2K 水彩贴图
+ *   - 球体：深墨绿/纸白低饱和；v1.81 暂用 Natural Earth canvas landmask 贴图（2K 水彩贴图
  *     `globe-watercolor-2k.jpg` 在 misc CDN 仓 Phase 3 上线后切到 useTexture）
  *   - 端点：乌鲁木齐 / 墨尔本，柔和金色脉冲（不用红色 pin）
  *   - 弧线：从乌 → 墨的球面大圆弧，sage → honey 渐变；按 progress 0→1 动画
@@ -73,6 +72,7 @@ import {
   greatCircleArc,
   latLngToVec3,
 } from "@/lib/story/globe";
+import { NATURAL_EARTH_LAND_110M } from "@/lib/story/naturalEarthLand110m";
 
 /** 单位球半径（场景内部刻度） */
 const GLOBE_RADIUS = 1;
@@ -108,6 +108,17 @@ const COLOR_HONEY = new THREE.Color("#c69d4e");
 /* ─────────────────────── Globe sphere ─────────────────────── */
 type GeoPoint = readonly [lng: number, lat: number];
 
+/**
+ * Three.js SphereGeometry 的 UV 与常规 equirectangular x=(lng+180)/360 相反：
+ * 当前 latLngToVec3 约定下，球面点 lng=90°E 位于 camera 正面 +Z，而
+ * SphereGeometry 对应的 u≈0.25。因此贴图必须用 x=(180-lng)/360，才能让
+ * 乌鲁木齐 / 墨尔本 marker 与中国 / 澳大利亚大陆轮廓准确重合。
+ */
+function projectLngToX(lng: number, width: number): number {
+  const normalized = (((180 - lng) % 360) + 360) % 360;
+  return (normalized / 360) * width;
+}
+
 function drawLandPath(
   ctx: CanvasRenderingContext2D,
   points: readonly GeoPoint[],
@@ -116,7 +127,7 @@ function drawLandPath(
 ): void {
   if (points.length === 0) return;
   const project = ([lng, lat]: GeoPoint): [number, number] => [
-    ((lng + 180) / 360) * width,
+    projectLngToX(lng, width),
     ((90 - lat) / 180) * height,
   ];
   const first = points[0];
@@ -142,14 +153,14 @@ function drawMapTexture(
   width: number,
   height: number,
 ): void {
-  ctx.fillStyle = "#182d24";
+  ctx.fillStyle = "#172b23";
   ctx.fillRect(0, 0, width, height);
 
   ctx.save();
-  ctx.strokeStyle = "rgba(245, 240, 230, 0.045)";
+  ctx.strokeStyle = "rgba(245, 240, 230, 0.05)";
   ctx.lineWidth = 1;
   for (let lng = -150; lng <= 180; lng += 30) {
-    const x = ((lng + 180) / 360) * width;
+    const x = projectLngToX(lng, width);
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
@@ -165,227 +176,28 @@ function drawMapTexture(
   ctx.restore();
 
   ctx.save();
-  ctx.shadowColor = "rgba(198, 157, 78, 0.28)";
-  ctx.shadowBlur = 12;
-  ctx.fillStyle = "#668a58";
-  ctx.strokeStyle = "rgba(213, 178, 88, 0.34)";
-  ctx.lineWidth = 1.8;
+  ctx.shadowColor = "rgba(198, 157, 78, 0.22)";
+  ctx.shadowBlur = 9;
+  ctx.fillStyle = "#6f9360";
+  ctx.strokeStyle = "rgba(224, 194, 114, 0.4)";
+  ctx.lineWidth = 1.15;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-
-  // 粗略 equirectangular landmask：没有国界 / 国家名，只保留大陆轮廓识别度。
-  drawLandPath(
-    ctx,
-    [
-      [-168, 72],
-      [-154, 68],
-      [-140, 62],
-      [-126, 58],
-      [-121, 50],
-      [-108, 49],
-      [-96, 52],
-      [-86, 47],
-      [-76, 44],
-      [-67, 48],
-      [-54, 52],
-      [-58, 42],
-      [-74, 31],
-      [-84, 24],
-      [-96, 18],
-      [-112, 25],
-      [-128, 33],
-      [-144, 45],
-      [-160, 57],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [-83, 12],
-      [-72, 9],
-      [-62, 2],
-      [-54, -8],
-      [-48, -18],
-      [-50, -31],
-      [-58, -45],
-      [-68, -55],
-      [-74, -42],
-      [-79, -26],
-      [-82, -8],
-      [-85, 4],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [-52, 72],
-      [-36, 70],
-      [-22, 62],
-      [-34, 55],
-      [-48, 58],
-      [-60, 65],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [-12, 71],
-      [6, 66],
-      [22, 62],
-      [38, 56],
-      [52, 55],
-      [66, 62],
-      [88, 65],
-      [110, 59],
-      [132, 53],
-      [149, 47],
-      [158, 38],
-      [148, 31],
-      [128, 32],
-      [115, 24],
-      [104, 21],
-      [97, 13],
-      [88, 20],
-      [78, 18],
-      [72, 30],
-      [62, 32],
-      [52, 27],
-      [43, 35],
-      [31, 36],
-      [22, 44],
-      [10, 43],
-      [0, 50],
-      [-10, 44],
-      [-20, 50],
-      [-25, 60],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [-18, 35],
-      [-5, 37],
-      [12, 33],
-      [25, 22],
-      [35, 8],
-      [33, -9],
-      [25, -24],
-      [16, -34],
-      [6, -34],
-      [-5, -22],
-      [-13, -5],
-      [-18, 15],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [35, 30],
-      [48, 28],
-      [58, 18],
-      [54, 12],
-      [46, 14],
-      [42, 22],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [68, 25],
-      [82, 22],
-      [88, 8],
-      [79, 6],
-      [72, 15],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [96, 18],
-      [113, 15],
-      [126, 6],
-      [121, -5],
-      [108, -8],
-      [100, 4],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [112, -12],
-      [128, -13],
-      [144, -18],
-      [153, -28],
-      [148, -39],
-      [132, -43],
-      [116, -36],
-      [111, -25],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [136, 41],
-      [145, 38],
-      [143, 31],
-      [133, 34],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [166, -34],
-      [178, -41],
-      [172, -47],
-      [162, -42],
-    ],
-    width,
-    height,
-  );
-  drawLandPath(
-    ctx,
-    [
-      [-180, -74],
-      [-90, -68],
-      [0, -72],
-      [90, -68],
-      [180, -74],
-      [180, -90],
-      [-180, -90],
-    ],
-    width,
-    height,
-  );
-
+  for (const ring of NATURAL_EARTH_LAND_110M) {
+    drawLandPath(ctx, ring, width, height);
+  }
   ctx.restore();
 
-  for (let i = 0; i < 1400; i += 1) {
+  ctx.save();
+  ctx.globalCompositeOperation = "soft-light";
+  for (let i = 0; i < 1800; i += 1) {
     const x = (i * 37) % width;
     const y = (i * 71) % height;
-    const alpha = ((i * 17) % 19) / 900;
+    const alpha = 0.015 + ((i * 17) % 23) / 1400;
     ctx.fillStyle = `rgba(245, 240, 230, ${alpha})`;
     ctx.fillRect(x, y, 1, 1);
   }
+  ctx.restore();
 }
 
 function createGlobeTexture(): THREE.CanvasTexture | undefined {
@@ -404,13 +216,11 @@ function createGlobeTexture(): THREE.CanvasTexture | undefined {
 }
 
 /**
- * v0.8（v1.80 修用户截图审计）：用 browser-side canvas 生成低精度
- * equirectangular landmask 贴图。它不标国家、不画国界，但比 v1.79 的 blob/noise
- * shader 更像世界地图：大陆轮廓先由粗略多边形定锚，再叠轻微水彩纸粒。
- *
- * 这是过渡方案，**不是 Natural Earth 级真实 coastline**。Phase 3 push
- * `globe-watercolor-2k.jpg` equirectangular 贴图后，这套 createGlobeTexture
- * 一行换成 `useTexture(...)` 即可下线。
+ * v0.9（v1.81 修宽屏 Globe 审计）：用 Natural Earth 1:110m land polygons
+ * 生成 equirectangular landmask 贴图。不标国家、不画国界；只把标准大陆 /
+ * 海岸线轮廓作为球体纹理，让乌鲁木齐 / 墨尔本端点能落在可信的中国 /
+ * 澳大利亚大陆形状附近。Phase 3 push `globe-watercolor-2k.jpg` 后，这套
+ * createGlobeTexture 一行换成 `useTexture(...)` 即可下线。
  */
 function Globe(): React.ReactElement {
   const texture = useMemo(() => createGlobeTexture(), []);
