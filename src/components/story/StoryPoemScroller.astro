@@ -411,17 +411,12 @@ const anchorDate = main.data.anchor_date;
      * 释放、下一个 beat 进入视口的同一瞬间 → 完成帧不稳定，下一 beat 已经
      * 半进入视口，"完成态"无可观测 hold zone，影响照片大小 / 间距的逐张微调
      *
-     * 新实现：HOLD_PHASE = 0.5 —— scroll 走过 50% spacer 时动画已到 p=1，剩
-     * 50% spacer 全部 hold 在 p=1；这块 hold zone 也覆盖 sticky release 区
-     * （release 区只占 spacer 末段 ~25-35%），所以下一 beat 进入视口时本 beat
-     * 的最终态已稳定持续了 15-25% spacer 距离的视觉时间，肉眼能清晰看到
-     * "完成构图"
-     *
-     * 副作用：动画整体节奏变快（原 100% scroll 走 0→1，现在 50% 走完），但
-     * 因为 sticky 100vh 期间 scroll 物理距离不变，动画线性"压缩"到前 50%
-     * 后视觉感觉更紧凑、更有目的性
+     * v1.82 调整：HOLD_PHASE = 0.64。v1.80/v1.81 的 0.5 给了足够长的
+     * 完成帧，但连续阅读时段与段之间有“停太久”的断裂感。0.64 让动画
+     * 覆盖更多滚动距离，hold zone 保留约 36% scrollable distance，仍能审视
+     * 完成构图，但叙事节奏更连贯。
      */
-    const HOLD_PHASE = 0.5;
+    const HOLD_PHASE = 0.64;
     function computeProgress(beat: HTMLElement): number {
       const rect = beat.getBoundingClientRect();
       const vh = window.innerHeight;
