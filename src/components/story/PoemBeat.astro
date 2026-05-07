@@ -1,6 +1,12 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.6 · v1.81 wide story frame 调整）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.7 · v1.85 Snow_08 text card 修）
+ *
+ * v1.7 新增（v1.85 修用户 Snow_08 空白框反馈）：
+ *   - vignette 文字浮卡三行全部常亮。v1.69 只让第 1 行常亮，第 2/3 行
+ *     opacity gate 但仍占高度，hash / 快速滚动落点会看到“只有首句 + 下方
+ *     大面积空白”的深色面板。Snow_08 的动态重点现在交给 SnowAtmosphere
+ *     canvas，文字层保持完整可读，避免被误看成“下雪动画消失后的空白框”。
  *
  * v1.5 新增（v1.74 §2.D 落地 / v1.75 修 v1.74 audit P2）：
  *   - **beat 05 "[N] 天" 占位实时计算**：lines.map 检 "[N]"，含的行 SSR 拆成
@@ -24,13 +30,9 @@
  *     saturate 开场动画。所有改动限定 wide 或 cover-landscape 路径，不改变
  *     portrait / compact 的流式排布。
  *
- * v1.3 新增（v1.69 修 v1.68 audit P2）：
- *   - **vignette 文字 stagger：第 1 行 = 锚句 (opacity:1 不接 --p-text gate)，
- *     第 2/3 行保留 stagger fade-in**：v1.62 引入的"三行同时 gate 0→1"在 hash
- *     深链 (#beat-06-heading) 落到 .poem-beat 顶端时 --p-text≈0，看到的是
- *     "照片 + 暗角 + 空白深色卡"，违反公开 deep-link 应是 composed frame
- *     的契约。第 1 行始终可见 → hash landing 必有"照片 + 暗角 + 首句诗"
- *     的可读导演帧；2/3 行 stagger 仍保留（正常滚动入场仍是逐行展开的电影感）。
+ * v1.3 新增（v1.69 修 v1.68 audit P2；v1.85 已进一步收口）：
+ *   - v1.69 先把 vignette 第 1 行常亮，避免 deep-link 空卡；v1.85 进一步
+ *     改为三行全常亮，彻底移除隐藏行保留高度造成的空白面板。
  *
  * v1.2 新增（v1.68 修 v1.67 audit P2）：
  *   - **公开 hash 锚点 `#beat-XX-heading` 从 sr-only h3 上移到 .poem-beat 外层**：
@@ -1004,25 +1006,13 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     color: rgba(255, 255, 255, 0.95);
     border-radius: var(--radius-sm);
   }
-  /* 文字 stagger（v1.69 修 v1.68 audit P2 hash landing）：
-     第 1 行 = 锚句 (anchor line)，opacity:1 不接 --p-text gate；
-     第 2/3 行 = stagger fade-in，按 --p-text 区段渐显。
-     —— 哈希深链 (#beat-06-heading) 落到 .poem-beat 顶端时 --p-text≈0；
-     原方案三行同时 gate 0→1，hash landing 看到的是"照片 + 空白深色卡"，
-     违反公开 deep-link 应是 composed frame 的契约。第 1 行始终可见 →
-     hash landing 必有"照片 + 暗角 + 首句诗"的可读导演帧；2/3 行 stagger
-     仍保留（正常滚动入场时仍是逐行展开的电影感）。 */
+  /* 文字浮卡（v1.85 修用户 Snow_08 空白框反馈）：
+     v1.69 只让第 1 行常亮，第 2/3 行 opacity gate 但仍占布局高度；
+     hash / 快速滚动落点会看到一块只有首句、下方大面积空白的深色面板，
+     用户误判为“下雪动画消失后留下空白框”。Snow_08 的重点舞台不应把
+     motion stagger 放在可读性之前，因此三行全部常亮；雪动画承担动态层。 */
   .poem-beat[data-layout="vignette"] .poem-text p {
-    transition: opacity 80ms linear;
-  }
-  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(1) {
     opacity: 1;
-  }
-  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(2) {
-    opacity: clamp(0, calc((var(--p-text, 0) - 0.18) * 1.6), 1);
-  }
-  .poem-beat[data-layout="vignette"] .poem-text p:nth-child(3) {
-    opacity: clamp(0, calc((var(--p-text, 0) - 0.36) * 1.8), 1);
   }
   /* SnowAtmosphere canvas overlay 容器：z 在 photo 之上、暗角之下 */
   .poem-beat[data-layout="vignette"] .snow-atmosphere {

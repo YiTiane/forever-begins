@@ -19,7 +19,7 @@
  *     cancelAnimationFrame —— 不可见时 0 CPU
  *   - visibilitychange 双层守卫：tab 切后台 → pause；切回 → resume
  *   - resize 时按当前 canvas 实尺寸重新分布粒子（不重新创建对象）
- *   - prefers-reduced-motion → 不绑事件、不跑 rAF；canvas 留空白（结构在但不画）
+ *   - prefers-reduced-motion → 不绑事件、不跑 rAF；canvas 保留静态首帧雪粒
  *
  * a11y：
  *   - canvas aria-hidden="true"（纯装饰，不进 AT 朗读）
