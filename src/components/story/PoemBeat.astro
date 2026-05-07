@@ -1,18 +1,37 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.9 · v1.62 batch 4：5 套新 layout 全量上线）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.2 · v1.68 hash anchor 上移 + textPlacement 全量收口）
  *
- * v0.9 新增（v1.62）：
- *   - **5 套新 layout 视觉**：vignette / overlap / reveal / wooden / pearl，与 schema enum
- *     九项一一对应，从此 beat 06-10 不再回退到通用样式
- *     · vignette (06)：edge 暗角 vignette 圈（夜色感）+ 文字三行 stagger fade-in
- *     · overlap (07)：双层 drop-shadow 模拟"两个灵魂"位错重合 → settle 到一张
- *     · reveal  (08)：clip-path inset 从内向外展开图像（"卸下防备"）
- *     · wooden  (09)：dashed 缝线包边 + 入场 fade-in
- *     · pearl   (10)：linear-gradient 高光横扫
- *   - **SSR 默认 data-story-mode="portrait"** 减轻 FOUC：在 JS 决定 actual mode 前，
- *     大多数访客（手机 / 小平板竖屏）已在 portrait 视觉下；wide 桌面用户仅一帧
- *     re-layout（acceptable）。runtime applyLayout 始终覆写。
+ * v1.2 新增（v1.68 修 v1.67 audit P2）：
+ *   - **公开 hash 锚点 `#beat-XX-heading` 从 sr-only h3 上移到 .poem-beat 外层**：
+ *     原 sr-only h3 是 absolute clip:rect 的 1×1 不可见元素；浏览器哈希滚动会
+ *     把它对齐到视口顶部，但它在 sticky stage 内部某个位置，落点不是导演帧。
+ *     上移到 .poem-beat（scroll-spacer 外层）→ 哈希滚动让 beat top 对齐视口
+ *     → wide 模式 sticky 起点触发，portrait/compact 直接显示完整 beat。
+ *   - 拆分两个 id：headingId（公开，挂 .poem-beat）与 ariaHeadingId（仅 aria-labelledby
+ *     引用 sr-only h3）。`#beat-06-heading` 这类 deep-link 现在落到 composed frame。
+ *   - .poem-beat 加显式 `scroll-margin-top: 0`（未来若加 fixed header，此处一改即可）。
+ *
+ * v1.1 新增（v1.66 修 v1.65 audit P2-B）：4 套 single-photo layout 的 textPlacement 分化
+ *   - overlap → overlay-center（横幅 ghost 收敛 + 单行短句浮卡居中）
+ *   - reveal → overlay-top（竖幅 + clip-path 展开 + 文字浮顶）
+ *   - pearl → overlay-top（竖幅 + 高光 sweep + 文字浮顶）
+ *   - wooden wide → side-text-photo（信件式 letterbox：诗左 + 木门右）
+ *     wooden portrait/compact 仍 below
+ *   - vignette → overlay-bottom（夜色暗角 + 雪粒子 + 文字浮底；v1.65 已上线）
+ *   - SnowAtmosphere canvas 加 mix-blend-mode: screen（v1.66 P3 修）
+ *   - mobile fallback `.poem-text` 加 position/inset/width/z-index/color reset
+ *     让 overlay-* 在 ≤540 退回流式堆叠（v1.67 P2-B 修）
+ *
+ * v1.0 新增（v1.65 batch 5）：
+ *   - solver 返回值升级 SolverOutput → SolverResult { vars, dataAttrs }
+ *     dataAttrs.textPlacement → element.dataset.textPlacement → CSS [data-text-placement]
+ *   - vignette layout 接入 SnowAtmosphere canvas + overlay-bottom 文字浮卡
+ *   - 公开 photo schema fit / focalPoint contract 显式化（v1.63 起）
+ *
+ * v0.9 新增（v1.62 batch 4）：5 套新 layout 视觉（vignette / overlap / reveal / wooden /
+ *   pearl）首版上线 —— v1.66 之后已升级到 textPlacement-aware 版本。
+ *   SSR 默认 data-story-mode="portrait" 减轻 FOUC（runtime applyLayout 始终覆写）。
  *
  * 视觉模式责任划分（v1.61 起的契约）：
  *   - compact：≤540 phone，static flow，所有 layout 退化为单列堆叠
@@ -61,18 +80,26 @@
  *
  * v0.2 修 v1.53 P2 #2：data-photo-count 从 .poem-beat 挪到 .poem-photos 让选择器命中。
  *
- * 落地范围（v1.59 收口标准）：
- *   ✓ 4 套 data-layout 真正不同的空间组合 + per-photo 入场 settle
+ * 落地范围（v1.68 收口标准）：
+ *   ✓ 9 套 data-layout 真正不同的空间组合 + per-photo 入场 settle（schema enum 全量上线）
  *   ✓ photo 尺寸 / 文字宽 / gap 全部由 solver 在 viewport 维度求解
- *   ✓ sticky cinematic stage（外层 110-150vh 短 spacer + 内层 100vh sticky）
+ *   ✓ 5 种 textPlacement (below / between / overlay-bottom / overlay-center / overlay-top
+ *     / side-text-photo) 按 layout × mode 分化，data-text-placement 反射给 CSS
+ *   ✓ photo fit/focalPoint contract（schema 强约束 contain × 7 / cover × 5）
+ *   ✓ sticky cinematic stage（外层 110-150vh 短 spacer + 内层 100vh sticky · 仅 wide）
  *   ✓ scroll-progress driven choreography（StoryPoemScroller 写 --p 等变量，CSS calc 消费）
- *   ✓ a11y：sr-only h3 aria-labelledby + reduced-motion fallback
+ *   ✓ vignette beat 06 重点夜色舞台 + Canvas 雪粒子（mix-blend-mode: screen）
+ *   ✓ mobile fallback (≤540) 把 overlay absolute text reset 回流式堆叠
+ *   ✓ public hash anchor `#beat-XX-heading` 落到 .poem-beat composed frame 起点
+ *   ✓ a11y：sr-only h3 aria-labelledby (内部 ariaHeadingId) + reduced-motion fallback
+ *   ✓ build-time CDN dimension gate (scripts/verify-story-photo-dimensions.ts)
  *
  * **NOT in this batch**（仍留 §2 后续刀）：
- *   ✗ vignette / overlap / reveal / wooden / pearl 五套 layout solver + CSS（schema 已留位）
- *   ✗ 文字字符级 stagger / blur enter（Phase 5 motion polish）
+ *   ✗ globe (beat 11) → §2.B GlobeDistanceScene · 等 R3F + Three.js + 水彩贴图
+ *   ✗ finale 完整版 (beat 12) → §2.C StarCarouselFinale Shader Dissolve
  *   ✗ beat 05 [N] 天 daysTogether CountUp（DESIGN §2.D · 留独立小刀）
- *   ✗ 鼠标 / 真 inertia parallax（CSS calc scroll-progress 已能表达"远近 settle"）
+ *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（动效细化 motion polish）
+ *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  */
 import CdnImage from "@/components/CdnImage.astro";
 import SnowAtmosphere from "@/components/story/SnowAtmosphere.astro";
@@ -131,7 +158,22 @@ interface Props {
 
 const { id, layout, lines, photos, firstAboveFold = false } = Astro.props;
 
+/**
+ * v1.68（v1.67 audit P2 修）：把 `#beat-XX-heading` 这个公开 deep-link 锚点
+ * 从 sr-only h3 移到 .poem-beat 外层容器。原因：
+ *   - sr-only h3 是 absolute / clip:rect 的 1×1 视觉不可见元素，浏览器哈希
+ *     滚动会把它对齐到视口顶部，但它在 sticky stage 内部某个位置，落点不是
+ *     intentional composed frame
+ *   - 外层 .poem-beat 是 scroll-spacer，它的 top 对齐视口 → 触发 sticky 起点
+ *     → composed frame（p≈0 的初始构图）正好出现在视口
+ *
+ * 拆分两个 id：
+ *   - `headingId = beat-${id}-heading` 留给 .poem-beat（公开哈希、可导航）
+ *   - `ariaHeadingId = beat-${id}-aria-heading` 给 sr-only h3（仅 aria-labelledby 引用，
+ *     不暴露为公开 URL；命名带 -aria 后缀清楚指明用途）
+ */
 const headingId = `beat-${id}-heading`;
+const ariaHeadingId = `beat-${id}-aria-heading`;
 const firstLine = lines[0] ?? "";
 
 /**
@@ -182,14 +224,15 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
 
 <section
   class="poem-beat"
+  id={headingId}
   data-beat-id={id}
   data-layout={layout}
   data-story-mode="portrait"
   data-text-placement={ssrTextPlacement}
-  aria-labelledby={headingId}
+  aria-labelledby={ariaHeadingId}
 >
   <div class="poem-stage">
-    <h3 id={headingId} class="sr-only">
+    <h3 id={ariaHeadingId} class="sr-only">
       第 {id} 段 · {firstLine}
     </h3>
 
@@ -245,6 +288,10 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     position: relative;
     /* 默认 fallback（无 data-layout / data-story-mode 时）：完整一屏 */
     min-height: 100vh;
+    /* v1.68 P2 修：deep-link / 哈希滚动落点 = beat 顶端，不被任何固定 header 偏移
+       （目前页面无固定 header；保留 0 是显式契约，未来若加 site nav 也只需
+        改这里一处统一调整 scroll-padding） */
+    scroll-margin-top: 0;
     /* phase 变量初值 0；StoryPoemScroller 的 rAF 接管后 0..1 写入 */
     --p: 0;
     --p-photo-1: 0;

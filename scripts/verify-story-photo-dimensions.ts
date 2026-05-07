@@ -128,17 +128,34 @@ function readJpegDimensions(
  */
 const FETCH_TIMEOUT_MS = 5000;
 
-async function fetchWithTimeout(url: string): Promise<Buffer> {
-  // AbortController 显式拼，与 scripts/build-time-check.ts 同款（Node 22 AbortSignal.timeout
-  // 已稳定但保留 manual ctrl 兼容性 / 一致性）
+/**
+ * v0.4（v1.67 audit P3 修）：fetchWithTimeout 接受外部 signal，让 probeOne
+ * 在 Promise.any 首胜后能 abort 输者，不让慢 CDN 的请求在背景挂到 5s timeout。
+ * 调用方传 signal === undefined → 退回内部 setTimeout(5s) 行为；传 signal →
+ * 内外两路 abort 都会让 fetch 失败（任一触发先到的赢）。
+ */
+async function fetchWithTimeout(
+  url: string,
+  externalSignal?: AbortSignal,
+): Promise<Buffer> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  // 把 externalSignal abort 同步到内部 ctrl（fetch 仅接 1 个 signal）
+  const onExternalAbort = () => ctrl.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) ctrl.abort();
+    else
+      externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
   try {
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   } finally {
     clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -176,9 +193,17 @@ async function probeOne(
   // attempts 收集双侧失败/成功细节，给 AggregateError 时拼综合错误用。
   const attempts: SourceAttempt[] = [];
 
-  const tryOne = async (cdn: "primary" | "backup", url: string) => {
+  // v0.4（v1.67 audit P3 修）：每个 attempt 自带 AbortController；首胜后 abort
+  // 其它输家，让背景 fetch 立即停（不再挂到自己的 5s timeout）。
+  const ctrls: AbortController[] = candidates.map(() => new AbortController());
+
+  const tryOne = async (
+    cdn: "primary" | "backup",
+    url: string,
+    signal: AbortSignal,
+  ) => {
     try {
-      const buf = await fetchWithTimeout(url);
+      const buf = await fetchWithTimeout(url, signal);
       const dim = readJpegDimensions(buf);
       if (!dim) {
         const att: SourceAttempt = {
@@ -217,7 +242,16 @@ async function probeOne(
 
   try {
     // Promise.any：首个成功即返回；其它仍 racing 但不阻塞结果
-    return await Promise.any(candidates.map((c) => tryOne(c.cdn, c.url)));
+    const result = await Promise.any(
+      candidates.map((c, i) => {
+        const ctrl = ctrls[i];
+        if (!ctrl) throw new Error("controller missing");
+        return tryOne(c.cdn, c.url, ctrl.signal);
+      }),
+    );
+    // v0.4：首胜后立刻 abort 其它仍未完结的 fetch，不让它们挂到 5s timeout
+    ctrls.forEach((c) => c.abort());
+    return result;
   } catch {
     // 全部 reject（AggregateError）；用 attempts 收集的细节拼综合错误
     const lines = attempts.map(
