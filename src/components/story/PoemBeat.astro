@@ -1106,6 +1106,19 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
       gap: 1.25rem !important;
     }
     .poem-text {
+      /* v1.67 P2-B 修：把 v1.65/v1.66 引入的 overlay-bottom / overlay-top /
+         overlay-center 在 ≤540 mobile 全部退回流式 —— position/inset/width/z-index
+         必须显式 reset，否则 absolute 文字仍然脱离单列堆叠。color 也同步回 olive-ink
+         （vignette overlay 在 wide 是白文字 over 暗角图，mobile 单列堆叠时图与文字
+         分开排，白文字反而读不到）。 */
+      position: static !important;
+      top: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      left: auto !important;
+      width: 100% !important;
+      z-index: auto !important;
+      color: var(--c-olive-ink) !important;
       text-align: center !important;
       max-width: 100% !important;
       grid-column: auto !important;

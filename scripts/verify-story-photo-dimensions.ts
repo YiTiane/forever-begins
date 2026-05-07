@@ -112,9 +112,19 @@ function readJpegDimensions(
 }
 
 /**
- * v0.2（v1.65 audit P2-A 修）：单一 jsDelivr fetch 没 timeout / 没 backup CDN
- * 在区域性卡顿时整个 build 被阻断。改为复用 build-time-check 的 dual-CDN +
- * 5s timeout 模式：primary / backup 任一拿到 + 解析成功就返回；双败才 fail。
+ * v0.3（v1.66 audit P2-A + P3 修）：
+ *   - v0.2 把 aspect 校验放到 probeOne 外：primary 解析成功就返回 dim，aspect
+ *     比对发生在外层。如果 jsDelivr 缓存到旧尺寸，build 仍 fail，即使 backup 是对的。
+ *     违反"任一 CDN 能解析并匹配 aspect 即通过"契约。
+ *   - v0.2 用 Promise.all 等两侧都结束：primary 已成功但 backup 卡 5s timeout
+ *     仍要等 → 12 张顺序跑、backup 区域性卡顿会把 build 拖到 ~60 s。
+ *
+ *   v0.3：
+ *     1) aspect 校验下沉到每个 CDN attempt 内 —— 每个 tryOne 自己判断 aspect
+ *        是否匹配，不匹配视为该 attempt 失败
+ *     2) 用 Promise.any 拿首个"解析 + aspect 通过"的 attempt；其它仍 racing
+ *        但不阻塞返回，build 不再被慢的一侧拖
+ *     3) 全失败 → AggregateError → 综合 throw 含两侧具体 reason
  */
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -135,51 +145,86 @@ async function fetchWithTimeout(url: string): Promise<Buffer> {
 interface SourceAttempt {
   cdn: "primary" | "backup";
   url: string;
-  error?: string;
+  /** 解析成功（含 aspect 通过）→ dim 有值 / error 空；否则 error 描述失败原因 */
   dim?: { width: number; height: number };
+  error?: string;
 }
 
 /**
- * 同时跑 primary + backup CDN；任一成功（fetch + JPEG parse 都过）就返回它的 dim。
- * 双败 → throw 综合错误，列出两侧具体原因。
+ * 探一张 photo：primary + backup 并发，**aspect 校验下沉到每个 attempt 内**，
+ * 用 Promise.any 拿首个 "fetch + parse + aspect 通过" 的 attempt。
+ *
+ *   - 任一边的 fetch 超时 / HTTP 错 / JPEG 解析失败 / aspect 不匹配 → 该 attempt 失败
+ *   - 任一边成功 → 立即返回（不等另一侧）
+ *   - 双败 → throw 综合错误（含两侧具体 reason）
  */
 async function probeOne(
   cdnTarget: CdnTarget,
   stem: string,
+  expectedAspect: number,
+  tolerance: number,
 ): Promise<{
   dim: { width: number; height: number };
   sourceCdn: "primary" | "backup";
 }> {
   const path = `jpg/${stem}-${PROBE_W}.jpg`;
-  const primaryUrl = cdnUrl("primary", cdnTarget, path);
-  const backupUrl = cdnUrl("backup", cdnTarget, path);
+  const candidates: Array<{ cdn: "primary" | "backup"; url: string }> = [
+    { cdn: "primary", url: cdnUrl("primary", cdnTarget, path) },
+    { cdn: "backup", url: cdnUrl("backup", cdnTarget, path) },
+  ];
 
-  const tryOne = async (
-    cdn: "primary" | "backup",
-    url: string,
-  ): Promise<SourceAttempt> => {
+  // attempts 收集双侧失败/成功细节，给 AggregateError 时拼综合错误用。
+  const attempts: SourceAttempt[] = [];
+
+  const tryOne = async (cdn: "primary" | "backup", url: string) => {
     try {
       const buf = await fetchWithTimeout(url);
       const dim = readJpegDimensions(buf);
-      if (!dim) return { cdn, url, error: "JPEG SOF parse failed" };
-      return { cdn, url, dim };
+      if (!dim) {
+        const att: SourceAttempt = {
+          cdn,
+          url,
+          error: "JPEG SOF parse failed",
+        };
+        attempts.push(att);
+        throw new Error(`${cdn}: JPEG SOF parse failed`);
+      }
+      const cdnAspect = dim.width / dim.height;
+      const relErr =
+        Math.abs(expectedAspect - cdnAspect) /
+        Math.max(expectedAspect, cdnAspect);
+      if (relErr > tolerance) {
+        const att: SourceAttempt = {
+          cdn,
+          url,
+          dim,
+          error: `aspect mismatch ${dim.width}×${dim.height} (${cdnAspect.toFixed(4)}) — relErr ${(relErr * 100).toFixed(2)}% > ${(tolerance * 100).toFixed(0)}%`,
+        };
+        attempts.push(att);
+        throw new Error(`${cdn}: ${att.error}`);
+      }
+      // success
+      attempts.push({ cdn, url, dim });
+      return { dim, sourceCdn: cdn };
     } catch (err) {
-      return { cdn, url, error: (err as Error).message };
+      // 已记入 attempts 的不重复；网络/超时 throw 在这里第一次记
+      if (!attempts.find((a) => a.cdn === cdn)) {
+        attempts.push({ cdn, url, error: (err as Error).message });
+      }
+      throw err;
     }
   };
 
-  // 并发探两侧 —— 任一成功即用；双败才报错
-  const [pAtt, bAtt] = await Promise.all([
-    tryOne("primary", primaryUrl),
-    tryOne("backup", backupUrl),
-  ]);
-
-  if (pAtt.dim) return { dim: pAtt.dim, sourceCdn: "primary" };
-  if (bAtt.dim) return { dim: bAtt.dim, sourceCdn: "backup" };
-
-  throw new Error(
-    `dual-CDN both failed: primary ${primaryUrl} (${pAtt.error}); backup ${backupUrl} (${bAtt.error})`,
-  );
+  try {
+    // Promise.any：首个成功即返回；其它仍 racing 但不阻塞结果
+    return await Promise.any(candidates.map((c) => tryOne(c.cdn, c.url)));
+  } catch {
+    // 全部 reject（AggregateError）；用 attempts 收集的细节拼综合错误
+    const lines = attempts.map(
+      (a) => `  - ${a.cdn} ${a.url}: ${a.error ?? "unknown error"}`,
+    );
+    throw new Error(`dual-CDN both failed for ${stem}:\n${lines.join("\n")}`);
+  }
 }
 
 async function main() {
@@ -200,30 +245,22 @@ async function main() {
         );
         continue;
       }
-      // v0.2：dual-CDN + 5s timeout；任一边解出 + aspect 匹配 → 通过；双败才 fail
+      // v0.3：probeOne 已下沉 aspect 校验 + Promise.any 首个成功即返回。
+      // 任一 CDN 能解析 + aspect 通过即过；双败（含两侧 aspect 都错）才 fail。
+      const expectedAspect = photo.width / photo.height;
       try {
         const { dim: cdnDim, sourceCdn } = await probeOne(
           photo.cdnTarget,
           photo.stem,
+          expectedAspect,
+          ASPECT_TOLERANCE,
         );
-        const sourceAspect = photo.width / photo.height;
-        const cdnAspect = cdnDim.width / cdnDim.height;
-        const aspectDelta = Math.abs(sourceAspect - cdnAspect);
-        const relErr = aspectDelta / Math.max(sourceAspect, cdnAspect);
-        if (relErr > ASPECT_TOLERANCE) {
-          errors.push(
-            `Beat ${beat.id} / ${photo.stem}: main.json ${photo.width}×${photo.height} (aspect ${sourceAspect.toFixed(4)}) ` +
-              `↔ CDN(${sourceCdn}) ${PROBE_W}px 派生品 ${cdnDim.width}×${cdnDim.height} (aspect ${cdnAspect.toFixed(4)}) — relErr ${(relErr * 100).toFixed(2)}% > ${(ASPECT_TOLERANCE * 100).toFixed(0)}%。` +
-              ` 修法：把 main.json 的 width/height 改成与 CDN 派生品同 aspect（如 1600×2400 portrait 应写 2000×3000）。`,
-          );
-        } else {
-          checked.push(
-            `${beat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
-          );
-        }
+        checked.push(
+          `${beat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
+        );
       } catch (err) {
         errors.push(
-          `Beat ${beat.id} / ${photo.stem}: probe failed — ${(err as Error).message}`,
+          `Beat ${beat.id} / ${photo.stem} (main.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`,
         );
       }
     }
