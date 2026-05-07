@@ -538,10 +538,14 @@ const anchorDate = main.data.anchor_date;
         return;
       }
 
-      // v1.91（修 v1.90 audit P2-2）：finale 走马灯。落点是 spacer 的中段
-      // ~0.07（globalProgress × 15 ≈ 1，第 1 张 grassland 入场已基本完成、
-      // 紧接着第 2 张接力），让 hash 直达"导演帧"而不是 fallback / 走马灯
-      // 起步前的 paper 空帧。
+      // v1.92（修 v1.91 audit P2-1）：finale 走马灯落点 0.07 → 0.04。
+      // 旧 0.07 × 15 = 1.05 → 第 0 张 lifecycle 已完全 dissolve，第 1 张刚要
+      // 入场（life ≈ 0.05，基本不可见）；用户访谈到 #beat-12-heading 看到
+      // 的是空白深色 stage + 文字浮卡。
+      // 新 0.04 × 15 = 0.60，配合 v1.92 LIFE_DURATION = 1.4 → 第 0 张 lifecycle
+      // ≈ 0.43（HOLD 中段，opacity=1 / scale ≈ 1.0），稳定可视的"导演帧"。
+      // StarCarouselFinale.tsx 的 useState lazy initializer 在 island mount
+      // 时同步读 scroll position，确保首帧即可正确呈现 progress=0.04 的画面。
       const finaleBeat = anchor.closest<HTMLElement>(".finale-beat");
       if (finaleBeat) {
         const rect = finaleBeat.getBoundingClientRect();
@@ -549,7 +553,7 @@ const anchorDate = main.data.anchor_date;
         const vh = window.innerHeight || 1;
         const scrollable = Math.max(0, finaleBeat.offsetHeight - vh);
         const top =
-          scrollable > 0 ? absoluteTop + scrollable * 0.07 : absoluteTop;
+          scrollable > 0 ? absoluteTop + scrollable * 0.04 : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       }
     }

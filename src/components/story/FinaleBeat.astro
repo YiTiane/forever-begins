@@ -1,22 +1,27 @@
 ---
 /**
  * FinaleBeat.astro · §2.C 星空照片走马灯 · 包装 StarCarouselFinale React 岛
- *   v0.1（Phase 2 §2 batch 8 · v1.90）
+ *   v0.3（Phase 2 §2 batch 8 · v1.92 修 v1.91 audit P3 doc drift）
  *
  * 数据流（DESIGN §15.1 单一源）：
  *   - finale.lines 来自 main.json beat 12 (kind="finale")
  *   - 15 张照片序列 + CDN URL 来自 src/lib/story/finalePhotos.ts
- *   - <CdnImage> SSR fallback 用 final Pearl_04 占位（与 v1.80 之前的 .story-end-cap 同款几何
- *     契约：1600×2400 portrait + contain），让无 JS / 滚动未到位的访客先看到主海报
+ *   - Pearl_04 主海报作为 **<noscript> 专属 fallback**（仅无 JS 访客；JS 访客
+ *     首屏看 stage 深色背景 + 文字浮卡，hydrate 完成后由 R3F 走马灯接管）
  *
- * 渲染机制：
+ * 渲染机制（v0.2 起）：
  *   - 外层 .finale-beat 给 hash 锚 #beat-12-heading（与 PoemBeat / GlobeBeat 同款契约）
  *   - 长 spacer ~700vh：给 15 张照片各 ~45vh 走完 lifecycle（入场 18% + hold 44% + dissolve 38%）
- *   - 内层 .finale-stage 100vh sticky：canvas 占满 + final 文字浮卡居底
- *   - <StarCarouselFinale client:visible /> 仅视口内 hydrate；R3F 与 §2.B 共享 three /
- *     r3f-drei chunk
- *   - <noscript> + 静态 <CdnImage> Pearl_04 双重 fallback：无 JS / R3F 失败时仍有终幕主海报
+ *     v1.92 LIFE_DURATION=1.4 后相邻照片在 1/N 步内 EXIT/ENTER 视觉重叠 0.4/N
+ *   - 内层 .finale-stage 100vh sticky + 深色 #1d1d18 背景（与 R3F clearColor 一致），
+ *     hydration 前后无浅→深闪动；DESIGN §2.C "夜空 starfield 延续地球深色场" 契约成立
+ *   - <StarCarouselFinale client:visible /> 仅视口内 hydrate；Canvas alpha=false 不透明 →
+ *     不需要也不再使用 Pearl_04 figure 作 R3F 之下的"漏底层"
+ *   - <noscript> 内置 <CdnImage> Pearl_04 + lines：纯 fallback，仅 JS 关闭时启用
  *   - reduced-motion 由 React 岛内部处理（progress 钉 1，opacity-only 替代 dissolve）
+ *
+ * v0.2 修 v1.90 audit P2-3：fallback 不再压在 R3F 之下；alpha=false + 深色 stage
+ *   背景一并消除"hydrate 前后闪动 / 透明 canvas 漏底"问题（详见 git 历史）
  *
  * a11y：
  *   - section aria-labelledby 指向 sr-only h3（与 PoemBeat / GlobeBeat 同款契约）

@@ -1,5 +1,20 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.2 · v1.91 修 v1.90 audit 4 P2）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.3 · v1.92 修 v1.91 audit 3 P2）
+ *
+ * v0.3 修 v1.91 audit：
+ *   - **lazy useState initializer**：mount 时同步读 .finale-beat 滚动位置，让
+ *     hash deep-link / 进入视口后 island 第一帧就拿正确 progress（v1.91 useState(0)
+ *     初值 + scroll listener 异步更新，audit 截图捕到 data-progress=0 的非 composed
+ *     帧）
+ *   - **LIFE_DURATION = 1.4 给相邻照片时间线 overlap**：v1.91 `life = global × N - i`
+ *     让 photo i 完整 dissolve 后 photo i+1 才入场，中间黑暗过渡帧；改 life =
+ *     (global × N - i) / 1.4 → photo i 在 EXIT (life ≈ 0.71) 时 photo i+1 在
+ *     ENTER (life = 0)，两张同屏交接，"碎片化为下一张"的 DESIGN 契约真正成立
+ *   - **frameloop="demand" 全模式 + ProgressInvalidator**：v1.91 普通模式
+ *     "always" 让 GPU 在 idle 时每帧空跑（progress 不变也写一遍 uniform）。
+ *     改全 demand，用 ProgressInvalidator 在 progress prop 变化时 invalidate()
+ *     → useFrame 触发一次 → 写新 uniform → 再 idle 0 CPU/GPU。同时 OrbitControls
+ *     drag / Suspense texture mount 也会 invalidate（drei / R3F 默认行为）
  *
  * v0.2 修 v1.90 audit：
  *   - **progress 源换 closest('.finale-beat')**：v0.1 用 containerRef.parentElement
@@ -42,8 +57,7 @@
 
 import * as React from "react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useTexture } from "@react-three/drei";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import {
@@ -52,6 +66,51 @@ import {
   type FinalePhoto,
 } from "@/lib/story/finalePhotos";
 
+/**
+ * v0.3（v1.91 audit P2-4 修）：自定义 Loader 给 finale 照片 dual-host fallback。
+ *
+ * v1.91 PhotoPlane 用 drei `useTexture(primaryUrl)` 单 URL，jsDelivr 区域性
+ * 抖动时整张 photo 加载失败 → Suspense 永挂 → 该 photo 永远空白。runtime 不
+ * 该只信 primary（build-time gate 已经走 dual-CDN，runtime 也得对齐）。
+ *
+ * Loader 协议：
+ *   - 把 primary 与 backup 编码成 "primary||backup"，作为 useLoader 的 URL key
+ *   - .load 拆开：先 fetch primary；onError 自动 fall back fetch backup
+ *   - 两个都失败才向上 throw（被外层 <Suspense fallback={null}> 吃掉，单张隐藏）
+ *   - colorSpace 自动设 SRGB（与 drei useTexture 对齐）
+ */
+const DUAL_URL_SEP = "||";
+
+class DualHostTextureLoader extends THREE.Loader {
+  override load(
+    encoded: string,
+    onLoad: (texture: THREE.Texture) => void,
+    _onProgress?: (event: ProgressEvent) => void,
+    onError?: (err: unknown) => void,
+  ): void {
+    const sep = encoded.indexOf(DUAL_URL_SEP);
+    const primary = sep >= 0 ? encoded.slice(0, sep) : encoded;
+    const backup = sep >= 0 ? encoded.slice(sep + DUAL_URL_SEP.length) : "";
+    const sub = new THREE.TextureLoader(this.manager);
+    if (this.crossOrigin) sub.setCrossOrigin(this.crossOrigin);
+
+    const finishOk = (tex: THREE.Texture) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      onLoad(tex);
+    };
+
+    sub.load(primary, finishOk, undefined, () => {
+      if (!backup) {
+        onError?.(new Error("dual-host: primary failed, no backup"));
+        return;
+      }
+      sub.load(backup, finishOk, undefined, (err) => {
+        onError?.(err as ErrorEvent);
+      });
+    });
+  }
+}
+
 const CAMERA_FOV = 38;
 /** 照片在 canvas 上沿约束维度填充的比例（与 GlobeDistanceScene 同款理念） */
 const PHOTO_FILL_FRACTION = 0.78;
@@ -59,6 +118,24 @@ const PHOTO_FILL_FRACTION = 0.78;
 const ENTER_END = 0.18;
 const HOLD_END = 0.62;
 // EXIT: HOLD_END..1.0
+
+/**
+ * v0.3（v1.91 audit P2-2 修）：每张照片 lifecycle 占用的全局 progress 倍数。
+ *
+ * v1.91 之前 life = globalProgress × N - i，即每张照片占 1/N 全局，**互不重叠**：
+ * 第 i 张完整走完 dissolve 后，第 i+1 张才开始入场，造成黑暗过渡帧。
+ *
+ * v0.3 改 life = (globalProgress × N - i) / LIFE_DURATION，每张照片实际占用
+ * 1.4 / N 全局 → 相邻两张有 0.4 / N 全局的视觉重叠：第 i 张 lifecycle 0.71
+ * (EXIT 中段，dissolve 进行中) 时第 i+1 张 lifecycle 0 (ENTER 起点)，两张同屏
+ * 完成"碎片化为下一张"的 DESIGN §2.C 契约。
+ *
+ * 注意：globalProgress = 1 时最后一张 photo (i = N-1 = 14) lifecycle =
+ * (1 × 15 - 14) / 1.4 = 0.71，正好在 HOLD-EXIT 边界；isFinal 分支让它永远
+ * 不 dissolve，自然定格。globalProgress = (N - 1) / N = 14/15 ≈ 0.933 时
+ * final 在 lifecycle = 1/1.4 = 0.71，仍在 HOLD 内（因为 isFinal 强制 dissolve=0）。
+ */
+const LIFE_DURATION = 1.4;
 
 /** 入场期 scale 曲线：0.82 → 1.04 → 1.0 */
 function scaleCurve(life: number, reduced: boolean): number {
@@ -169,7 +246,6 @@ const FRAG_SHADER = /* glsl */ `
 
 interface PhotoPlaneProps {
   photo: FinalePhoto;
-  textureUrl: string;
   /** 0..1 的 lifecycle；< 0 表示还没入场（mesh 隐藏） */
   lifecycle: number;
   isFinal: boolean;
@@ -178,12 +254,24 @@ interface PhotoPlaneProps {
 
 function PhotoPlane({
   photo,
-  textureUrl,
   lifecycle,
   isFinal,
   reducedMotion,
 }: PhotoPlaneProps): React.ReactElement | null {
-  const texture = useTexture(textureUrl);
+  // v0.3（v1.91 audit P2-4 修）：用 DualHostTextureLoader 走 primary→backup
+  // fallback；编码 "primary||backup" 给 useLoader 当 cache key
+  const dualEncoded = useMemo(
+    () =>
+      `${finalePhotoUrl(photo, "primary")}${DUAL_URL_SEP}${finalePhotoUrl(
+        photo,
+        "backup",
+      )}`,
+    [photo],
+  );
+  const texture = useLoader(
+    DualHostTextureLoader,
+    dualEncoded,
+  ) as THREE.Texture;
   const meshRef = useRef<THREE.Mesh>(null);
   const matRef = useRef<THREE.ShaderMaterial>(null);
 
@@ -312,6 +400,28 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
   );
 }
 
+/* ─────────────────────── ProgressInvalidator ─────────────────────── */
+/**
+ * v0.3（v1.91 audit P2-3 修）：在 frameloop="demand" 模式下让 progress 变化触发
+ * 一次重绘。
+ *
+ * 在 demand 模式：useFrame 不再每帧自动跑，必须显式 invalidate() 才会渲染。
+ * 因此每次 progress prop 变化（scroll listener 或 hash align 触发的 setProgress），
+ * 由本组件 useEffect 调 invalidate() → R3F 跑一帧 → useFrame 派发新 lifecycle →
+ * 写新 uniform → 渲染 → 重新 idle。Idle 期间 GPU/CPU 工作量降到接近 0。
+ */
+function ProgressInvalidator({
+  progress,
+}: {
+  progress: number;
+}): React.ReactElement | null {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    invalidate();
+  }, [progress, invalidate]);
+  return null;
+}
+
 /* ─────────────────────── Scene root ─────────────────────── */
 interface SceneInnerProps {
   globalProgress: number;
@@ -340,21 +450,22 @@ function SceneInner({
 
   return (
     <>
+      <ProgressInvalidator progress={globalProgress} />
       <ambientLight intensity={0.65} />
       <StarField progress={globalProgress} />
       {activeIndices.map((i) => {
         const photo = FINALE_PHOTO_SEQUENCE[i];
         if (!photo) return null;
-        const life = globalProgress * N - i;
+        // v0.3（v1.91 audit P2-2 修）：lifecycle 除以 LIFE_DURATION = 1.4，
+        // 相邻两张 photo 在 1/N 步内有 0.4/N 视觉重叠（i EXIT + i+1 ENTER 同屏）
+        const life = (globalProgress * N - i) / LIFE_DURATION;
         const isFinal = i === N - 1;
-        const url = finalePhotoUrl(photo);
         // 每张 PhotoPlane 自带 <Suspense fallback={null}>：纹理加载期间该
         // 单张隐形，不阻塞相邻照片或 StarField / 背景渲染
         return (
           <Suspense key={`${photo.cdnTarget}-${photo.stem}`} fallback={null}>
             <PhotoPlane
               photo={photo}
-              textureUrl={url}
               lifecycle={life}
               isFinal={isFinal}
               reducedMotion={reducedMotion}
@@ -383,7 +494,27 @@ export function StarCarouselFinale(): React.ReactElement {
 
   // 内置 progress：root 元素的 boundingClientRect.top 映射到 finale 全局进度
   const containerRef = useRef<HTMLDivElement>(null);
-  const [progress, setProgress] = useState(0);
+  /**
+   * v0.3（v1.91 audit P2-1 修）：lazy useState initializer 在 island mount 时
+   * 同步读 .finale-beat 当前 scroll position，让 hash deep-link 后第一帧即可
+   * 拿对 progress（v1.91 useState(0) + 异步 scroll listener 让 audit 截图捕到
+   * data-progress=0 的非 composed 帧）。
+   *
+   * 注意：这里不能用 containerRef.current（mount 阶段还是 null），改用
+   * `document.querySelector('.finale-beat')` 直接定位 spacer。reduced-motion
+   * 用户先暂用 0，useEffect 再钉到 1（不影响最终视觉）。
+   */
+  const [progress, setProgress] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const beat = document.querySelector<HTMLElement>(".finale-beat");
+    if (!beat) return 0;
+    const rect = beat.getBoundingClientRect();
+    const vh = window.innerHeight || 1;
+    const scrollable = rect.height - vh;
+    if (scrollable <= 0) return 1;
+    const scrolled = Math.max(0, -rect.top);
+    return Math.min(1, scrolled / scrollable);
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (reducedMotion) {
@@ -433,7 +564,10 @@ export function StarCarouselFinale(): React.ReactElement {
     >
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
-        frameloop={reducedMotion ? "demand" : "always"}
+        // v0.3（v1.91 audit P2-3 修）：frameloop 全模式 demand —— 普通模式 v1.91
+        // 是 "always" 让 GPU 每帧空跑（progress 不变也写一遍 uniform）；现在 demand
+        // + ProgressInvalidator 在 progress 变时显式 invalidate()，idle 期间 0 CPU/GPU
+        frameloop="demand"
         // v0.2（v1.90 audit P2-3 修）：alpha=false 让 canvas 不透明，clearColor
         // 设深 olive 给"夜空 starfield"opaque 底；不再让 SSR Pearl_04 fallback
         // 在透明区漏底下来污染走马灯
