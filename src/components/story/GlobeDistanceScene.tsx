@@ -158,7 +158,13 @@ varying vec3 vObjNormal;`,
 vObjNormal = normal;`,
         );
 
-      // FRAGMENT：注入 hash + value-noise + fbm + 在 color_fragment 后覆写 diffuseColor
+      // FRAGMENT：注入 hash + value-noise + fbm + 大陆 Gaussian falloff，在
+      // color_fragment 后覆写 diffuseColor。
+      // v1.79（修 v1.78 audit P2-2）：纯 fbm 给出的是水波/布纹纵向条带，没有
+      // 可识别大陆位置。改为：先按 7 个大陆中心 (lat, lng) 做 great-circle
+      // distance Gaussian falloff 求"基础 land density"，再叠加低幅度 fbm 给
+      // 海岸线 organic noise。这样大陆位置定锚（北美 / 南美 / 欧 / 非 / 亚 /
+      // 大洋洲 / 南极），形状是 organic 但锚点对 → 视觉上能读出"地图"。
       shader.fragmentShader = shader.fragmentShader
         .replace(
           "#include <common>",
@@ -191,17 +197,47 @@ float fbm(vec2 p) {
     a *= 0.5;
   }
   return v;
+}
+
+// (lat°, lng°) → 单位球面 Vec3
+vec3 latLngToVec3(float latDeg, float lngDeg) {
+  float lat = latDeg * 0.017453293; // PI / 180
+  float lng = lngDeg * 0.017453293;
+  float c = cos(lat);
+  return vec3(c * cos(lng), sin(lat), c * sin(lng));
+}
+
+// 大陆 blob：great-circle 距离 Gaussian falloff（angularDist^2 / radius^2）
+// 用 dot(normal, center)：1 = 同点，-1 = 对偶点；acos 给弧度距离
+float continentBlob(vec3 normal, float centerLat, float centerLng, float radiusRad) {
+  vec3 center = latLngToVec3(centerLat, centerLng);
+  float cosAngle = clamp(dot(normal, center), -1.0, 1.0);
+  float angularDist = acos(cosAngle);
+  float r = angularDist / radiusRad;
+  return exp(-r * r);
 }`,
         )
         .replace(
           "#include <color_fragment>",
           `#include <color_fragment>
-// object-space normal → 经纬度（弧度），把 cos/sin(lng) 当 2D 平面坐标避 seam
+// 7 个大陆 Gaussian 中心（lat°, lng°, 角度半径 radians）：
+// 数据来自 NaturalEarth 简化质心 + 视觉验证选定的覆盖半径，
+// 不画国界 / 不写国家名，仅给出"陆地位置"的几何锚点
+float landDensity = 0.0;
+landDensity += continentBlob(vObjNormal,  45.0, -100.0, 0.50); // 北美
+landDensity += continentBlob(vObjNormal, -15.0,  -60.0, 0.40); // 南美
+landDensity += continentBlob(vObjNormal,  50.0,   15.0, 0.28); // 欧洲
+landDensity += continentBlob(vObjNormal,   5.0,   20.0, 0.42); // 非洲
+landDensity += continentBlob(vObjNormal,  45.0,   90.0, 0.55); // 亚洲
+landDensity += continentBlob(vObjNormal, -25.0,  135.0, 0.30); // 大洋洲
+landDensity += continentBlob(vObjNormal, -82.0,    0.0, 0.50); // 南极
+// 海岸线 organic noise（低幅度叠加，给海陆边界自然感）
 float lat = asin(clamp(vObjNormal.y, -1.0, 1.0));
 float lng = atan(vObjNormal.z, vObjNormal.x);
-vec2 p = vec2(cos(lng) * 1.6 + lat * 0.6, sin(lng) * 1.6 + lat * 0.4);
-float nLand = fbm(p * 1.4);
-float landMask = smoothstep(0.46, 0.60, nLand);
+vec2 noiseUv = vec2(cos(lng) * 1.6 + lat * 0.6, sin(lng) * 1.6 + lat * 0.4);
+float noiseShift = (fbm(noiseUv * 2.0) - 0.5) * 0.18;
+float landScore = landDensity + noiseShift;
+float landMask = smoothstep(0.32, 0.45, landScore);
 vec3 oceanColor = vec3(0.10, 0.18, 0.14); // 深 sage，海洋
 vec3 landColor  = vec3(0.30, 0.44, 0.32); // 中 sage，陆地
 diffuseColor.rgb = mix(oceanColor, landColor, landMask);`,
@@ -448,12 +484,11 @@ function ResponsiveCamera(): null {
         ? GLOBE_RADIUS / (GLOBE_FILL_FRACTION * tanHalfFov)
         : GLOBE_RADIUS / (aspect * GLOBE_FILL_FRACTION * tanHalfFov);
     camera.position.z = z;
-    // v0.5（v1.76 audit P2 修）：wide 给底部文字浮卡留安全区。相机 Y 与
-    // OrbitControls target Y 一起下移；globe 留世界原点 → 相对 target 偏上 →
-    // 投影到 canvas 上方。narrow (aspect < 1) y=0 不偏移。SceneInner 内
-    // OrbitControls 的 target 用同款公式计算（保持一致；此处先写一次让首帧
-    // 就拿对值，OrbitControls 挂载后会持续维护 camera position）。
-    camera.position.y = aspect >= 1 ? -GLOBE_RADIUS * 0.14 : 0;
+    // v0.7（v1.79 修 v1.78 audit P2-3 后续清理）：camera Y 偏移（v0.5 的
+    // -0.14R）已不再需要 —— GlobeBeat 改 grid auto-rows 后 globe canvas 与
+    // 文字卡分两行，不再 overlay；canvas 区内 globe 居中即可，无需保留底部
+    // 安全区。OrbitControls target 一同回到 (0,0,0)（在 SceneInner 处理）。
+    camera.position.y = 0;
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
@@ -477,32 +512,18 @@ function SceneInner({
   const toV = useMemo<Vec3>(() => latLngToVec3(to, GLOBE_RADIUS), [to]);
 
   /**
-   * v0.5（v1.76 audit P2 修）：wide canvas 给文字浮卡留底部安全区。
+   * v0.7（v1.79 修 v1.78 audit P2-3 后续清理）：相机 / target Y 偏移已撤销。
    *
-   * 实现原则：globe 留在世界原点，**把相机和 OrbitControls target 一起 Y 方向
-   * 下移** `cameraTargetOffsetY` = -0.14 R。这样：
-   *   - globe 在世界 (0,0,0)，不动
-   *   - 相机看 (0, -0.14, 0)，相机本体也在那个 Y 高度
-   *   - globe 相对 target 是 (0, +0.14, 0)，在相机上方 → 投影到 canvas 上方
-   *   - OrbitControls 围绕 target 做 orbit，距离不变；用户拖拽时 globe 位置
-   *     在世界系不动，相对 target 永远偏上 → 拖拽中 globe 也持续在画面上方
-   *     （拖拽手感不破坏，因为 orbit 圆心是 target 而不是 globe）
-   *
-   * narrow (aspect < 1) 不偏移：portrait/compact 模式 .globe-stage 已释放
-   * sticky，文字卡走自然流不与 globe overlay 重叠。
-   *
-   * 数值校准（1920×1080 wide）：globe 在 NDC y = +0.14 / 1.22 ≈ +0.115，
-   * canvas y = (1 - 0.115) / 2 × 1000 ≈ 442（中心从 500 上移到 442，约 6%）。
-   * Melbourne (lat -37.8): y_world = -0.61, NDC y = -0.61/1.22 - 0.14/1.22 wait
-   * 算法应是：globe 中心在 NDC +0.14/1.22，Melbourne 在 globe 中心下方
-   * sin(37.8°) × 1 = 0.61 单位 → Melbourne 世界 y = -0.61，相对 target 的 y =
-   * -0.61 - (-0.14) = -0.47，NDC y = -0.47/1.22 ≈ -0.385，canvas y ≈ 692。
-   * 卡片顶 y ≈ 762（v1.76 几何不变）→ 净间距 70px ✓
+   * 历史背景（保留这段供后人理解决策链）：
+   * - v0.5 (v1.77) 把相机 + OrbitControls target Y 一起下移 0.14R 给文字浮卡
+   *   留底部安全区。问题：globe 与 card 仍同处 grid 1×1 overlay，卡片背板
+   *   仍切球面下缘
+   * - v0.7 (v1.79)：GlobeBeat 改 grid auto-rows（canvas 1fr / card auto）后，
+   *   globe canvas 与文字卡分两行不 overlay → 不需要在 3D 场景里预留底部空
+   *   间。相机回到 (0, 0, z)，OrbitControls target 回到 (0, 0, 0)，globe
+   *   居中渲染于 canvas 区
+   * - 优势：拖拽 orbit 围绕世界原点，globe 在中心居中，是最自然的体验
    */
-  const { size } = useThree();
-  const aspect = size.width / Math.max(1, size.height);
-  /** 相机和 OrbitControls target 的 Y 偏移（负值 → 看下方一点 → globe 显上方） */
-  const cameraTargetOffsetY = aspect >= 1 ? -GLOBE_RADIUS * 0.14 : 0;
 
   // 自动慢转：reduced-motion 关掉；桌面也关掉（OrbitControls 接管）；
   // 移动端 / 触摸设备自动转（这里简单按"无 hover 能力"判断，运行时实测）
@@ -554,11 +575,10 @@ function SceneInner({
 
       {/* 桌面拖拽：限制 polar angle 让用户不能把球倒过来；阻尼让回弹自然。
           reduced-motion 时仍允许"无动量"的拖拽（不依赖 spring 动画）。
-          v0.5：target 偏到 cameraTargetOffsetY（负值），相机绕该 target 做球面
-          orbit；globe 在世界原点 → 相对 target 永远偏上，拖拽期间也保持在
-          画面上方，不破坏拖拽手感 */}
+          v0.7（v1.79）：target 回到世界原点，配合 GlobeBeat grid auto-rows
+          文字卡不再 overlay 的新布局 */}
       <OrbitControls
-        target={[0, cameraTargetOffsetY, 0]}
+        target={[0, 0, 0]}
         enableZoom={false}
         enablePan={false}
         enableDamping={!reducedMotion}

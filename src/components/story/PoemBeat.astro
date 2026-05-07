@@ -1042,11 +1042,12 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* side-* 模式，让 textPlacement 真正参与构图。                       */
   /* ──────────────────────────────────────────────────────────────  */
 
-  /* —— overlap 单行短诗 → overlay-center（夜色 ghost 收敛之上浮卡） —— */
-  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
-    .poem-stage {
-    position: relative;
-  }
+  /* —— overlap 单行短诗 → overlay-center（夜色 ghost 收敛之上浮卡） ——
+     v1.79（v1.78 audit P2-1 修）：删 `.poem-stage { position: relative }` 覆盖。
+     原意"给 absolute text 当 containing block"已由 baseline `.poem-stage`
+     的 `position: sticky` 满足（sticky 已建立 containing block）；relative
+     覆盖反而破了 sticky → HOLD_PHASE plateau 在 overlap/reveal/pearl 上失效，
+     完成帧滑过 release 区。 */
   .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
     .poem-photos {
     width: var(--photo-w);
@@ -1071,11 +1072,9 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     color: var(--c-olive-ink);
   }
 
-  /* —— reveal 竖幅展开 → overlay-top（文字浮在顶端，photo 由内向外露出） —— */
-  .poem-beat[data-layout="reveal"][data-text-placement="overlay-top"]
-    .poem-stage {
-    position: relative;
-  }
+  /* —— reveal 竖幅展开 → overlay-top（文字浮在顶端，photo 由内向外露出） ——
+     v1.79（v1.78 audit P2-1 修）：同 overlap，删 `.poem-stage { position: relative }`
+     覆盖以保住 sticky stage 与 HOLD_PHASE 完成帧契约。 */
   .poem-beat[data-layout="reveal"][data-text-placement="overlay-top"]
     .poem-photos {
     width: var(--photo-w);
@@ -1100,11 +1099,8 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     color: var(--c-olive-ink);
   }
 
-  /* —— pearl 竖幅人像 + 高光 sweep → overlay-top（与 reveal 对称） —— */
-  .poem-beat[data-layout="pearl"][data-text-placement="overlay-top"]
-    .poem-stage {
-    position: relative;
-  }
+  /* —— pearl 竖幅人像 + 高光 sweep → overlay-top（与 reveal 对称） ——
+     v1.79（v1.78 audit P2-1 修）：同 overlap / reveal，删 stage relative 覆盖。 */
   .poem-beat[data-layout="pearl"][data-text-placement="overlay-top"]
     .poem-photos {
     width: var(--photo-w);

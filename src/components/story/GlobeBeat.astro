@@ -120,6 +120,13 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     min-height: 130vh;
   }
 
+  /* v1.79（v1.78 audit P2-3 修）：grid 1×1 全 overlay → grid 行 1fr + auto，
+     globe canvas 拿 1fr 自适应高度，文字卡 .globe-text 独占第二行 auto。
+     这样卡片不再压在球面上，端点 / 弧线 / 球体下缘都有自己的"安全区"，文字
+     卡有自己的"安全区"——一个真正的 stage solver，而不是靠 margin-bottom
+     的 overlay workaround。
+     副作用：globe canvas 的可用高度 = 100vh - card 高度 - padding；
+     ResponsiveCamera 的 z 自动按 canvas 实尺寸算，无需显式调整。 */
   .globe-stage {
     position: sticky;
     top: 0;
@@ -127,11 +134,14 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     overflow: hidden;
     display: grid;
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    place-items: center;
+    grid-template-rows: 1fr auto;
+    /* row 1 (canvas) 居中、row 2 (card) 下边界自适应；都横向居中 */
+    justify-items: center;
+    align-items: stretch;
     max-width: 1280px;
     margin: 0 auto;
-    padding: 2rem 1.5rem;
+    padding: 2rem 1.5rem 1.25rem;
+    gap: 1rem;
     box-sizing: border-box;
   }
 
@@ -147,12 +157,11 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     border: 0;
   }
 
-  /* canvas 容器：占满 stage，z 在文字之下 */
+  /* canvas 容器：占第一行 1fr，自适应剩余高度；不再做 overlay 1/1 */
   .globe-canvas {
-    grid-area: 1 / 1;
     width: 100%;
     height: 100%;
-    z-index: 1;
+    min-height: 0; /* 允许 grid 1fr 收缩到比子内容小（canvas 不会限制其父） */
   }
 
   /* React 岛根（GlobeDistanceScene 渲染出 .globe-canvas-root）：
@@ -163,27 +172,15 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     /* 无背景 → 透明 alpha；让站点 page 背景透出，与 §2 章节呼吸一致 */
   }
 
-  /* 文字浮卡：居中偏下，sage→honey 渐变弧线呼应；backdrop-blur 与 vignette 同语
-     v1.76（v1.75 audit 视觉诉求修）：margin-bottom 4.5rem→1.75rem + padding
-     1.25rem→1rem
-     v1.78（v1.77 audit P2-4 修）：把 max-width 540px → 380px，卡片更窄；
-     背板宽度从横跨大半画面收到只占 globe 投影下方一束 → 不再"切掉球体下缘"，
-     视觉上更像"挂在地球底下的小标牌"。globe 上下都留更多透明区，构图保留
-     原本的圆形主体感。文字默认两行（poem 1 行 + 距离 1 行）走 wrap，超 380px
-     的诗句自动换行。 */
+  /* 文字卡：v1.79 起占 grid 第二行 auto，不再 overlay 在 canvas 之上。
+     卡片宽度仍收紧到 380px 让构图有呼吸感；不再需要 backdrop-blur 因为不
+     压在 globe 之上（保留半透明背景给 sage 主题轻微离屏感，但浓度降低）。 */
   .globe-text {
-    grid-area: 1 / 1;
-    align-self: end;
-    justify-self: center;
     width: min(380px, 84%);
-    margin-bottom: clamp(0.75rem, 2.5vh, 1.75rem);
     padding: 0.85rem 1.25rem;
-    background: rgba(245, 240, 230, 0.78);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: rgba(245, 240, 230, 0.62);
     border-radius: var(--radius-sm);
     text-align: center;
-    z-index: 2;
     color: var(--c-olive-ink);
   }
 
@@ -245,13 +242,11 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     color: var(--c-sage);
   }
 
+  /* v1.79：grid 不再 1×1 overlay；fallback 直接占 row 1 (canvas 位置) 居中 */
   .globe-fallback {
-    grid-area: 1 / 1;
-    align-self: center;
-    justify-self: center;
     color: var(--c-olive-ink);
     text-align: center;
-    z-index: 2;
+    align-self: center;
   }
 
   /* portrait（小平板 / 大手机竖屏）：释放 sticky，回归自然流式 */
