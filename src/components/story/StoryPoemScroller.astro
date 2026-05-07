@@ -56,6 +56,7 @@
  *   当前 inView beats。
  */
 import { getCollection } from "astro:content";
+import CdnImage from "@/components/CdnImage.astro";
 import PoemBeat from "@/components/story/PoemBeat.astro";
 
 interface Props {
@@ -125,8 +126,26 @@ const photoPoemBeats = main.data.beats
        看不到任何内容的纯背景区。等 batch 4-6 把 globe / finale 接上之后这块自然
        被取代；本批先放一个克制的 "未完待续" 收束，让滚动有终点感。*/
   }
-  <div class="story-end-cap">
-    <p class="story-end-cap__line cn-kaishu">未完待续</p>
+  <div class="story-end-cap" aria-label="故事临时收束">
+    <div class="story-end-card">
+      <figure class="story-end-photo">
+        <CdnImage
+          cdnTarget="pearl"
+          stem="Pearl_04"
+          alt="珍珠系列主海报 · 两个人相拥"
+          priority="high"
+          widths={[320, 640, 1024, 1600, 2400]}
+          sizes="(min-width: 960px) 520px, (min-width: 540px) 58vw, 82vw"
+          width={3000}
+          height={2000}
+        />
+      </figure>
+      <div class="story-end-copy">
+        <p class="story-end-kicker latin-roman">To be continued</p>
+        <p class="story-end-line cn-kaishu">还好我们有牢牢抱紧。</p>
+        <p class="story-end-line cn-kaishu">幸好最终是你。</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -169,26 +188,67 @@ const photoPoemBeats = main.data.beats
   /* 看到纯背景空屏；后续 batch 4-6 接 globe/finale 时自然替代。       */
   /* ──────────────────────────────────────────────────────────────  */
   .story-end-cap {
-    min-height: 60vh;
+    min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4rem 1.5rem;
+    padding: clamp(4rem, 10vh, 7rem) 1.5rem;
   }
-  .story-end-cap__line {
+  .story-end-card {
+    display: grid;
+    grid-template-columns: minmax(0, 520px) minmax(16rem, 24rem);
+    align-items: center;
+    gap: clamp(2rem, 6vw, 4.5rem);
+    max-width: min(1080px, calc(100vw - 3rem));
+    width: 100%;
+  }
+  .story-end-photo {
     margin: 0;
-    font-size: clamp(1.25rem, 4vw, 2rem);
+    box-shadow: var(--shadow-paper);
+  }
+  .story-end-photo :global(picture),
+  .story-end-photo :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+  }
+  .story-end-copy {
+    text-align: left;
+    color: var(--c-olive-ink);
+  }
+  .story-end-kicker {
+    margin: 0 0 1.25rem;
     color: var(--c-sage);
-    letter-spacing: 0.4em;
-    /* 拉宽字距给"远方"的留白感 */
-    text-indent: 0.4em;
-    opacity: 0.7;
-    text-align: center;
+    font-size: clamp(1.1rem, 2.2vw, 1.7rem);
+    line-height: 1.1;
+  }
+  .story-end-line {
+    margin: 0;
+    font-size: clamp(1.25rem, 3.3vw, 2rem);
+    line-height: 1.8;
+    letter-spacing: 0;
+  }
+
+  @media (max-width: 899px) {
+    .story-end-card {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 1.75rem;
+      max-width: min(640px, calc(100vw - 2rem));
+    }
+    .story-end-photo {
+      width: min(82vw, 520px);
+    }
+    .story-end-copy {
+      text-align: center;
+    }
   }
 </style>
 
 <script>
   import {
+    getStoryLayoutMode,
     solveBeatLayout,
     type BeatLayout,
     type PhotoSpec,
@@ -290,6 +350,8 @@ const photoPoemBeats = main.data.beats
       const textRect = textEl?.getBoundingClientRect();
       const textHeight = textRect?.height;
       const textWidth = textRect?.width;
+      const mode = getStoryLayoutMode(window.innerWidth, window.innerHeight);
+      beat.dataset.storyMode = mode;
 
       const vars = solveBeatLayout({
         vw: window.innerWidth,
@@ -382,7 +444,10 @@ const photoPoemBeats = main.data.beats
       for (const entry of entries) {
         const textEl = entry.target as HTMLElement;
         const beat = textEl.closest<HTMLElement>(".poem-beat");
-        if (beat) applyLayout(beat);
+        if (beat) {
+          applyLayout(beat);
+          scheduleUpdate();
+        }
       }
     });
     beats.forEach((beat) => {

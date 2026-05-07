@@ -41,6 +41,8 @@ export type BeatLayout =
   | "radial-mask"
   | "anchor-single";
 
+export type StoryLayoutMode = "compact" | "portrait" | "wide";
+
 export interface PhotoSpec {
   /** width / height 比；e.g. 1.5 = 3:2 横图，0.667 = 2:3 竖图 */
   aspectRatio: number;
@@ -78,8 +80,22 @@ const STAGE_PAD_Y = 32;
 /** 双图布局之间的最小 gap */
 const MIN_GAP = 24;
 
+/**
+ * Product viewport modes:
+ *   compact  = phone portrait, static / simple flow
+ *   portrait = large phone / small-tablet portrait / narrow split window
+ *   wide     = landscape tablet / desktop, cinematic wide composition
+ */
+export function getStoryLayoutMode(vw: number, vh: number): StoryLayoutMode {
+  if (vw <= 540) return "compact";
+  if (vw >= 900 && vw / Math.max(vh, 1) >= 0.85) return "wide";
+  return "portrait";
+}
+
 function clampPx(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
+  const lower = Math.min(min, max);
+  const upper = Math.max(min, max);
+  return Math.max(lower, Math.min(upper, n));
 }
 
 /**
@@ -110,7 +126,8 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
     photos.find((p) => p.role === "near") ?? photos[1] ?? photos[0];
   if (!farPhoto || !nearPhoto) return {};
 
-  const isWide = vw >= 720;
+  const mode = getStoryLayoutMode(vw, vh);
+  const isWide = mode === "wide";
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
@@ -145,17 +162,24 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
     };
   }
 
-  // 窄屏：单列堆叠（text + far + near 在 sticky stage 内 flex column 居中）
-  // v0.2：扣掉实测 text 高度后，把剩余 vh 在 far / near 之间分配。
+  // portrait / compact：text + photos box 共同构成一帧；photos box 内仍保留远近错位。
   const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
   const photosColW = stageW;
-  const gap = 20;
-  // 留两份 gap（text-far、far-near）；剩余给 far + near
-  const photosTotalH = Math.max(stageH - textReserveH - gap * 2, stageH * 0.4);
-  const farMaxH = photosTotalH * 0.45;
-  const nearMaxH = photosTotalH * 0.55;
-  const farMaxW = photosColW * 0.78;
-  const nearMaxW = photosColW * 0.86;
+  const gap = mode === "compact" ? 18 : 22;
+  const photosMaxH =
+    mode === "portrait"
+      ? Math.min(stageH * 0.5, stageW * 0.88, 640)
+      : Math.min(stageH * 0.58, stageW * 1.15);
+  const photosMinH = Math.min(360, photosMaxH);
+  const photosTotalH = clampPx(
+    stageH - textReserveH - gap,
+    photosMinH,
+    photosMaxH,
+  );
+  const farMaxH = photosTotalH * 0.58;
+  const nearMaxH = photosTotalH * 0.64;
+  const farMaxW = photosColW * (mode === "portrait" ? 0.72 : 0.92);
+  const nearMaxW = photosColW * (mode === "portrait" ? 0.8 : 0.96);
   const [farW, farH] = fitAspect(farMaxW, farMaxH, farPhoto.aspectRatio);
   const [nearW, nearH] = fitAspect(nearMaxW, nearMaxH, nearPhoto.aspectRatio);
 
@@ -163,8 +187,9 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
     "--stage-cols": `1fr`,
     "--stage-gap": `${gap}px`,
     "--text-col-w": `${stageW}px`,
+    "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 560 : stageW)}px`,
     "--photos-col-w": `${photosColW}px`,
-    "--photos-col-h": `auto`,
+    "--photos-col-h": `${photosTotalH}px`,
     "--photo-far-w": `${farW}px`,
     "--photo-far-h": `${farH}px`,
     "--photo-near-w": `${nearW}px`,
@@ -181,7 +206,8 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
     photos.find((p) => p.role === "bottom-right") ?? photos[1] ?? photos[0];
   if (!tlPhoto || !brPhoto) return {};
 
-  const isWide = vw >= 720;
+  const mode = getStoryLayoutMode(vw, vh);
+  const isWide = mode === "wide";
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
@@ -205,19 +231,28 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
     };
   }
 
-  // 窄屏：单列堆叠（tl + text + br 在 sticky stage 内 flex column 居中）
-  // v0.2：扣掉实测 text 高度后，把剩余 vh 在 tl / br 之间均分。
+  // portrait / compact：保留 diagonal gaze，但压缩成一个竖屏可读的 stack frame。
   const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
-  const gap = 24;
-  const photosTotalH = Math.max(stageH - textReserveH - gap * 2, stageH * 0.4);
-  const photoMaxH = photosTotalH * 0.5;
-  const photoMaxW = stageW * 0.65;
+  const gap = mode === "compact" ? 18 : 22;
+  const photosMaxH =
+    mode === "portrait"
+      ? Math.min(stageH * 0.58, stageW * 1.15, 860)
+      : Math.min(stageH * 0.62, stageW * 1.35);
+  const photosMinH = Math.min(420, photosMaxH);
+  const photosTotalH = clampPx(
+    stageH - textReserveH - gap,
+    photosMinH,
+    photosMaxH,
+  );
+  const photoMaxH = photosTotalH * 0.62;
+  const photoMaxW = stageW * (mode === "portrait" ? 0.43 : 0.76);
   const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
   const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
 
   return {
-    "--text-max-w": `${stageW}px`,
+    "--text-max-w": `${Math.min(stageW, mode === "portrait" ? 520 : stageW)}px`,
     "--stage-gap": `${gap}px`,
+    "--photos-col-h": `${photosTotalH}px`,
     "--photo-tl-w": `${tlW}px`,
     "--photo-tl-h": `${tlH}px`,
     "--photo-br-w": `${brW}px`,

@@ -1,6 +1,18 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.7 · v1.59 constraint-based layout）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v0.8 · v1.61 layout-mode engine）
+ *
+ * v0.8 修 v1.60 后续截图审计：把视觉模式拆成 compact / portrait / wide。
+ *   真实市场视口不是单一 breakpoint：604 / 705 / 820 这类窄版、小平板竖屏不能硬套
+ *   desktop wide frame，也不能退回纯手机流式。StoryPoemScroller 现在把 solver 判定出的
+ *   `data-story-mode` 写到 beat 上；CSS 只跟这个模式走，不再自行决定核心布局。
+ *   - compact：≤540 phone，static flow
+ *   - portrait：large phone / small tablet portrait，非 sticky 竖屏导演帧
+ *   - wide：landscape tablet / desktop，宽版双列 / 对角构图
+ *
+ *   portrait 模式下不再使用 sticky scroll-spacer：窄版 / 小平板竖屏的市场标准是
+ *   "完整内容帧自然排布"，不是桌面长卷式 pinned stage。parallax-pair /
+ *   diagonal-gaze 仍保留角色关系，但在自然文档流中形成竖屏复合帧。
  *
  * v0.7 修 v1.58 审计两处 P2（窄屏 / 小平板纵向构图碎掉 + exit-fade 反而留空白）：
  *
@@ -165,8 +177,8 @@ function getAspectRatio(p: BeatPhoto): string {
   /* ────────────────────────────────────────────────────────────── */
   .poem-beat {
     position: relative;
-    /* 默认 fallback（无 data-layout 时）：130vh */
-    min-height: 130vh;
+    /* 默认 fallback（无 data-layout / data-story-mode 时）：完整一屏 */
+    min-height: 100vh;
     /* phase 变量初值 0；StoryPoemScroller 的 rAF 接管后 0..1 写入 */
     --p: 0;
     --p-photo-1: 0;
@@ -202,6 +214,25 @@ function getAspectRatio(p: BeatPhoto): string {
   .poem-beat[data-layout="anchor-single"] {
     min-height: 130vh;
   }
+  .poem-beat[data-story-mode="compact"],
+  .poem-beat[data-story-mode="compact"][data-layout] {
+    min-height: auto;
+  }
+  .poem-beat[data-story-mode="portrait"],
+  .poem-beat[data-story-mode="portrait"][data-layout] {
+    min-height: auto;
+    padding: clamp(3rem, 7vh, 5rem) 0;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] {
+    min-height: 145vh;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"] {
+    min-height: 152vh;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="radial-mask"],
+  .poem-beat[data-story-mode="wide"][data-layout="anchor-single"] {
+    min-height: 125vh;
+  }
 
   /* ────────────────────────────────────────────────────────────── */
   /* sticky 100vh stage                                              */
@@ -227,6 +258,15 @@ function getAspectRatio(p: BeatPhoto): string {
     box-sizing: border-box;
   }
 
+  .poem-beat[data-story-mode="portrait"] .poem-stage {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+    padding-block: clamp(1.5rem, 4vh, 2.5rem);
+  }
+
   /* sr-only 兜底 */
   .poem-stage :global(.sr-only) {
     position: absolute;
@@ -250,6 +290,7 @@ function getAspectRatio(p: BeatPhoto): string {
     line-height: 1.85;
     text-align: center;
     width: 100%;
+    max-width: var(--text-max-w);
   }
   .poem-text p {
     margin: 0.35em 0;
@@ -293,57 +334,80 @@ function getAspectRatio(p: BeatPhoto): string {
   /*   narrow (541-719)：默认 flex column，photos 自然垂直堆叠         */
   /*   wide   (≥ 720)：grid 双列 + far/near 绝对定位重叠 + 入场 transform */
   /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="parallax-pair"] .poem-photos {
+    position: relative;
+    width: min(var(--photos-col-w), 100%);
+    height: var(--photos-col-h);
+    max-width: 100%;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
   .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
+    position: absolute;
+    top: 0;
+    right: 4%;
     width: var(--photo-far-w);
     height: var(--photo-far-h);
     filter: saturate(0.92);
+    transform: translateY(calc((1 - var(--p, 0)) * -8%))
+      scale(calc(0.98 + var(--p, 0) * 0.02));
   }
   .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
+    position: absolute;
+    bottom: 0;
+    left: 4%;
+    z-index: 1;
     width: var(--photo-near-w);
     height: var(--photo-near-h);
+    transform: translateY(calc((1 - var(--p, 0)) * 8%))
+      scale(calc(0.98 + var(--p, 0) * 0.02));
   }
-  @media (min-width: 720px) {
-    .poem-beat[data-layout="parallax-pair"] .poem-stage {
-      display: grid;
-      grid-template-columns: var(--stage-cols);
-      align-items: center;
-      justify-items: center;
-    }
-    .poem-beat[data-layout="parallax-pair"] .poem-text {
-      grid-column: 1;
-      align-self: center;
-      justify-self: end;
-      text-align: left;
-      max-width: var(--text-col-w);
-      z-index: 2;
-      transform: translateX(calc((1 - var(--p, 0)) * -8px));
-    }
-    .poem-beat[data-layout="parallax-pair"] .poem-photos {
-      grid-column: 2;
-      position: relative;
-      align-self: center;
-      width: var(--photos-col-w);
-      height: var(--photos-col-h);
-      max-width: none;
-      grid-template-columns: 1fr;
-      gap: 0;
-      z-index: 1;
-    }
-    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
-      position: absolute;
-      top: 0;
-      right: 0;
-      transform: translateY(calc((1 - var(--p, 0)) * -14%))
-        scale(calc(0.96 + var(--p, 0) * 0.04));
-    }
-    .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      z-index: 1;
-      transform: translateY(calc((1 - var(--p, 0)) * 14%))
-        scale(calc(0.96 + var(--p, 0) * 0.04));
-    }
+  .poem-beat[data-story-mode="portrait"][data-layout="parallax-pair"]
+    .poem-text {
+    max-width: var(--text-max-w);
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] .poem-stage {
+    display: grid;
+    grid-template-columns: var(--stage-cols);
+    align-items: center;
+    justify-items: center;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] .poem-text {
+    grid-column: 1;
+    align-self: center;
+    justify-self: end;
+    text-align: left;
+    max-width: var(--text-col-w);
+    z-index: 2;
+    transform: translateX(calc((1 - var(--p, 0)) * -8px));
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] .poem-photos {
+    grid-column: 2;
+    position: relative;
+    align-self: center;
+    width: var(--photos-col-w);
+    height: var(--photos-col-h);
+    max-width: none;
+    grid-template-columns: 1fr;
+    gap: 0;
+    z-index: 1;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"]
+    .poem-photo[data-role="far"] {
+    position: absolute;
+    top: 0;
+    right: 0;
+    transform: translateY(calc((1 - var(--p, 0)) * -14%))
+      scale(calc(0.96 + var(--p, 0) * 0.04));
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"]
+    .poem-photo[data-role="near"] {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    z-index: 1;
+    transform: translateY(calc((1 - var(--p, 0)) * 14%))
+      scale(calc(0.96 + var(--p, 0) * 0.04));
   }
 
   /* ──────────────────────────────────────────────────────────────  */
@@ -355,64 +419,85 @@ function getAspectRatio(p: BeatPhoto): string {
   /*   wide   (≥ 720)：grid 单 cell stack + tl/br 角落绝对 + 中间文字   */
   /*     backdrop-blur(8px) 浮起 + 入场 translate                      */
   /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+  .poem-beat[data-layout="diagonal-gaze"] .poem-text {
+    grid-area: 1 / 1;
+    align-self: center;
+    justify-self: center;
+    max-width: var(--text-max-w);
+    text-align: center;
+    z-index: 2;
+    padding: 1rem 1.2rem;
+    background: rgba(245, 240, 230, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: var(--radius-sm);
+    transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+  .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
+    grid-area: 1 / 1;
+    position: relative;
+    width: 100%;
+    height: var(--photos-col-h);
+    grid-template-columns: 1fr;
+    gap: 0;
+    z-index: 1;
+  }
   .poem-beat[data-layout="diagonal-gaze"] .poem-photo[data-role="top-left"] {
+    position: absolute;
+    top: 0;
+    left: 6%;
     width: var(--photo-tl-w);
     height: var(--photo-tl-h);
+    transform: translate(
+      calc((1 - var(--p, 0)) * -9%),
+      calc((1 - var(--p, 0)) * -9%)
+    );
   }
   .poem-beat[data-layout="diagonal-gaze"]
     .poem-photo[data-role="bottom-right"] {
+    position: absolute;
+    bottom: 0;
+    right: 6%;
     width: var(--photo-br-w);
     height: var(--photo-br-h);
+    transform: translate(
+      calc((1 - var(--p, 0)) * 9%),
+      calc((1 - var(--p, 0)) * 9%)
+    );
   }
-  @media (min-width: 720px) {
-    .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
-      display: grid;
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr;
-      padding: 0;
-    }
-    .poem-beat[data-layout="diagonal-gaze"] .poem-text {
-      grid-area: 1 / 1;
-      align-self: center;
-      justify-self: center;
-      max-width: var(--text-max-w);
-      text-align: center;
-      z-index: 2;
-      padding: 1.25rem 1.5rem;
-      background: rgba(245, 240, 230, 0.7);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border-radius: var(--radius-sm);
-      transform: translateY(calc((1 - var(--p, 0)) * 6px));
-    }
-    .poem-beat[data-layout="diagonal-gaze"] .poem-photos {
-      grid-area: 1 / 1;
-      position: relative;
-      width: 100%;
-      height: 100%;
-      grid-template-columns: 1fr;
-      gap: 0;
-      z-index: 1;
-    }
-    .poem-beat[data-layout="diagonal-gaze"] .poem-photo[data-role="top-left"] {
-      position: absolute;
-      top: 4%;
-      left: 4%;
-      transform: translate(
-        calc((1 - var(--p, 0)) * -15%),
-        calc((1 - var(--p, 0)) * -15%)
-      );
-    }
-    .poem-beat[data-layout="diagonal-gaze"]
-      .poem-photo[data-role="bottom-right"] {
-      position: absolute;
-      bottom: 4%;
-      right: 4%;
-      transform: translate(
-        calc((1 - var(--p, 0)) * 15%),
-        calc((1 - var(--p, 0)) * 15%)
-      );
-    }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"] .poem-stage {
+    padding: 0;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"] .poem-text {
+    padding: 1.25rem 1.5rem;
+    background: rgba(245, 240, 230, 0.7);
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"] .poem-photos {
+    width: 100%;
+    height: 100%;
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
+    .poem-photo[data-role="top-left"] {
+    top: 4%;
+    left: 4%;
+    transform: translate(
+      calc((1 - var(--p, 0)) * -15%),
+      calc((1 - var(--p, 0)) * -15%)
+    );
+  }
+  .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
+    .poem-photo[data-role="bottom-right"] {
+    bottom: 4%;
+    right: 4%;
+    transform: translate(
+      calc((1 - var(--p, 0)) * 15%),
+      calc((1 - var(--p, 0)) * 15%)
+    );
   }
 
   /* ──────────────────────────────────────────────────────────────  */
