@@ -356,6 +356,14 @@ const anchorDate = main.data.anchor_date;
    *   宽 / 文字宽 / gap，窄屏几乎必崩。v1.59 在 init / window.resize 时跑一次 solver
    *   `solveBeatLayout(...)`，求出 4-12 个 CSS 自定义属性写到 .poem-beat 上，CSS 只消费。
    *
+   * v1.84（用户 iOS / wheel audit 修）：
+   *   - compact / portrait 不再在 `offsetHeight <= vh` 时直接 `p=1`。这些模式没有
+   *     sticky spacer，改用 viewport-entry progress（元素 top 从 92vh→42vh 映射
+   *     0→1），所以 iOS 小屏短段也能看到轻量 photo 入场。
+   *   - wide / sticky 仍保留 hold plateau，但写入 CSS 变量前加短时 lerp smoothing：
+   *     scroll 事件只更新 targetProgress；rAF 只在 current 追 target 时运行，settle 后
+   *     停止。这样鼠标滚轮离散 delta 不会把 --p 硬跳，仍保持 idle 0 CPU。
+   *
    * v1.57（v1.56 P2 #2 修）· scroll-event driven · idle 0 CPU
    *
    *   v1.56 用"inView 时每帧 rAF tick"驱动 scroll-progress，访客在 stage 上停下来读
@@ -415,13 +423,28 @@ const anchorDate = main.data.anchor_date;
      * 完成帧，但连续阅读时段与段之间有“停太久”的断裂感。0.64 让动画
      * 覆盖更多滚动距离，hold zone 保留约 36% scrollable distance，仍能审视
      * 完成构图，但叙事节奏更连贯。
+     *
+     * v1.84 调整：compact / portrait 是自然流式 section，没有 sticky spacer。
+     * 短 section 的 offsetHeight 常常小于 viewport，旧逻辑直接 return 1，导致
+     * iOS 小屏看起来"完全没有照片动画"。这些模式改用 entry progress；wide 才
+     * 继续用 scroll spacer + HOLD_PHASE。
      */
     const HOLD_PHASE = 0.64;
-    function computeProgress(beat: HTMLElement): number {
+    function computeEntryProgress(rect: DOMRect, vh: number): number {
+      const start = vh * 0.92;
+      const end = vh * 0.42;
+      return clamp01((start - rect.top) / (start - end));
+    }
+
+    function computeTargetProgress(beat: HTMLElement): number {
       const rect = beat.getBoundingClientRect();
       const vh = window.innerHeight;
+      const mode = beat.dataset.storyMode;
+      if (mode === "compact" || mode === "portrait") {
+        return computeEntryProgress(rect, vh);
+      }
       const scrollable = beat.offsetHeight - vh;
-      if (scrollable <= 0) return 1;
+      if (scrollable <= 0) return computeEntryProgress(rect, vh);
       const scrolled = -rect.top;
       const raw = clamp01(scrolled / scrollable);
       // raw 0..HOLD_PHASE → 0..1；raw HOLD_PHASE..1 → 1（hold plateau）
@@ -500,12 +523,49 @@ const anchorDate = main.data.anchor_date;
 
     // 单帧 dirty flag：scroll / resize / RO 事件多次触发时 coalesce 为一次 rAF flush。
     let rafScheduled = false;
+    // v1.84：target 与 rendered 分离。scroll 只更新 target；rendered 用 rAF lerp
+    // 追上 target，解决鼠标滚轮一格一格导致的 Story progress 硬跳。
+    const targetProgress = new WeakMap<HTMLElement, number>();
+    const renderedProgress = new WeakMap<HTMLElement, number>();
+    let smoothRaf = 0;
+    const PROGRESS_LERP = 0.24;
+    const PROGRESS_EPSILON = 0.0015;
+
+    function setProgressImmediately(beat: HTMLElement, p: number): void {
+      targetProgress.set(beat, p);
+      renderedProgress.set(beat, p);
+      writeProgress(beat, p);
+    }
+
+    function ensureSmoothFrame(): void {
+      if (smoothRaf) return;
+      smoothRaf = window.requestAnimationFrame(smoothProgress);
+    }
+
+    function smoothProgress(): void {
+      smoothRaf = 0;
+      let needsNextFrame = false;
+      for (const beat of inViewBeats) {
+        const target = targetProgress.get(beat) ?? 0;
+        const current = renderedProgress.get(beat) ?? target;
+        const next = current + (target - current) * PROGRESS_LERP;
+        const settled = Math.abs(target - next) < PROGRESS_EPSILON;
+        const value = settled ? target : next;
+        renderedProgress.set(beat, value);
+        writeProgress(beat, value);
+        if (!settled) needsNextFrame = true;
+      }
+      if (needsNextFrame) {
+        smoothRaf = window.requestAnimationFrame(smoothProgress);
+      }
+    }
 
     function flushUpdate(): void {
       rafScheduled = false;
       for (const beat of inViewBeats) {
-        writeProgress(beat, computeProgress(beat));
+        targetProgress.set(beat, computeTargetProgress(beat));
       }
+      ensureSmoothFrame();
     }
 
     function scheduleUpdate(): void {
@@ -521,12 +581,17 @@ const anchorDate = main.data.anchor_date;
           const beat = entry.target as HTMLElement;
           if (entry.isIntersecting) {
             inViewBeats.add(beat);
-            // 进入视口立刻写一次，避免显示初始 --p:0 的"未渲染帧"
-            writeProgress(beat, computeProgress(beat));
+            // 进入视口立刻设 target；真正写入走 lerp，让 wheel delta 不硬跳
+            targetProgress.set(beat, computeTargetProgress(beat));
+            if (!renderedProgress.has(beat)) {
+              renderedProgress.set(beat, targetProgress.get(beat) ?? 0);
+              writeProgress(beat, renderedProgress.get(beat) ?? 0);
+            }
+            ensureSmoothFrame();
           } else {
             inViewBeats.delete(beat);
             // 离开视口最后写一次终态（视口上方 p=1 / 视口下方 p=0）
-            writeProgress(beat, computeProgress(beat));
+            setProgressImmediately(beat, computeTargetProgress(beat));
           }
         }
       },
@@ -537,8 +602,8 @@ const anchorDate = main.data.anchor_date;
     );
     beats.forEach((beat) => io.observe(beat));
 
-    // scroll / resize 事件驱动 scheduleUpdate：访客滚动 / 调整窗口才触发 rAF。
-    // 滚动停 → 没有事件 → 没有 rAF 调度 → 0 CPU（与 §0 Parallax / §1 Countdown 同策略）。
+    // scroll / resize 事件驱动 scheduleUpdate：访客滚动 / 调整窗口才触发 target 刷新。
+    // v1.84：target 变化后只在 current 追 target 期间短暂 rAF；settle 后回到 0 CPU。
     window.addEventListener("scroll", scheduleUpdate, { passive: true });
     // resize 上还需要重跑 layout solver（viewport 变了，photo / gap 尺寸也要重算）。
     window.addEventListener("resize", () => {
@@ -570,6 +635,12 @@ const anchorDate = main.data.anchor_date;
       const textEl = beat.querySelector<HTMLElement>(".poem-text");
       if (textEl) textRO.observe(textEl);
     });
+
+    // 初始写一次当前视口下的真实 progress。hash deep-link / reload 在 Story 中段时
+    // 不应先显示全 0 的未组合帧；之后滚动才进入 lerp smoothing。
+    beats.forEach((beat) =>
+      setProgressImmediately(beat, computeTargetProgress(beat)),
+    );
 
     // 调试钩子：window.__storyPoem.progress() / .list() / .active()
     (
