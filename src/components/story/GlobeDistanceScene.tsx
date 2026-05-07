@@ -126,12 +126,18 @@ function Endpoint({
   const haloRef = useRef<THREE.Mesh>(null);
   const dotRef = useRef<THREE.Mesh>(null);
   /**
-   * v0.4（v1.73 audit P3 修）：本地累计 elapsed time，不读 state.clock。
-   * Three.js 0.184 起 THREE.Clock 进入 deprecated（推荐 THREE.Timer），R3F
-   * 内部仍把 state.clock 暴露在 useFrame 回调里，但每次 .getElapsedTime() 都
-   * 触发一次 deprecation warn 写到 console（开发者工具持续刷红）。改本地 ref
-   * 累加 useFrame 回调的第二参数 dt（秒），完全绕开 state.clock 的访问 →
-   * console 干净，pulse 节奏不受影响。
+   * v0.4（v1.73 audit P3 修，v1.75 audit P3 收紧 / v1.76 局部注释同步）：
+   * 本地累计 elapsed time，不读 state.clock。Three.js 0.184 起 THREE.Clock
+   * 进入 deprecated（推荐 THREE.Timer），R3F 内部仍把 state.clock 暴露在
+   * useFrame 回调里。改本地 ref 累加 useFrame 回调第二参数 dt（秒）→ **本
+   * 组件业务代码不再调用 state.clock.getElapsedTime()**，因此本组件不再产
+   * 生 dep warn。
+   *
+   * **v1.75 起 claim 收紧（v1.76 同步本注释）**：three / @react-three/fiber /
+   * drei 自身在 Canvas 内部仍可能 new THREE.Clock()，hydrate 时浏览器 console
+   * 仍可能看到一次同款 dep warn —— 这不是本组件可直接修的范围。等 R3F /
+   * drei 升新版后该 warn 自然消除；当前不做 console.warn 拦截 monkey-patch
+   * （会连带屏蔽其它有用 warn）。pulse 节奏 0 改变。
    */
   const elapsedRef = useRef(0);
 

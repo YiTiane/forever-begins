@@ -204,18 +204,30 @@ const {
 } = Astro.props;
 
 /**
- * v1.74：beat 05 "不知不觉，已携手走过 [N] 天" 的 [N] 实时计算 + CountUp。
+ * v1.74-v1.75：beat 05 "不知不觉，已携手走过 [N] 天" 的 [N] 实时计算 + CountUp + a11y。
  *
- * 这里在 SSR 阶段算一次"build time / SSR time"的 N，写到 .days-together 的
- * textContent 里，让无 JS 访客也能看到合理的数字（不会读出"[N] 天"占位符）。
- * 客户端有 JS 时，StoryPoemScroller 内的 inline script 会在 IO 入场时根据
- * data-anchor 重新计算 + 从 0 CountUp 到 client-time 的 N（CountUp 替代 SSR
- * 写入的静态数字）。reduced-motion 模式下不动画、直接写最终值。
+ * 这里在 SSR 阶段算一次"build time / SSR time"的 N（initialDaysCount），同时
+ * 写进三个地方：
+ *   - visible 数字 span（用 aria-hidden 把 CountUp 动画屏蔽出 AT 朗读流）
+ *   - sr-only sibling（拿稳定终值，AT 朗读这一项）
+ *   - sr-only h3（v1.76 新增 firstLineLabel：[N] 也在 heading 里替换，避免
+ *     AT 读"括号 N 天"的实现占位符）
+ * 让无 JS 访客也能看到合理的数字（不会读出 "[N] 天" 占位符）。
  *
- * 拆分约定：源行含 "[N]" → 前后切分为 prefix / suffix；中间渲染 <span
- * class="days-together" data-days-anchor={anchorDate}>{n}</span>。aria 默认
- * 朗读组装好的"前缀 + 数字 + 后缀"（aria-live: polite 让数字 CountUp 也朗读
- * 给 AT，但只在动画结束的最终值；动画中不刷屏读）。
+ * 客户端有 JS 时，StoryPoemScroller 内的 inline script 在 IO 入场时：
+ *   - 重新算 client-time 的 N（避访客在 build 之后访问导致 N 漂老）
+ *   - sr-only sibling 一次性写 client-time N（AT 朗读对得上）
+ *   - visible span 跑 0 → client-time N over 1.4s ease-out cubic 动画
+ *   - reduced-motion → visible 直接钉到 client-time N，不动画
+ *
+ * 拆分约定（v1.75 起）：源行含 "[N]" → 前后切分为 prefix / suffix；中间渲染
+ *   <span class="days-together-wrap">
+ *     <span class="days-together" aria-hidden="true">visible CountUp</span>
+ *     <span class="sr-only" data-days-together-sr>stable terminal N</span>
+ *   </span>
+ * AT 在初次扫读这一行时只听到 sr-only 里的稳定数字一次，不会被 1.4s 内的
+ * CountUp 过渡值（每帧不同的"X 天"）刷屏。aria-live 已**完全不用**——v1.74
+ * 的旧设计在 visible span 上挂 aria-live="polite" 是 v1.75 audit P2 的根因。
  */
 let initialDaysCount: number | null = null;
 if (anchorDate) {
@@ -242,6 +254,19 @@ if (anchorDate) {
 const headingId = `beat-${id}-heading`;
 const ariaHeadingId = `beat-${id}-aria-heading`;
 const firstLine = lines[0] ?? "";
+
+/**
+ * v1.76（v1.75 audit P2 修）：sr-only h3 用的 firstLine 也要把 [N] 占位换成
+ * 真实数字，否则 AT 会朗读"第 05 段，不知不觉，已携手走过括号 N 天"——这是
+ * 实现细节直接泄漏到访客层。`firstLineLabel` 与 .days-together 走同一份
+ * build-time N（initialDaysCount），SSR 阶段就把"[N]"原地替换；不含 [N]
+ * 或没传 anchorDate 的 beat 退化回 firstLine。客户端脚本不再回写 h3 的
+ * textContent（一次 SSR 写定 → AT 一次性朗读，无 aria-live 抖动风险）。
+ */
+const firstLineLabel =
+  initialDaysCount !== null && firstLine.includes("[N]")
+    ? firstLine.replace("[N]", String(initialDaysCount))
+    : firstLine;
 
 /**
  * v1.66 SSR 默认 data-text-placement（JS 接管 applyLayout 后仍会覆写）。
@@ -300,7 +325,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
 >
   <div class="poem-stage">
     <h3 id={ariaHeadingId} class="sr-only">
-      第 {id} 段 · {firstLine}
+      第 {id} 段 · {firstLineLabel}
     </h3>
 
     <div class="poem-text cn-song">

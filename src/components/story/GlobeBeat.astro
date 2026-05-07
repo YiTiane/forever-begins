@@ -163,14 +163,19 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     /* 无背景 → 透明 alpha；让站点 page 背景透出，与 §2 章节呼吸一致 */
   }
 
-  /* 文字浮卡：居中偏下，sage→honey 渐变弧线呼应；backdrop-blur 与 vignette 同语 */
+  /* 文字浮卡：居中偏下，sage→honey 渐变弧线呼应；backdrop-blur 与 vignette 同语
+     v1.76（v1.75 audit 视觉诉求修）：宽屏下原 margin-bottom 4.5rem + padding
+     1.25rem 让卡片顶部上探到地球下半区，墨尔本端点（lat -37.8）被卡片背板
+     遮挡。改 margin-bottom 1rem-1.75rem + padding 1rem 1.5rem（顶部缩 ~50px），
+     卡片向下贴近 viewport 底，墨尔本端点完整露出；poem 字号与行距不动，
+     文案视觉权重保留。 */
   .globe-text {
     grid-area: 1 / 1;
     align-self: end;
     justify-self: center;
     width: min(540px, 90%);
-    margin-bottom: clamp(2rem, 6vh, 4.5rem);
-    padding: 1.25rem 1.5rem;
+    margin-bottom: clamp(0.75rem, 2.5vh, 1.75rem);
+    padding: 1rem 1.5rem;
     background: rgba(245, 240, 230, 0.78);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
