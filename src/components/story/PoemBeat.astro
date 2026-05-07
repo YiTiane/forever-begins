@@ -1,6 +1,13 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.7 · v1.85 Snow_08 text card 修）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.8 · v1.86 SnowAtmosphere scoped CSS 修）
+ *
+ * v1.8 新增（v1.86 修用户“电脑和手机都看不到下雪动画”反馈）：
+ *   - 删除父组件 `.snow-atmosphere` scoped CSS。SnowAtmosphere 是子组件，
+ *     父组件 selector 会要求 canvas 带 PoemBeat 的 data-astro-cid，实际不匹配。
+ *     overlay 样式现在由 SnowAtmosphere.astro 自己持有。
+ *   - mobile fallback 会把所有 `.poem-photo` 重置为 static；vignette figure 单独
+ *     恢复 `position: relative !important`，让 absolute canvas 在手机单列下仍锚定照片。
  *
  * v1.7 新增（v1.85 修用户 Snow_08 空白框反馈）：
  *   - vignette 文字浮卡三行全部常亮。v1.69 只让第 1 行常亮，第 2/3 行
@@ -1014,19 +1021,9 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-beat[data-layout="vignette"] .poem-text p {
     opacity: 1;
   }
-  /* SnowAtmosphere canvas overlay 容器：z 在 photo 之上、暗角之下 */
-  .poem-beat[data-layout="vignette"] .snow-atmosphere {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 3;
-    border-radius: var(--radius-sm);
-    /* v1.66 P3 修：mix-blend-mode: screen 让 canvas 雪粒子真正与下方
-       photo / 暗角混合发光，而非只是普通透明白点。screen 比 add 柔，
-       夜色暗部白雪发亮、亮部不爆色。v1.65 注释里的"screen blend"承诺
-       由此真正生效（之前只在 canvas 内 globalCompositeOperation 不影响外部）。*/
-    mix-blend-mode: screen;
-  }
+  /* SnowAtmosphere canvas overlay 容器样式由 SnowAtmosphere.astro 自己持有。
+     注意：不要在父组件 scoped CSS 里直接写 `.snow-atmosphere`，Astro 会把它
+     编译成带父组件 cid 的选择器，匹配不到子组件生成的 canvas。 */
 
   /* ──────────────────────────────────────────────────────────────  */
   /* v1.66 textPlacement 通用规则（按 data-text-placement 选择器）    */
@@ -1340,6 +1337,12 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
       mask-image: none !important;
       -webkit-mask-image: none !important;
       clip-path: none !important;
+    }
+    .poem-beat[data-layout="vignette"] .poem-photo[data-role="vignette"] {
+      /* v1.86：mobile fallback 会把所有 figure 置为 static；但雪 canvas 是
+         absolute inset:0，需要 vignette figure 继续作为 containing block。 */
+      position: relative !important;
+      overflow: hidden !important;
     }
     /* v1.82：compact / iOS 不再完全静态。仍保留自然单列流式布局，
        但用轻量 opacity + translateY + scale 让照片有入场感；不会重叠。 */

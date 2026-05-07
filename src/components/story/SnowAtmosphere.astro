@@ -1,16 +1,25 @@
 ---
 /**
  * SnowAtmosphere.astro · § 2 vignette 重点舞台 · 雪粒子 canvas
- *   v0.1（Phase 2 §2 batch 5 · v1.65 修 v1.64 audit P2-C）
+ *   v0.2（v1.86 修 v1.85 audit P2：雪层不可见）
+ *
+ * v0.2 修复重点：
+ *   - canvas overlay 样式从父组件 PoemBeat scoped CSS 移回本组件。Astro 父组件
+ *     scoped selector 会编译成 `.snow-atmosphere[data-astro-cid-parent]`，但本
+ *     组件生成的 canvas 不带父组件 cid，导致 position/z-index/mix-blend-mode
+ *     全部不命中，桌面和手机都看不到真正覆盖在照片上的雪层。
+ *   - ResizeObserver 监听 canvas 父 figure。图片懒加载前 canvas 可能初始 0×0；
+ *     父容器获得真实尺寸后立即重算 backing store、重建粒子、绘制静态帧。
+ *   - 粒子略增亮 / 增密，保证在 Snow_08 暗角和不同 DPR 设备上可见。
  *
  * Snow_08 是 Story 序列中第一张"夜色 / 互道晚安"主题的氛围照；用户期望它有
  * 额外的雪动画来强化重点。本组件给 vignette layout 在 photo 之上叠一层
  * Canvas 雪粒子，慢慢从顶部飘落，营造夜色 + 雪夜的亲密语境。
  *
  * 设计：
- *   - Canvas 2D 渲染 ~36 个粒子（粒子对象保留 x / y / radius / driftX / fallSpeed）
- *   - 粒子下落速度 8-22 px/s，横向 sway ±0.4 px/帧，半径 0.8-2.4px，
- *     opacity 0.4-0.85；越靠后景越透明 / 越慢，给前后景深感
+ *   - Canvas 2D 渲染 ~32-72 个粒子（粒子对象保留 x / y / radius / driftX / fallSpeed）
+ *   - 粒子下落速度 10-28 px/s，横向 sway ±0.45 px/帧，半径 1.1-3.2px，
+ *     opacity 0.55-0.92；越靠前景越亮 / 越快，给前后景深感
  *   - 粒子飘出底部 → 重投到顶部上方 (-radius-10) 让循环自然
  *   - 粒子背景透明，blendMode = 'screen' 让雪在暗角夜色上自然发亮
  *
@@ -29,6 +38,20 @@
 ---
 
 <canvas class="snow-atmosphere" aria-hidden="true"></canvas>
+
+<style>
+  .snow-atmosphere {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 3;
+    border-radius: var(--radius-sm);
+    mix-blend-mode: screen;
+  }
+</style>
 
 <script>
   (function setupSnowAtmosphere() {
@@ -66,35 +89,41 @@
     const stages: Stage[] = [];
 
     function createParticle(width: number, height: number): Particle {
-      // 半径 0.8-2.4，越大越前景（更不透明 + 更快下落）
-      const radius = 0.8 + Math.random() * 1.6;
-      const depth = (radius - 0.8) / 1.6; // 0 (远) - 1 (近)
+      // 半径 1.1-3.2，越大越前景（更不透明 + 更快下落）
+      const radius = 1.1 + Math.random() * 2.1;
+      const depth = (radius - 1.1) / 2.1; // 0 (远) - 1 (近)
       return {
         x: Math.random() * width,
         y: Math.random() * height,
         radius,
-        driftX: (Math.random() - 0.5) * 0.6, // ±0.3px/帧 横向 sway
-        fallSpeed: 8 + depth * 14, // 8-22 px/s
-        opacity: 0.4 + depth * 0.45, // 远 0.4 / 近 0.85
+        driftX: (Math.random() - 0.5) * 0.9, // ±0.45px/帧 横向 sway
+        fallSpeed: 10 + depth * 18, // 10-28 px/s
+        opacity: 0.55 + depth * 0.37, // 远 0.55 / 近 0.92
       };
     }
 
-    function syncCanvasSize(stage: Stage): void {
+    function syncCanvasSize(stage: Stage): boolean {
       const rect = stage.canvas.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const nextWidth = rect.width;
+      const nextHeight = rect.height;
+      const changed =
+        Math.abs(stage.width - nextWidth) > 1 ||
+        Math.abs(stage.height - nextHeight) > 1;
       // CSS 尺寸
-      stage.width = rect.width;
-      stage.height = rect.height;
+      stage.width = nextWidth;
+      stage.height = nextHeight;
       // 实际像素分辨率
-      stage.canvas.width = Math.round(rect.width * dpr);
-      stage.canvas.height = Math.round(rect.height * dpr);
+      stage.canvas.width = Math.round(nextWidth * dpr);
+      stage.canvas.height = Math.round(nextHeight * dpr);
       stage.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return changed;
     }
 
     function ensureParticles(stage: Stage): void {
-      // 数量随面积 scale，但夹在 24-48 之间
+      // 数量随面积 scale，但夹在 32-72 之间
       const target = Math.round(
-        Math.min(48, Math.max(24, (stage.width * stage.height) / 12000)),
+        Math.min(72, Math.max(32, (stage.width * stage.height) / 9000)),
       );
       while (stage.particles.length < target) {
         stage.particles.push(createParticle(stage.width, stage.height));
@@ -124,6 +153,22 @@
         ctx.fill();
       }
       ctx.globalCompositeOperation = "source-over";
+    }
+
+    function resizeAndPaint(stage: Stage): void {
+      const oldWidth = stage.width;
+      const oldHeight = stage.height;
+      const changed = syncCanvasSize(stage);
+      const wasZero = oldWidth < 1 || oldHeight < 1;
+      if (
+        changed &&
+        (wasZero || stage.width < oldWidth || stage.height < oldHeight)
+      ) {
+        stage.particles = [];
+      }
+      ensureParticles(stage);
+      // 保证 reduced-motion / 尚未进视口时也有一帧可见雪层。
+      step(stage, 16);
     }
 
     function tick(stage: Stage, t: number): void {
@@ -162,11 +207,34 @@
         lastT: 0,
       };
       stages.push(stage);
-      syncCanvasSize(stage);
-      ensureParticles(stage);
       // 静态首帧（reduced-motion 也能看到雪粒分布，只是不动）
-      step(stage, 16);
+      resizeAndPaint(stage);
     });
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver((entries) => {
+            const targets = new Set(entries.map((entry) => entry.target));
+            stages.forEach((stage) => {
+              if (
+                targets.has(stage.canvas) ||
+                (stage.canvas.parentElement &&
+                  targets.has(stage.canvas.parentElement))
+              ) {
+                resizeAndPaint(stage);
+              }
+            });
+          })
+        : null;
+
+    if (resizeObserver) {
+      stages.forEach((stage) => {
+        resizeObserver.observe(stage.canvas);
+        if (stage.canvas.parentElement) {
+          resizeObserver.observe(stage.canvas.parentElement);
+        }
+      });
+    }
 
     if (prefersReduced) {
       // 不绑事件、不启动 rAF；保留首帧静态雪粒
@@ -207,10 +275,7 @@
     window.addEventListener(
       "resize",
       () => {
-        stages.forEach((s) => {
-          syncCanvasSize(s);
-          ensureParticles(s);
-        });
+        stages.forEach((s) => resizeAndPaint(s));
       },
       { passive: true },
     );
