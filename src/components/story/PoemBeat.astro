@@ -205,22 +205,26 @@ function getAspectRatio(p: BeatPhoto): string {
 
   /* ────────────────────────────────────────────────────────────── */
   /* sticky 100vh stage                                              */
+  /*                                                                 */
+  /* v1.60 P2 #1：baseline 改 flex column，让所有 layout 在 narrow      */
+  /* (541-719) 段都能用 solver 输出的 size 变量自然居中堆叠；wide      */
+  /* (≥720) 才让 parallax-pair / diagonal-gaze 切到 grid 重叠模式。  */
+  /* 修掉 v1.59 "solver 给 1fr / CSS 仍 2fr" 的模式不一致。           */
   /* ────────────────────────────────────────────────────────────── */
   .poem-stage {
     position: sticky;
     top: 0;
     height: 100vh;
     overflow: hidden;
-    display: grid;
-    grid-template-columns: var(--stage-cols);
-    grid-template-rows: 1fr;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
     padding: 2rem 1.5rem;
     max-width: 1280px;
     margin: 0 auto;
     box-sizing: border-box;
-    gap: var(--stage-gap);
   }
 
   /* sr-only 兜底 */
@@ -284,10 +288,27 @@ function getAspectRatio(p: BeatPhoto): string {
 
   /* ──────────────────────────────────────────────────────────────  */
   /* layout = parallax-pair · beat 01                                 */
-  /* solver 给 stage 双列 + photos 容器尺寸；CSS 只放固定 absolute     */
-  /* 位置 + 入场 transform                                           */
+  /*                                                                  */
+  /* photo size（all widths）：solver 输出的 --photo-far/near-w/h     */
+  /*   narrow (541-719)：默认 flex column，photos 自然垂直堆叠         */
+  /*   wide   (≥ 720)：grid 双列 + far/near 绝对定位重叠 + 入场 transform */
   /* ──────────────────────────────────────────────────────────────  */
-  @media (min-width: 541px) {
+  .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="far"] {
+    width: var(--photo-far-w);
+    height: var(--photo-far-h);
+    filter: saturate(0.92);
+  }
+  .poem-beat[data-layout="parallax-pair"] .poem-photo[data-role="near"] {
+    width: var(--photo-near-w);
+    height: var(--photo-near-h);
+  }
+  @media (min-width: 720px) {
+    .poem-beat[data-layout="parallax-pair"] .poem-stage {
+      display: grid;
+      grid-template-columns: var(--stage-cols);
+      align-items: center;
+      justify-items: center;
+    }
     .poem-beat[data-layout="parallax-pair"] .poem-text {
       grid-column: 1;
       align-self: center;
@@ -312,9 +333,6 @@ function getAspectRatio(p: BeatPhoto): string {
       position: absolute;
       top: 0;
       right: 0;
-      width: var(--photo-far-w);
-      height: var(--photo-far-h);
-      filter: saturate(0.92);
       transform: translateY(calc((1 - var(--p, 0)) * -14%))
         scale(calc(0.96 + var(--p, 0) * 0.04));
     }
@@ -322,8 +340,6 @@ function getAspectRatio(p: BeatPhoto): string {
       position: absolute;
       bottom: 0;
       left: 0;
-      width: var(--photo-near-w);
-      height: var(--photo-near-h);
       z-index: 1;
       transform: translateY(calc((1 - var(--p, 0)) * 14%))
         scale(calc(0.96 + var(--p, 0) * 0.04));
@@ -332,9 +348,25 @@ function getAspectRatio(p: BeatPhoto): string {
 
   /* ──────────────────────────────────────────────────────────────  */
   /* layout = diagonal-gaze · beat 02                                 */
+  /*                                                                  */
+  /* photo size（all widths）：solver 输出的 --photo-tl/br-w/h         */
+  /*   narrow (541-719)：默认 flex column，tl-photo / text / br-photo  */
+  /*     垂直堆叠；不再有 backdrop-blur / 对角错位                     */
+  /*   wide   (≥ 720)：grid 单 cell stack + tl/br 角落绝对 + 中间文字   */
+  /*     backdrop-blur(8px) 浮起 + 入场 translate                      */
   /* ──────────────────────────────────────────────────────────────  */
-  @media (min-width: 541px) {
+  .poem-beat[data-layout="diagonal-gaze"] .poem-photo[data-role="top-left"] {
+    width: var(--photo-tl-w);
+    height: var(--photo-tl-h);
+  }
+  .poem-beat[data-layout="diagonal-gaze"]
+    .poem-photo[data-role="bottom-right"] {
+    width: var(--photo-br-w);
+    height: var(--photo-br-h);
+  }
+  @media (min-width: 720px) {
     .poem-beat[data-layout="diagonal-gaze"] .poem-stage {
+      display: grid;
       grid-template-columns: 1fr;
       grid-template-rows: 1fr;
       padding: 0;
@@ -366,8 +398,6 @@ function getAspectRatio(p: BeatPhoto): string {
       position: absolute;
       top: 4%;
       left: 4%;
-      width: var(--photo-tl-w);
-      height: var(--photo-tl-h);
       transform: translate(
         calc((1 - var(--p, 0)) * -15%),
         calc((1 - var(--p, 0)) * -15%)
@@ -378,8 +408,6 @@ function getAspectRatio(p: BeatPhoto): string {
       position: absolute;
       bottom: 4%;
       right: 4%;
-      width: var(--photo-br-w);
-      height: var(--photo-br-h);
       transform: translate(
         calc((1 - var(--p, 0)) * 15%),
         calc((1 - var(--p, 0)) * 15%)

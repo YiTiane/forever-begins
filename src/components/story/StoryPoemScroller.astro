@@ -118,6 +118,16 @@ const photoPoemBeats = main.data.beats
   {
     /* batch 4 · §2.C StarCarouselFinale 将插在这里，对应 main.json beats[11]（id="12" kind="finale"）*/
   }
+
+  {
+    /* —— Story end cap（v1.60 P2 #3 修）：临时叙事收束 ——
+       v1.59 之前 §2 在最后一个 beat 后就是空白背景，访客滚过最后一个 beat 后落到
+       看不到任何内容的纯背景区。等 batch 4-6 把 globe / finale 接上之后这块自然
+       被取代；本批先放一个克制的 "未完待续" 收束，让滚动有终点感。*/
+  }
+  <div class="story-end-cap">
+    <p class="story-end-cap__line cn-kaishu">未完待续</p>
+  </div>
 </section>
 
 <style>
@@ -150,6 +160,30 @@ const photoPoemBeats = main.data.beats
       font-size: 1.75rem;
       margin: 0 auto 1.5rem;
     }
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* story end cap（v1.60 P2 #3）：最后一个 beat 后的叙事收束           */
+  /* 视觉：一行霞鹜文楷"未完待续"，宽字距，柔色 sage，不抢戏              */
+  /* min-height 60vh 让用户滚到最后能落在一个 intentional 视觉，不再    */
+  /* 看到纯背景空屏；后续 batch 4-6 接 globe/finale 时自然替代。       */
+  /* ──────────────────────────────────────────────────────────────  */
+  .story-end-cap {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1.5rem;
+  }
+  .story-end-cap__line {
+    margin: 0;
+    font-size: clamp(1.25rem, 4vw, 2rem);
+    color: var(--c-sage);
+    letter-spacing: 0.4em;
+    /* 拉宽字距给"远方"的留白感 */
+    text-indent: 0.4em;
+    opacity: 0.7;
+    text-align: center;
   }
 </style>
 
@@ -226,7 +260,13 @@ const photoPoemBeats = main.data.beats
     /**
      * v1.59 layout solver：把每个 beat 当前 viewport 下的 photo 尺寸 / gap / 文字宽
      * 求出来写到 .poem-beat 的 CSS 自定义属性上。CSS 只消费变量，不再写 magic %。
-     * 仅在 init / window.resize 时跑（开销不敏感）；scroll 期间只更新 phase 变量。
+     * 仅在 init / window.resize / 文字尺寸变化时跑（开销不敏感）；scroll 期间只更新
+     * phase 变量。
+     *
+     * v1.60 升级（v1.59 P2 #2 修）：先实测 .poem-text 的 box height，再传给 solver。
+     * 这样 radial-mask / anchor-single / parallax-pair narrow / diagonal-gaze narrow
+     * 都能按真实 text 高度去分配剩余 stage 空间给 photo —— 不再用 vh×0.18 这种
+     * "凭直觉" 的常量做估算。
      */
     function applyLayout(beat: HTMLElement): void {
       const layout = beat.dataset.layout as BeatLayout | undefined;
@@ -234,7 +274,6 @@ const photoPoemBeats = main.data.beats
       const photoEls = Array.from(
         beat.querySelectorAll<HTMLElement>(".poem-photo"),
       );
-      // 没照片的 beat（globe / finale）不渲染 PoemBeat；理论 unreachable
       if (photoEls.length === 0) return;
       const photos: PhotoSpec[] = photoEls.map((el) => ({
         aspectRatio:
@@ -244,11 +283,21 @@ const photoPoemBeats = main.data.beats
             : 1.5),
         role: el.dataset.role ?? "",
       }));
+
+      // 实测 text 块的高 / 宽（getBoundingClientRect 不触发 layout 因为 stage
+      // 已经 paint 过；首帧时 text 用 fallback 值，第二帧（RO 触发）就是真值）。
+      const textEl = beat.querySelector<HTMLElement>(".poem-text");
+      const textRect = textEl?.getBoundingClientRect();
+      const textHeight = textRect?.height;
+      const textWidth = textRect?.width;
+
       const vars = solveBeatLayout({
         vw: window.innerWidth,
         vh: window.innerHeight,
         layout,
         photos,
+        ...(textHeight !== undefined ? { textHeight } : {}),
+        ...(textWidth !== undefined ? { textWidth } : {}),
       });
       for (const [key, value] of Object.entries(vars)) {
         beat.style.setProperty(key, value);
@@ -324,6 +373,22 @@ const photoPoemBeats = main.data.beats
     // 不会让进度卡在错误值。
     const ro = new ResizeObserver(() => scheduleUpdate());
     beats.forEach((beat) => ro.observe(beat));
+
+    // v1.60 P2 #2：单独 RO 观察每个 beat 的 .poem-text，在文字尺寸变化时（字体
+    // 加载、viewport 改变后断行重排）重跑 solver。比起 window.resize 回调更精准
+    // —— 字体加载 / lang 切换 / 浏览器 zoom 等都能及时反映到 photo 尺寸约束。
+    // 用单独的 RO 实例避免与 beat-level RO 混淆触发条件。
+    const textRO = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const textEl = entry.target as HTMLElement;
+        const beat = textEl.closest<HTMLElement>(".poem-beat");
+        if (beat) applyLayout(beat);
+      }
+    });
+    beats.forEach((beat) => {
+      const textEl = beat.querySelector<HTMLElement>(".poem-text");
+      if (textEl) textRO.observe(textEl);
+    });
 
     // 调试钩子：window.__storyPoem.progress() / .list() / .active()
     (

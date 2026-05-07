@@ -55,6 +55,16 @@ export interface SolverInput {
   vh: number;
   layout: BeatLayout;
   photos: readonly PhotoSpec[];
+  /**
+   * v0.2（v1.60 P2 #2 修）：调用方实测 .poem-text 的 box height。
+   * 作用：radial-mask / anchor-single 这类 photo + text 紧凑居中堆叠的 layout
+   * 需要给 photo 留出 stage 高度减 text 实际高度后的剩余空间，
+   * 避免 photo 撑大 / 撑小（产生窄屏松散感 vs 拥挤感）。
+   * 没传 → solver 退回到 vh×0.18 的保守估算（v0.1 行为）。
+   */
+  textHeight?: number;
+  /** 同上，可选；当前 solver 暂未消费（保留为未来约束）。 */
+  textWidth?: number;
 }
 
 /** key 形如 "--photo-w"；value 形如 "320px" / "1.5rem" / "1fr 1fr" */
@@ -135,23 +145,26 @@ function solveParallaxPair(input: SolverInput): SolverOutput {
     };
   }
 
-  // 窄屏：单列堆叠（text 居中，photos 区压在下面）
+  // 窄屏：单列堆叠（text + far + near 在 sticky stage 内 flex column 居中）
+  // v0.2：扣掉实测 text 高度后，把剩余 vh 在 far / near 之间分配。
+  const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
   const photosColW = stageW;
-  // 给 text 至少 25% 高度，photos 拿 60%，留 15% padding/gap
-  const photosColH = Math.min(stageH * 0.6, stageW * 0.78);
-  const farMaxW = photosColW * 0.6;
-  const farMaxH = photosColH * 0.6;
+  const gap = 20;
+  // 留两份 gap（text-far、far-near）；剩余给 far + near
+  const photosTotalH = Math.max(stageH - textReserveH - gap * 2, stageH * 0.4);
+  const farMaxH = photosTotalH * 0.45;
+  const nearMaxH = photosTotalH * 0.55;
+  const farMaxW = photosColW * 0.78;
+  const nearMaxW = photosColW * 0.86;
   const [farW, farH] = fitAspect(farMaxW, farMaxH, farPhoto.aspectRatio);
-  const nearMaxW = photosColW * 0.7;
-  const nearMaxH = photosColH * 0.68;
   const [nearW, nearH] = fitAspect(nearMaxW, nearMaxH, nearPhoto.aspectRatio);
 
   return {
     "--stage-cols": `1fr`,
-    "--stage-gap": `20px`,
+    "--stage-gap": `${gap}px`,
     "--text-col-w": `${stageW}px`,
     "--photos-col-w": `${photosColW}px`,
-    "--photos-col-h": `${photosColH}px`,
+    "--photos-col-h": `auto`,
     "--photo-far-w": `${farW}px`,
     "--photo-far-h": `${farH}px`,
     "--photo-near-w": `${nearW}px`,
@@ -192,15 +205,19 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
     };
   }
 
-  // 窄屏：单列，photo 上下堆叠 + 文字居中
-  // 让 tl photo + text + br photo 三块一起塞进 stage 内
-  const photoMaxW = stageW * 0.7;
-  const photoMaxH = stageH * 0.32; // 三块约各占 1/3，留 gap
+  // 窄屏：单列堆叠（tl + text + br 在 sticky stage 内 flex column 居中）
+  // v0.2：扣掉实测 text 高度后，把剩余 vh 在 tl / br 之间均分。
+  const textReserveH = input.textHeight ?? clampPx(stageH * 0.18, 96, 220);
+  const gap = 24;
+  const photosTotalH = Math.max(stageH - textReserveH - gap * 2, stageH * 0.4);
+  const photoMaxH = photosTotalH * 0.5;
+  const photoMaxW = stageW * 0.65;
   const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
   const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
 
   return {
     "--text-max-w": `${stageW}px`,
+    "--stage-gap": `${gap}px`,
     "--photo-tl-w": `${tlW}px`,
     "--photo-tl-h": `${tlH}px`,
     "--photo-br-w": `${brW}px`,
@@ -211,15 +228,15 @@ function solveDiagonalGaze(input: SolverInput): SolverOutput {
 // ─── radial-mask（beat 03 · snow_05 居中柔焦）─────────────────────
 // 视觉契约：单图居中 + 文字下方；photo 在 stage 内紧凑居中
 function solveRadialMask(input: SolverInput): SolverOutput {
-  const { vw, vh, photos } = input;
+  const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
   if (!photo) return {};
 
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
-  // 给 text 预留约 130-170px（取决于 vh），剩余给 photo
-  const textReserveH = clampPx(vh * 0.18, 110, 200);
+  // v0.2: 优先用调用方实测的 .poem-text 高度；缺省时按 vh×0.18 保守估算
+  const textReserveH = textHeight ?? clampPx(vh * 0.18, 110, 200);
   const gap = 24;
   const photoMaxW = Math.min(stageW * 0.85, 720);
   const photoMaxH = stageH - textReserveH - gap;
@@ -236,14 +253,14 @@ function solveRadialMask(input: SolverInput): SolverOutput {
 // ─── anchor-single（beat 04 / 05 · 单图作锚点）─────────────────────
 // 视觉契约：单图小框 + 文字下方；photo 比 radial-mask 更小、更克制
 function solveAnchorSingle(input: SolverInput): SolverOutput {
-  const { vw, vh, photos } = input;
+  const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
   if (!photo) return {};
 
   const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
   const stageH = vh - STAGE_PAD_Y * 2;
 
-  const textReserveH = clampPx(vh * 0.16, 96, 180);
+  const textReserveH = textHeight ?? clampPx(vh * 0.16, 96, 180);
   const gap = 20;
   const photoMaxW = Math.min(stageW * 0.7, 460);
   const photoMaxH = stageH - textReserveH - gap;
