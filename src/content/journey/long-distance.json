@@ -9,5 +9,37 @@
     "lat": -37.8136,
     "lng": 144.9631
   },
-  "distanceKm": 10755
+  "distanceKm": 10755,
+  "routes": [
+    {
+      "from": { "name": "乌鲁木齐", "lat": 43.7689, "lng": 87.6283 },
+      "to": { "name": "墨尔本", "lat": -37.8136, "lng": 144.9631 },
+      "kind": "primary"
+    },
+    {
+      "from": { "name": "重庆", "lat": 29.563, "lng": 106.5516 },
+      "to": { "name": "乌鲁木齐", "lat": 43.7689, "lng": 87.6283 },
+      "kind": "secondary"
+    },
+    {
+      "from": { "name": "重庆", "lat": 29.563, "lng": 106.5516 },
+      "to": { "name": "合肥", "lat": 31.8206, "lng": 117.2272 },
+      "kind": "secondary"
+    },
+    {
+      "from": { "name": "杭州", "lat": 30.2741, "lng": 120.1551 },
+      "to": { "name": "合肥", "lat": 31.8206, "lng": 117.2272 },
+      "kind": "secondary"
+    },
+    {
+      "from": { "name": "乌鲁木齐", "lat": 43.7689, "lng": 87.6283 },
+      "to": { "name": "合肥", "lat": 31.8206, "lng": 117.2272 },
+      "kind": "secondary"
+    },
+    {
+      "from": { "name": "乌鲁木齐", "lat": 43.7689, "lng": 87.6283 },
+      "to": { "name": "新加坡", "lat": 1.3521, "lng": 103.8198 },
+      "kind": "secondary"
+    }
+  ]
 }

@@ -522,10 +522,11 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* ────────────────────────────────────────────────────────────── */
   /* sticky 100vh stage                                              */
   /*                                                                 */
-  /* v1.60 P2 #1：baseline 改 flex column，让所有 layout 在 narrow      */
-  /* (541-719) 段都能用 solver 输出的 size 变量自然居中堆叠；wide      */
-  /* (≥720) 才让 parallax-pair / diagonal-gaze 切到 grid 重叠模式。  */
-  /* 修掉 v1.59 "solver 给 1fr / CSS 仍 2fr" 的模式不一致。           */
+  /* v1.87 注释同步：当前布局模式由 getStoryLayoutMode 写入            */
+  /* data-story-mode=(compact|portrait|wide)。baseline flex column     */
+  /* 是 compact/portrait 的自然流兜底；                                */
+  /* 只有 data-story-mode="wide" 的 layout-specific block 才切回       */
+  /* sticky 100vh / grid / absolute cinematic frame。                  */
   /* ────────────────────────────────────────────────────────────── */
   .poem-stage {
     position: sticky;

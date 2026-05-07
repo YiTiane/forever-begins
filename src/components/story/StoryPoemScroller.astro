@@ -1,6 +1,17 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 第一章长卷骨架（v0.9 · v1.75 [N] CountUp + a11y 收口）
+ * StoryPoemScroller.astro · §2 Story 长卷 orchestrator（v1.0 · v1.87 hash composed-frame anchor）
+ *
+ * v1.0 新增（v1.78-v1.87 收口）：
+ *   - v1.78：wide sticky beat 加 HOLD_PHASE plateau，动画先到终态再 hold，避免
+ *     "完成态"与 sticky release 同步导致相邻段残片混入
+ *   - v1.82：收紧 wide spacer / compact 段间距，让 Story 连续阅读不再断裂
+ *   - v1.84：compact / portrait 由 entry progress 驱动，不再因为 section 高度
+ *     小于 viewport 而直接 p=1；iOS / 窄屏也保留轻量入场 motion
+ *   - v1.84：target/rendered progress 分离 + lerp，滚轮离散 delta 不再硬跳
+ *   - v1.87：hash deep-link 进入 composed frame：对 #beat-XX-heading 二次对齐到
+ *     wide hold zone / non-wide readable start，避免原生 hash 落在 sticky 边界时
+ *     仍显示上一段画面
  *
  * v0.9 新增（v1.74-v1.75）：
  *   - **§2.D beat 05 [N] 天 daysTogether CountUp 实接入**（v1.74）：
@@ -59,7 +70,7 @@
  *
  * v0.4 修 v1.56 审计 P2 #2 + P3：scroll-event driven 替代常驻 rAF tick；写头注释。
  *
- * 上层 wrapper（v1.75 现状）：从 src/content/story-poem/main.json 读 12 beats +
+ * 上层 wrapper（v1.87 现状）：从 src/content/story-poem/main.json 读 12 beats +
  * anchor_date，渲染顺序：
  *   1. photo-poem × maxBeats (默认 10 = 全部 photo-poem) → <PoemBeat>
  *      含 [N] 占位的行（当前仅 beat 05）由 PoemBeat 拆 prefix / .days-together-wrap /
@@ -69,11 +80,11 @@
  *   3. <div class="story-end-cap">：Pearl_04 主海报 + finale.lines (临时收束，
  *      等 §2.C StarCarouselFinale 接入后取代)
  *
- * 运行机制（v1.75 现状）：
+ * 运行机制（v1.87 现状）：
  *   ✓ photo-poem beat：solver + applyLayout + scroll-progress choreography
  *     - wide 模式（≥900px 且 vw/vh ≥ 0.85）→ sticky 100vh cinematic stage
  *     - portrait 模式 → 自然纵向流式（释放 sticky）
- *     - compact 模式（≤540px）→ 静态 flow stack，去掉 transform/mask 等
+ *     - compact 模式（≤540px）→ flow stack + 轻量 entry motion，去掉强 transform/mask
  *     - 单 IO + scroll + resize + textRO 四源事件 → scheduleUpdate dirty flag
  *       rAF flush 写 --p / --p-photo-1 / --p-photo-2 / --p-text
  *   ✓ globe beat (v1.71)：GlobeBeat 内部独立的 IO + scroll listener 自驱 progress；
@@ -86,6 +97,8 @@
  *     [N] 天 visible aria-hidden + sr-only stable
  *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe Canvas frameloop
  *     "demand" + 自旋 / 脉冲全停；[N] CountUp 钉终值不动画
+ *   ✓ hash deep-link：公开 id 仍在 .poem-beat / .globe-beat，但浏览器完成原生
+ *     hash scroll 后会再对齐到稳定 composed frame；审计 URL 不再落在上一段残片
  *
  * **NOT in current batch**（仍留 §2 后续刀）：
  *   ✗ §2.B GlobeDistanceScene v0.5+：水彩贴图 / Bloom postprocessing / 距离 CountUp
@@ -574,6 +587,58 @@ const anchorDate = main.data.anchor_date;
       window.requestAnimationFrame(flushUpdate);
     }
 
+    /**
+     * v1.87（进入 §2.C 前 gate audit P2 修）：hash deep-link 对齐到 composed frame。
+     *
+     * 原生 #beat-XX-heading 只能把 id 所在的 scroll-spacer 起点对齐到视口；wide
+     * sticky 场景里，这个边界点仍可能被上一段 sticky stage 占据，尤其是审计 URL
+     * 直接打开 #beat-08/#beat-11 时，会看到上一段照片或 end-cap 残片，而不是
+     * 目标 beat 的稳定构图。
+     *
+     * 策略：
+     *   - photo-poem wide：直接滚到 HOLD_PHASE 起点（动画已到 p=1，进入稳定 hold）
+     *   - photo-poem portrait/compact：滚到段落上沿略低于视口顶部，保留标题/图文
+     *   - globe：滚入 sticky spacer 内部约 22% 处，确保 canvas/text stage 已接管
+     * 调用时机：初始 load 一帧后 + hashchange。scroll 后同步更新 progress，避免
+     * 落点先闪现 p≈0 再补帧。
+     */
+    function alignHashToComposedFrame(): void {
+      const rawHash = window.location.hash;
+      if (!rawHash || rawHash.length <= 1) return;
+      const id = decodeURIComponent(rawHash.slice(1));
+      const anchor = document.getElementById(id);
+      if (!anchor) return;
+
+      const poemBeat = anchor.closest<HTMLElement>(".poem-beat");
+      if (poemBeat) {
+        applyLayout(poemBeat);
+        const rect = poemBeat.getBoundingClientRect();
+        const absoluteTop = window.scrollY + rect.top;
+        const vh = window.innerHeight || 1;
+        const mode = poemBeat.dataset.storyMode;
+        let top = absoluteTop - vh * 0.08;
+        if (mode === "wide") {
+          const scrollable = Math.max(0, poemBeat.offsetHeight - vh);
+          top = absoluteTop + scrollable * HOLD_PHASE;
+        }
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        setProgressImmediately(poemBeat, computeTargetProgress(poemBeat));
+        scheduleUpdate();
+        return;
+      }
+
+      const globeBeat = anchor.closest<HTMLElement>(".globe-beat");
+      if (globeBeat) {
+        const rect = globeBeat.getBoundingClientRect();
+        const absoluteTop = window.scrollY + rect.top;
+        const vh = window.innerHeight || 1;
+        const scrollable = Math.max(0, globeBeat.offsetHeight - vh);
+        const top =
+          scrollable > 0 ? absoluteTop + scrollable * 0.22 : absoluteTop;
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+      }
+    }
+
     // IO：仅决定 inView 集合；不再驱动 rAF 自循环。
     const io = new IntersectionObserver(
       (entries) => {
@@ -610,6 +675,9 @@ const anchorDate = main.data.anchor_date;
       beats.forEach(applyLayout);
       scheduleUpdate();
     });
+    window.addEventListener("hashchange", () => {
+      window.requestAnimationFrame(alignHashToComposedFrame);
+    });
 
     // ResizeObserver：图片懒加载完成 / 字体回流改变 .poem-beat offsetHeight 时
     // computeProgress 的分母会变，scrolled 也可能漂；用 RO 兜一道，保证布局 shift
@@ -641,6 +709,7 @@ const anchorDate = main.data.anchor_date;
     beats.forEach((beat) =>
       setProgressImmediately(beat, computeTargetProgress(beat)),
     );
+    window.requestAnimationFrame(alignHashToComposedFrame);
 
     // 调试钩子：window.__storyPoem.progress() / .list() / .active()
     (

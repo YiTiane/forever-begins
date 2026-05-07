@@ -5,7 +5,7 @@
  *
  * 数据流（DESIGN §15.1 单一源）：
  *   - poem lines / kind=globe 来自 src/content/story-poem/main.json beat 11
- *   - from / to / distanceKm 来自 src/content/journey/long-distance.json
+ *   - from / to / distanceKm / routes 来自 src/content/journey/long-distance.json
  *   - 两源在本组件 props 与 collection 处合流，不在 React 岛里再 fetch
  *
  * 渲染机制：
@@ -16,6 +16,9 @@
  *   - 文字浮卡 .globe-text 居中或贴底，带 backdrop-blur，与 vignette 同语
  *   - reduced-motion：fallback 渲染纯静态文字（"乌鲁木齐 ↔ 墨尔本 · 10,755 公里"），
  *     <noscript> 与 .globe-canvas-root[data-fallback] 都接住
+ *   - v1.87：GlobeDistanceScene 不只画最长距离；routes[] 渲染全部去过地点
+ *     连线，乌鲁木齐 ↔ 墨尔本作为 primary 更粗且有轻微呼吸闪烁，其它路线
+ *     用细 sage 线作为旅行网络背景
  *
  * a11y：
  *   - section aria-labelledby 指向 sr-only h3（与 PoemBeat 同款契约）
@@ -45,7 +48,7 @@ if (!longDistance) {
     "GlobeBeat.astro: src/content/journey/long-distance.json missing — schema 已严约束 from/to/distanceKm",
   );
 }
-const { from, to, distanceKm } = longDistance.data;
+const { from, to, distanceKm, routes = [] } = longDistance.data;
 if (!from || !to || distanceKm === undefined) {
   throw new Error(
     "GlobeBeat.astro: long-distance.json 缺 from/to/distanceKm —— DESIGN §15.1 单一源契约",
@@ -62,7 +65,9 @@ const ariaHeadingId = "beat-11-aria-heading";
 // 完整句："我们最远时相距 10,755 公里"。aria-label 同步用同款叙述，避免
 // AT 朗读到的"球面大圆距离"等技术语让叙事失味。
 const distancePrefix = "我们最远时相距";
-const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里`;
+const routeLabel =
+  routes.length > 1 ? `，并连起重庆、合肥、杭州、新加坡等共同走过的地方` : "";
+const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里${routeLabel}`;
 ---
 
 <section
@@ -79,6 +84,19 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
       <GlobeDistanceScene
         from={{ lat: from.lat, lng: from.lng }}
         to={{ lat: to.lat, lng: to.lng }}
+        routes={routes.map((route) => ({
+          from: {
+            name: route.from.name,
+            lat: route.from.lat,
+            lng: route.from.lng,
+          },
+          to: {
+            name: route.to.name,
+            lat: route.to.lat,
+            lng: route.to.lng,
+          },
+          kind: route.kind,
+        }))}
         client:visible
       />
     </div>

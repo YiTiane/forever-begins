@@ -107,7 +107,7 @@
           "fit": "contain"
         }
       ],
-      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅；contain 保人物完整。[N] 实时计算 (DESIGN §2.D daysTogether) 留独立小刀。"
+      "note": "v1.64 metadata 修正：实际 1600×2400 竖幅；contain 保人物完整。[N] 实时计算已在 v1.74 接入。"
     },
     {
       "id": "06",

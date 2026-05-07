@@ -1,5 +1,14 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.8 · v1.80 canvas landmask + safe-zone layout）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v1.0 · v1.87 multi-route travel network）
+ *
+ * v1.0 新增（v1.87 进入 §2.C 前审计修）：
+ *   - routes[] 支持全部共同去过地点的球面连线：重庆↔乌鲁木齐、重庆↔合肥、
+ *     杭州↔合肥、乌鲁木齐↔合肥、乌鲁木齐↔新加坡，以及 primary 主线
+ *     乌鲁木齐↔墨尔本
+ *   - primary 主线用更粗 TubeGeometry + honey 呼吸 opacity，强调"最远距离"；
+ *     secondary 路线用细 sage 线作为旅行网络背景
+ *   - endpoint 去重：所有城市标点；primary 两端保留柔和金色脉冲，其余城市用
+ *     小号纸白点，避免视觉过载
  *
  * v0.9 新增（v1.81 修宽屏 Globe 审计）：
  *   - **<Globe> 贴图改用 Natural Earth 1:110m land polygons**：browser-side
@@ -29,7 +38,7 @@
  *   - 球体：深墨绿/纸白低饱和；v1.81 暂用 Natural Earth canvas landmask 贴图（2K 水彩贴图
  *     `globe-watercolor-2k.jpg` 在 misc CDN 仓 Phase 3 上线后切到 useTexture）
  *   - 端点：乌鲁木齐 / 墨尔本，柔和金色脉冲（不用红色 pin）
- *   - 弧线：从乌 → 墨的球面大圆弧，sage → honey 渐变；按 progress 0→1 动画
+ *   - 弧线：primary 乌 → 墨随 progress 0→1 绘制并呼吸；secondary 路线常显为细线
  *   - 数字：与弧线同步 CountUp（在 GlobeBeat.astro 外壳渲染）
  *   - 交互：桌面鼠标轻微拖拽（OrbitControls 阻尼 + 限位）；移动端自动慢速旋转
  *   - reduced motion：跳过自旋 / 弧线动画，渲染完整终态 + frameloop=demand
@@ -88,11 +97,23 @@ interface GlobeProps {
   from: LatLng;
   /** 终点（如 墨尔本） */
   to: LatLng;
+  /** 全部旅行连线；未传时 fallback 为 from→to 主线 */
+  routes?: readonly GlobeRoute[] | undefined;
   /** 0..1：滚动 / 入场进度，驱动弧线绘制与 endpoint 脉冲强度。
    *  reduced-motion 模式下父组件应钉到 1。 */
   progress: number;
   /** prefers-reduced-motion 是否生效（父组件实测后传） */
   reducedMotion: boolean;
+}
+
+export interface NamedLatLng extends LatLng {
+  name: string;
+}
+
+export interface GlobeRoute {
+  from: NamedLatLng;
+  to: NamedLatLng;
+  kind?: "primary" | "secondary";
 }
 
 /* ─────────────────────── 辅助：颜色常量 ─────────────────────── */
@@ -261,12 +282,14 @@ interface EndpointProps {
   /** 0..1：弧 progress；用来同步 endpoint 脉冲强度（progress=0 时无脉冲） */
   progress: number;
   reducedMotion: boolean;
+  featured?: boolean;
 }
 
 function Endpoint({
   position,
   progress,
   reducedMotion,
+  featured = false,
 }: EndpointProps): React.ReactElement {
   const haloRef = useRef<THREE.Mesh>(null);
   const dotRef = useRef<THREE.Mesh>(null);
@@ -297,7 +320,7 @@ function Endpoint({
    * 把 Canvas frameloop 切到 "demand"，多重保险。
    */
   useEffect(() => {
-    if (!reducedMotion) return;
+    if (!reducedMotion || !featured) return;
     // 静态终态：halo 钉在最大 1.4 倍 + 0.55 不透明；dot 钉 0.85
     if (haloRef.current) {
       haloRef.current.scale.setScalar(1.4);
@@ -311,6 +334,7 @@ function Endpoint({
   }, [reducedMotion]);
 
   useFrame((_state, dt) => {
+    if (!featured) return;
     // reduced-motion：完全跳过每帧 work（静态终态由 useEffect 一次性写入）
     if (reducedMotion) return;
     // v0.4：dt 以秒计；累加到本地 ref 不读 state.clock（避 THREE.Clock dep warn）
@@ -341,23 +365,32 @@ function Endpoint({
     position[2] + normal[2] * offset,
   ];
 
+  const markerRadius = featured ? ENDPOINT_RADIUS : ENDPOINT_RADIUS * 0.68;
+
   return (
     <group position={placed}>
       {/* 实心点 */}
       <mesh ref={dotRef}>
-        <sphereGeometry args={[ENDPOINT_RADIUS, 16, 16]} />
-        <meshBasicMaterial color={COLOR_HONEY} transparent opacity={0.85} />
-      </mesh>
-      {/* halo 环 —— 用一个稍大透明球模拟 bloom（postprocessing 接入前的 fallback） */}
-      <mesh ref={haloRef}>
-        <sphereGeometry args={[ENDPOINT_RADIUS * 2.4, 16, 16]} />
+        <sphereGeometry args={[markerRadius, 16, 16]} />
         <meshBasicMaterial
-          color={COLOR_HONEY}
+          color={featured ? COLOR_HONEY : COLOR_PAPER}
           transparent
-          opacity={0.45}
+          opacity={featured ? 0.85 : 0.72}
           depthWrite={false}
         />
       </mesh>
+      {/* halo 环 —— 用一个稍大透明球模拟 bloom（postprocessing 接入前的 fallback） */}
+      {featured && (
+        <mesh ref={haloRef}>
+          <sphereGeometry args={[ENDPOINT_RADIUS * 2.4, 16, 16]} />
+          <meshBasicMaterial
+            color={COLOR_HONEY}
+            transparent
+            opacity={0.45}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -368,39 +401,43 @@ interface ArcProps {
   to: Vec3;
   /** 0..1：截断点（progress<1 时只画 from→from+progress·arcLength） */
   progress: number;
+  kind: "primary" | "secondary";
+  reducedMotion: boolean;
 }
 
-function Arc({ from, to, progress }: ArcProps): React.ReactElement {
+function Arc({
+  from,
+  to,
+  progress,
+  kind,
+  reducedMotion,
+}: ArcProps): React.ReactElement {
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const points = useMemo<Vec3[]>(
     () => greatCircleArc(from, to, ARC_SEGMENTS, ARC_LIFT, GLOBE_RADIUS),
     [from, to],
   );
 
-  // 按 progress 截断点数；至少留 2 个点保住 line 几何成立
-  const drawn = Math.max(2, Math.ceil(points.length * Math.max(0, progress)));
+  // 主线按 progress 绘制；其它路线作为已走过的路径常显，避免多条线同时扫动造成噪声。
+  const drawProgress =
+    kind === "primary" && !reducedMotion ? Math.max(0.04, progress) : 1;
+  const drawn = Math.max(2, Math.ceil(points.length * drawProgress));
   const sliced = points.slice(0, drawn);
 
-  // 弧的颜色按沿弧位置 lerp sage → honey；GeometryAttribute "color"
-  const geometry = useMemo<THREE.BufferGeometry>(() => {
-    const geom = new THREE.BufferGeometry();
-    const positions = new Float32Array(sliced.length * 3);
-    const colors = new Float32Array(sliced.length * 3);
-    for (let i = 0; i < sliced.length; i += 1) {
-      const point = sliced[i];
-      if (!point) continue; // noUncheckedIndexedAccess 满足
-      positions[i * 3] = point[0];
-      positions[i * 3 + 1] = point[1];
-      positions[i * 3 + 2] = point[2];
-      const t = sliced.length > 1 ? i / (sliced.length - 1) : 0;
-      const c = COLOR_SAGE.clone().lerp(COLOR_HONEY, t);
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    return geom;
-  }, [sliced]);
+  const geometry = useMemo<THREE.TubeGeometry>(() => {
+    const curve = new THREE.CatmullRomCurve3(
+      sliced.map((point) => new THREE.Vector3(point[0], point[1], point[2])),
+    );
+    const radius = kind === "primary" ? 0.007 : 0.0024;
+    const radialSegments = kind === "primary" ? 10 : 6;
+    return new THREE.TubeGeometry(
+      curve,
+      Math.max(8, sliced.length - 1),
+      radius,
+      radialSegments,
+      false,
+    );
+  }, [kind, sliced]);
 
   // 释放旧 geometry 防内存泄漏
   useEffect(() => {
@@ -409,11 +446,26 @@ function Arc({ from, to, progress }: ArcProps): React.ReactElement {
     };
   }, [geometry]);
 
+  useFrame((_state, dt) => {
+    if (kind !== "primary" || reducedMotion) return;
+    const mat = materialRef.current;
+    if (!mat) return;
+    // 主线轻微呼吸，突出"最长距离"；不做强闪烁，避免抢过地球本体。
+    const next = 0.76 + 0.2 * Math.sin(Date.now() * 0.004 + dt);
+    mat.opacity = next;
+  });
+
   return (
-    <line>
+    <mesh>
       <primitive attach="geometry" object={geometry} />
-      <lineBasicMaterial vertexColors transparent opacity={0.92} />
-    </line>
+      <meshBasicMaterial
+        ref={materialRef}
+        color={kind === "primary" ? COLOR_HONEY : COLOR_SAGE}
+        transparent
+        opacity={kind === "primary" ? 0.92 : 0.32}
+        depthWrite={false}
+      />
+    </mesh>
   );
 }
 
@@ -498,12 +550,54 @@ function ResponsiveCamera(): null {
 function SceneInner({
   from,
   to,
+  routes,
   progress,
   reducedMotion,
 }: GlobeProps): React.ReactElement {
-  // 端点位置（球面）
-  const fromV = useMemo<Vec3>(() => latLngToVec3(from, GLOBE_RADIUS), [from]);
-  const toV = useMemo<Vec3>(() => latLngToVec3(to, GLOBE_RADIUS), [to]);
+  const allRoutes = useMemo<GlobeRoute[]>(() => {
+    if (routes && routes.length > 0) return [...routes];
+    return [
+      {
+        from: { name: "from", ...from },
+        to: { name: "to", ...to },
+        kind: "primary",
+      },
+    ];
+  }, [from, routes, to]);
+
+  const routeVectors = useMemo(
+    () =>
+      allRoutes.map((route) => ({
+        ...route,
+        kind: route.kind ?? "secondary",
+        fromV: latLngToVec3(route.from, GLOBE_RADIUS),
+        toV: latLngToVec3(route.to, GLOBE_RADIUS),
+      })),
+    [allRoutes],
+  );
+
+  const endpointVectors = useMemo(() => {
+    const map = new Map<
+      string,
+      { position: Vec3; featured: boolean; name: string }
+    >();
+    for (const route of routeVectors) {
+      const kind = route.kind ?? "secondary";
+      for (const [place, position] of [
+        [route.from, route.fromV],
+        [route.to, route.toV],
+      ] as const) {
+        const key = `${place.name}:${place.lat.toFixed(4)},${place.lng.toFixed(4)}`;
+        const previous = map.get(key);
+        map.set(key, {
+          name: place.name,
+          position,
+          featured: previous?.featured === true || kind === "primary",
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [routeVectors]);
 
   /**
    * v0.7（v1.79 修 v1.78 audit P2-3 后续清理）：相机 / target Y 偏移已撤销。
@@ -554,17 +648,25 @@ function SceneInner({
           避免文字卡压球，3D 场景自身保持居中便于拖拽 */}
       <AutoRotate enabled={autoRotate} speed={0.06}>
         <Globe />
-        <Arc from={fromV} to={toV} progress={progress} />
-        <Endpoint
-          position={fromV}
-          progress={progress}
-          reducedMotion={reducedMotion}
-        />
-        <Endpoint
-          position={toV}
-          progress={progress}
-          reducedMotion={reducedMotion}
-        />
+        {routeVectors.map((route) => (
+          <Arc
+            key={`${route.from.name}-${route.to.name}-${route.kind}`}
+            from={route.fromV}
+            to={route.toV}
+            kind={route.kind}
+            progress={progress}
+            reducedMotion={reducedMotion}
+          />
+        ))}
+        {endpointVectors.map((endpoint) => (
+          <Endpoint
+            key={`${endpoint.name}-${endpoint.position.join(",")}`}
+            position={endpoint.position}
+            progress={progress}
+            reducedMotion={reducedMotion}
+            featured={endpoint.featured}
+          />
+        ))}
       </AutoRotate>
 
       {/* 桌面拖拽：限制 polar angle 让用户不能把球倒过来；阻尼让回弹自然。
@@ -589,6 +691,7 @@ function SceneInner({
 export interface GlobeDistanceSceneProps {
   from: LatLng;
   to: LatLng;
+  routes?: readonly GlobeRoute[] | undefined;
   /** 滚动进度 0..1（StoryPoemScroller 写到 .globe-beat[data-progress]，
    *  本组件读 dataset 同步到 React state；为简化先内置 IO + scroll listener。 */
   progress?: number;
@@ -597,6 +700,7 @@ export interface GlobeDistanceSceneProps {
 export function GlobeDistanceScene({
   from,
   to,
+  routes,
   progress,
 }: GlobeDistanceSceneProps): React.ReactElement {
   /**
@@ -685,6 +789,7 @@ export function GlobeDistanceScene({
           <SceneInner
             from={from}
             to={to}
+            routes={routes}
             progress={effectiveProgress}
             reducedMotion={reducedMotion}
           />

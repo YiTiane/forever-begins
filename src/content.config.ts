@@ -21,7 +21,7 @@
  *   - `meta`      : 婚礼基本信息（wedding.json：日期 / 地点 / 三坐标系 / 诗句）
  *   - `story`     : 故事锚点（anchor.json：2019-01-27 重庆西南大学）
  *   - `storyPoem` : §2 爱情独白长卷（main.json：12 beats × poem lines + photos）⭐ v1.53 新增
- *   - `journey`   : 地理叙事（long-distance.json：乌鲁木齐 ↔ 墨尔本；可选 cities.json 5 城归档）
+ *   - `journey`   : 地理叙事（long-distance.json：主线乌鲁木齐 ↔ 墨尔本 + routes[] 旅行网络）
  *   - `cats`      : 三只猫家庭（family.json：Berry / 荔枝 / 小宝）
  *   - `series`    : 5 photo series（snow / garden / wooden-door / pearl / retro）
  *
@@ -148,7 +148,7 @@ const story = defineCollection({
 // ─────────────────────────────────────────────────────────────────
 // journey · 地理叙事
 // 兼容两种 entry shape：
-//   ① long-distance.json — { from, to, distanceKm? }
+//   ① long-distance.json — { from, to, distanceKm?, routes? }
 //   ② cities.json (可选历史归档) — { cities: [...] }
 // 用 .refine() 校验"二选一"约束，不引入 discriminator 字段污染数据。
 // ─────────────────────────────────────────────────────────────────
@@ -166,6 +166,15 @@ const journey = defineCollection({
       from: journeyPlace.optional(),
       to: journeyPlace.optional(),
       distanceKm: z.number().positive().optional(),
+      routes: z
+        .array(
+          z.object({
+            from: journeyPlace,
+            to: journeyPlace,
+            kind: z.enum(["primary", "secondary"]).default("secondary"),
+          }),
+        )
+        .optional(),
       paragraph: z.string().optional(),
       // cities.json 形态（v1.22 后默认不创建；保留 schema 以容纳未来归档）
       cities: z
@@ -390,7 +399,7 @@ const EXPECTED_BEAT_LAYOUTS: readonly (PhotoPoemLayout | null)[] = [
   "diagonal-gaze", // 02 · snow_14 + snow_15 对视斜线
   "radial-mask", // 03 · snow_05 居中柔焦晕散
   "anchor-single", // 04 · snow_11 日期锚点
-  "anchor-single", // 05 · snow_13 携手 [N] 天 (CountUp 留独立小刀)
+  "anchor-single", // 05 · snow_13 携手 [N] 天（v1.74 起 CountUp 已实接入）
   "vignette", // 06 · snow_08 夜色
   "overlap", // 07 · snow_09 契合
   "reveal", // 08 · snow_12 卸下防备

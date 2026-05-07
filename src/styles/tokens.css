@@ -76,8 +76,6 @@
   --color-mist: oklch(78.5% 0.015 90);
   /* HEX #2A2A26 · 极少量黑（仅强对比正文） */
   --color-ink: oklch(20% 0.005 95);
-  /* HEX #1F2118 · Dark mode 基础底（深橄榄墨） */
-  --color-paper-night: oklch(15.5% 0.012 115);
 
   /* —— 字号阶梯（mobile 第一档默认 · DESIGN §2.3.5 v2.21 三档表第一列） —— */
   /* ⛔ 任何 vw / 任何 prefers 切档都是回归，违反请回滚 */
@@ -176,7 +174,6 @@
   --c-ivory: var(--color-ivory);
   --c-mist: var(--color-mist);
   --c-ink: var(--color-ink);
-  --c-paper-night: var(--color-paper-night);
 
   /* —— 语义角色 token（主题切换面）—— */
   --bg: var(--color-paper);
