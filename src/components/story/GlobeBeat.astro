@@ -164,18 +164,20 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
   }
 
   /* 文字浮卡：居中偏下，sage→honey 渐变弧线呼应；backdrop-blur 与 vignette 同语
-     v1.76（v1.75 audit 视觉诉求修）：宽屏下原 margin-bottom 4.5rem + padding
-     1.25rem 让卡片顶部上探到地球下半区，墨尔本端点（lat -37.8）被卡片背板
-     遮挡。改 margin-bottom 1rem-1.75rem + padding 1rem 1.5rem（顶部缩 ~50px），
-     卡片向下贴近 viewport 底，墨尔本端点完整露出；poem 字号与行距不动，
-     文案视觉权重保留。 */
+     v1.76（v1.75 audit 视觉诉求修）：margin-bottom 4.5rem→1.75rem + padding
+     1.25rem→1rem
+     v1.78（v1.77 audit P2-4 修）：把 max-width 540px → 380px，卡片更窄；
+     背板宽度从横跨大半画面收到只占 globe 投影下方一束 → 不再"切掉球体下缘"，
+     视觉上更像"挂在地球底下的小标牌"。globe 上下都留更多透明区，构图保留
+     原本的圆形主体感。文字默认两行（poem 1 行 + 距离 1 行）走 wrap，超 380px
+     的诗句自动换行。 */
   .globe-text {
     grid-area: 1 / 1;
     align-self: end;
     justify-self: center;
-    width: min(540px, 90%);
+    width: min(380px, 84%);
     margin-bottom: clamp(0.75rem, 2.5vh, 1.75rem);
-    padding: 1rem 1.5rem;
+    padding: 0.85rem 1.25rem;
     background: rgba(245, 240, 230, 0.78);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);

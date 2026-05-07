@@ -1,26 +1,33 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.5 · v1.77 wide 底部安全区 + scene Y offset）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.6 · v1.78 procedural 陆地 + 设计同步）
  *
- * v0.5 新增（v1.77 修 v1.76 audit P2 globe 端点仍被卡片遮）：
- *   - **wide 模式 globe 整体上移 0.14 R 给文字浮卡留底部安全区**：v1.76 用
- *     CSS margin-bottom 收紧只能把卡片往下推一点点，但 .globe-stage 是 grid
- *     1×1 全 overlay，globe 仍居中 → 1920×1080 下 Melbourne (lat -37.8) 投影到
- *     canvas y≈750 与卡片顶 y≈762 几乎贴边；任何 viewport 高度 / camera state
- *     变化都可能让二者再次相撞，"fixed margin-bottom 不能跨 viewport 保证端点
- *     可见"。
- *   - 改：在 SceneInner 内按 canvas aspect 计算 sceneOffsetY；wide (aspect ≥ 1)
- *     给 0.14 × R = 0.14 单位的世界空间上移，narrow (aspect < 1) 不偏移（窄
- *     屏 sticky 已释放，文字卡走自然流不与 globe overlay 重叠）
- *     - 把 <Globe>/<Arc>/<Endpoint × 2> 全包在 `<group position={[0, sceneOffsetY, 0]}>`
- *       内，AutoRotate 仍在 group 内部 → 旋转轴跟随 globe 中心（不是世界原点）
- *     - <OrbitControls target={[0, sceneOffsetY, 0]}>：drag 围绕 globe 视觉中心
- *       做球面 orbit，拖拽手感不变
- *   - 实测（1920×1080 wide）：Melbourne y_world = 0.14 - 0.61 = -0.47，
- *     NDC ≈ -0.385，canvas y ≈ 692；卡片顶 y ≈ 762，净间距 70px ≫ v1.76 的
- *     8px，跨 viewport 高度变化都保住
- *   - 视觉契约：globe 中心从画面中央上移到约 38% 高度处；OrbitControls 同步
- *     让拖拽手感不破坏；globe 顶部仍距 canvas 顶 ≥ 35px (1.14/1.22 ≈ 0.93 NDC)，
- *     不贴边
+ * v0.6 新增（v1.78 修 v1.77 audit P2-3 globe 不是地图只是球）：
+ *   - **<Globe> 用 onBeforeCompile 注入 procedural fbm 大陆涂层**：MeshStandardMaterial
+ *     的 fragment shader 加 4-octave value-noise 和 smoothstep 阈值，object-space
+ *     normal → 经纬度 → 通过 cos/sin(lng) 平面投影避 seam，得到 organic 陆地/
+ *     海洋斑块。AutoRotate 旋转球时 object-space 不动，"陆地"跟着球转（视觉上
+ *     "地球转动陆地不动"，符合直觉）。
+ *   - 这是过渡方案：fbm 给的是抽象有机斑块，看起来像水彩大陆涂层而不是真实
+ *     地图。Phase 3 push `globe-watercolor-2k.jpg` equirectangular 贴图后，
+ *     onBeforeCompile 一行换成 useTexture 即可下线。
+ *
+ * v0.5 新增（v1.77 修 v1.76 audit P2 globe 端点仍被卡片遮，v1.78 docblock 收口）：
+ *   - **wide 模式相机 + OrbitControls target 一起 Y 下移给文字浮卡留底部安全区**：
+ *     v1.76 用 CSS margin-bottom 收紧只能把卡片往下推一点点，"fixed margin-bottom
+ *     不能跨 viewport 保证端点可见"。
+ *   - 实现（v1.78 同步 docblock）：globe 留世界原点 (0,0,0)，**ResponsiveCamera
+ *     把 camera.position.y 设为 -0.14 R**（仅 wide）+ <OrbitControls
+ *     target={[0, -0.14R, 0]}> 同步偏移；globe 相对 target 永远偏上 → 投影到
+ *     canvas 上方。narrow (aspect < 1) y=0 不偏移
+ *   - 拖拽手感：OrbitControls 围绕 target 做 orbit，globe 在世界原点不动 →
+ *     相对 target 永远偏上 → 拖拽期间 globe 也保持画面上方，**不破坏拖拽**
+ *   - 早期 v1.77 docblock 描述 "SceneInner 包 group position 把 globe 整体
+ *     上移"是**未采用的方案**（group 上移会让 globe 中心 = OrbitControls
+ *     target，反而 centered 不偏移），实际实现是相机 / target 偏移、globe 留
+ *     世界原点。v1.78 修 v1.77 audit P3 把这段 docblock 同步到真实实现
+ *   - 实测（1920×1080 wide）：Melbourne y_world = -0.61；相对 target (0, -0.14, 0)
+ *     的 y = -0.47；NDC ≈ -0.385；canvas y ≈ 692；卡片顶 y ≈ 762，净间距
+ *     70px ≫ v1.76 的 8px
  *
  * v0.4 新增（v1.74 修 v1.73 audit P3，v1.75 收口契约）：
  *   - Endpoint useFrame 改用本地 elapsedRef 累加 dt，不再读 state.clock —— Three.js
@@ -113,20 +120,107 @@ const COLOR_PAPER = new THREE.Color("#f5f0e6");
 const COLOR_HONEY = new THREE.Color("#c69d4e");
 
 /* ─────────────────────── Globe sphere ─────────────────────── */
+/**
+ * v0.6（v1.78 修 v1.77 audit P2-3）：globe 表面加 procedural fbm land/ocean
+ * 着色，用 onBeforeCompile 把 4-octave value-noise + smoothstep 阈值塞到
+ * MeshStandardMaterial 的 fragment shader，没有外部贴图依赖。
+ *
+ * 用 **object-space normal** 作为 3D 坐标（球的 normal 等于归一化位置），通过
+ * sin/cos(longitude) 投影到 2D noise 域 → 经度方向自然 wrap，无 seam；纬度
+ * 方向作为额外维度让 fbm 在南北也有变化。AutoRotate 旋转球时 object-space 不
+ * 动，"陆地"跟着球转（视觉上"地球转动陆地不动"，符合直觉）。
+ *
+ * 这是过渡方案，**不是真实大陆地理**：fbm 给的是抽象有机斑块，看起来像水彩
+ * 大陆涂层而不是真实地图。Phase 3 push `globe-watercolor-2k.jpg` equirectangular
+ * 贴图后，这套 onBeforeCompile 一行换成 `map={useTexture(...)}` 即可下线。
+ */
 function Globe(): React.ReactElement {
+  const material = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, // base 1，乘后由 fragment 内 mix 给真实色
+      roughness: 0.85,
+      metalness: 0.05,
+      emissive: COLOR_SAGE,
+      emissiveIntensity: 0.05,
+    });
+
+    mat.onBeforeCompile = (shader) => {
+      // VERTEX：把 object-space normal 当 varying 传给 fragment
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+varying vec3 vObjNormal;`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+vObjNormal = normal;`,
+        );
+
+      // FRAGMENT：注入 hash + value-noise + fbm + 在 color_fragment 后覆写 diffuseColor
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+varying vec3 vObjNormal;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float noise2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 4; i++) {
+    v += a * noise2(p);
+    p *= 2.0;
+    a *= 0.5;
+  }
+  return v;
+}`,
+        )
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+// object-space normal → 经纬度（弧度），把 cos/sin(lng) 当 2D 平面坐标避 seam
+float lat = asin(clamp(vObjNormal.y, -1.0, 1.0));
+float lng = atan(vObjNormal.z, vObjNormal.x);
+vec2 p = vec2(cos(lng) * 1.6 + lat * 0.6, sin(lng) * 1.6 + lat * 0.4);
+float nLand = fbm(p * 1.4);
+float landMask = smoothstep(0.46, 0.60, nLand);
+vec3 oceanColor = vec3(0.10, 0.18, 0.14); // 深 sage，海洋
+vec3 landColor  = vec3(0.30, 0.44, 0.32); // 中 sage，陆地
+diffuseColor.rgb = mix(oceanColor, landColor, landMask);`,
+        );
+    };
+
+    return mat;
+  }, []);
+
+  // mat dispose on unmount 防内存泄漏
+  useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   return (
-    <mesh>
+    <mesh material={material}>
       <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
-      {/* v0.1 用 standard material；roughness 偏高让漫反射柔和，金属度 0；
-          光下偏纸白，背光偏深墨绿 —— 接近水彩 wash 的视觉 fallback。
-          texture 接入：将来在此换 <meshStandardMaterial map={texture} ... /> */}
-      <meshStandardMaterial
-        color={COLOR_GLOBE}
-        roughness={0.85}
-        metalness={0.05}
-        emissive={COLOR_SAGE}
-        emissiveIntensity={0.06}
-      />
     </mesh>
   );
 }

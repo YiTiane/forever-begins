@@ -410,13 +410,34 @@ const anchorDate = main.data.anchor_date;
       beat.style.setProperty("--p-text", String(pText));
     }
 
+    /**
+     * v1.78（v1.77 audit P2-1 修）：hold plateau —— animation 在 `HOLD_PHASE`
+     * 之前线性映射 0→1，之后钉住 1 直到 sticky release。
+     *
+     * 旧实现：把整个 scroll spacer 直接 0→1 线性映射，p≈1 发生在 sticky 即将
+     * 释放、下一个 beat 进入视口的同一瞬间 → 完成帧不稳定，下一 beat 已经
+     * 半进入视口，"完成态"无可观测 hold zone，影响照片大小 / 间距的逐张微调
+     *
+     * 新实现：HOLD_PHASE = 0.6 —— scroll 走过 60% spacer 时动画已到 p=1，剩
+     * 40% spacer 全部 hold 在 p=1；这块 hold zone 也覆盖 sticky release 区
+     * （release 区只占 spacer 末段 ~25-35%），所以下一 beat 进入视口时本 beat
+     * 的最终态已稳定持续了 5-15% spacer 距离的视觉时间，肉眼能清晰看到
+     * "完成构图"
+     *
+     * 副作用：动画整体节奏变快（原 100% scroll 走 0→1，现在 60% 走完），但
+     * 因为 sticky 100vh 期间 scroll 物理距离不变，动画线性"压缩"到前 60%
+     * 后视觉感觉更紧凑、更有目的性
+     */
+    const HOLD_PHASE = 0.6;
     function computeProgress(beat: HTMLElement): number {
       const rect = beat.getBoundingClientRect();
       const vh = window.innerHeight;
       const scrollable = beat.offsetHeight - vh;
       if (scrollable <= 0) return 1;
       const scrolled = -rect.top;
-      return clamp01(scrolled / scrollable);
+      const raw = clamp01(scrolled / scrollable);
+      // raw 0..HOLD_PHASE → 0..1；raw HOLD_PHASE..1 → 1（hold plateau）
+      return raw < HOLD_PHASE ? raw / HOLD_PHASE : 1;
     }
 
     /**
@@ -670,14 +691,23 @@ const anchorDate = main.data.anchor_date;
       );
       if (srSibling) srSibling.textContent = String(target);
 
+      // v1.78（v1.77 audit P2-2 修）：visible span 也立即覆写为 client-time N，
+      // 不再保留 SSR build-time 值。
+      // 旧实现：visible span 在 IO 入场前一直显示 SSR 渲染时算的 N（如 build-time
+      // 2655）→ 用户从 beat 04 滚向 beat 05 时，beat 05 的"上半"先半露，看到的
+      // 是 stale 2655；满帧进入视口 IO 触发动画，0→2657（client-time）。前后两
+      // 个数字（2655 vs 2657）让访客困惑，特别是站点跨过 +08:00 午夜 / 部署有
+      // 段时间没重新跑 build 时差距更大
+      // 新实现：script 加载完立即把 client-time N 写进 visible span，stale SSR
+      // 值再也不进入用户视野。CountUp 仍在 IO 入场时跑：动画把 textContent 从
+      // "0" → target 走过 → 用户看到的是"client-time N → 0 → 数到 client-time
+      // N"，过渡值短暂的 0 是动画的一部分，不是 stale 数字
+      span.textContent = String(target);
+
       if (prefersReduced) {
-        // reduced-motion：visual span 直接钉到终值，不进 IO 动画路径
-        span.textContent = String(target);
+        // reduced-motion：visual span 已是终值，不进 IO 动画路径
         meta.set(span, { target, animated: true });
       }
-      // 非 reduced：保留 SSR 写的 build-time 数字（visual span），CountUp 入场
-      // 时从 0 起跑到 target；entrant 之前看到的是 build-time N（≈ client-time N，
-      // 用户首次进入页面到滚到 beat 05 的间隔不足以让两者差超 1 天）
     });
 
     if (prefersReduced) return; // 全部已写终值，无需 IO
