@@ -65,6 +65,7 @@
 import { getCollection } from "astro:content";
 import CdnImage from "@/components/CdnImage.astro";
 import PoemBeat from "@/components/story/PoemBeat.astro";
+import GlobeBeat from "@/components/story/GlobeBeat.astro";
 
 interface Props {
   /** 渲染前 N 个 photo-poem beat。v1.62 默认 10（覆盖全部 photo-poem）；
@@ -92,6 +93,13 @@ const photoPoemBeats = main.data.beats
 // 接 StarCarouselFinale 时统一接缝（不会有"修组件 vs 修 JSON"两条改路）。
 const finaleBeat = main.data.beats.find((b) => b.kind === "finale");
 const finaleLines = finaleBeat?.lines ?? [];
+
+// v1.71 §2 batch 7：globe beat 数据来自 schema beat 11（kind="globe"）。
+// schema 已严约束 photos: [] / layout: null / lines: 必填；GlobeBeat.astro
+// 内部再去 journey/long-distance.json 拉 from/to/distanceKm（DESIGN §15.1
+// 单一源契约：地球场景的"来源/目的/距离"事实只在 long-distance.json 一处）。
+const globeBeat = main.data.beats.find((b) => b.kind === "globe");
+const globeLines = globeBeat?.lines ?? [];
 
 /*
  * v1.54（v1.53 P2 #1 修）：删除可见的 deferred-beats 占位区。v1.53 把
@@ -126,10 +134,11 @@ const finaleLines = finaleBeat?.lines ?? [];
     ))
   }
 
-  {/* —— 后续 batch 挂点（v1.54 之后不再渲染可见占位） —— */}
   {
-    /* batch 3 · §2.B GlobeDistanceScene 将插在这里，对应 main.json beats[10]（id="11" kind="globe"）*/
+    /* —— §2.B GlobeDistanceScene · v1.71 batch 7 接入（beat 11 · kind="globe"） —— */
   }
+  {globeLines.length > 0 && <GlobeBeat lines={globeLines} />}
+
   {
     /* batch 4 · §2.C StarCarouselFinale 将插在这里，对应 main.json beats[11]（id="12" kind="finale"）*/
   }

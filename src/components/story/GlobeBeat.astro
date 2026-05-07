@@ -1,0 +1,261 @@
+---
+/**
+ * GlobeBeat.astro · §2.B 唯一 3D 地球高潮 · 包装 GlobeDistanceScene React 岛
+ *   v0.1（Phase 2 §2 batch 7 · v1.71）
+ *
+ * 数据流（DESIGN §15.1 单一源）：
+ *   - poem lines / kind=globe 来自 src/content/story-poem/main.json beat 11
+ *   - from / to / distanceKm 来自 src/content/journey/long-distance.json
+ *   - 两源在本组件 props 与 collection 处合流，不在 React 岛里再 fetch
+ *
+ * 渲染机制：
+ *   - 外层 .globe-beat 给 hash 锚 #beat-11-heading（与 PoemBeat 同款契约）
+ *   - 内层 .globe-stage：wide 模式 sticky 100vh / portrait 自然流式
+ *   - <GlobeDistanceScene client:visible /> 仅在视口内 hydrate，避免 R3F bundle
+ *     在初屏进入 critical path
+ *   - 文字浮卡 .globe-text 居中或贴底，带 backdrop-blur，与 vignette 同语
+ *   - reduced-motion：fallback 渲染纯静态文字（"乌鲁木齐 ↔ 墨尔本 · 10,755 公里"），
+ *     <noscript> 与 .globe-canvas-root[data-fallback] 都接住
+ *
+ * a11y：
+ *   - section aria-labelledby 指向 sr-only h3（与 PoemBeat 同款契约）
+ *   - canvas 容器 role="img" aria-label 含距离数字 / 城市名
+ *   - 动效信息（脉冲 / 弧线）不向 AT 暴露——AT 只朗读 alt 文字
+ *
+ * NOT in this batch（v0.2 留刀）：
+ *   - 2K 水彩贴图 globe-watercolor-2k.jpg（misc CDN 仓 Phase 3 资产 push 后接）
+ *   - Bloom + Vignette + ToneMapping postprocessing
+ *   - 距离数字 CountUp（简化先静态渲染；motion polish 批接 IO + raf ease-out）
+ *   - 城市标签 3D <Html> 锚定（先用 2D 侧栏避免 reflow / a11y 复杂度）
+ */
+import { getCollection } from "astro:content";
+import { GlobeDistanceScene } from "@/components/story/GlobeDistanceScene";
+
+interface Props {
+  /** main.json beat 11 的 lines（"松开刹那，" "才见已过万重山。"） */
+  lines: readonly string[];
+}
+
+const { lines } = Astro.props;
+
+const journeyEntries = await getCollection("journey");
+const longDistance = journeyEntries.find((e) => e.id === "long-distance");
+if (!longDistance) {
+  throw new Error(
+    "GlobeBeat.astro: src/content/journey/long-distance.json missing — schema 已严约束 from/to/distanceKm",
+  );
+}
+const { from, to, distanceKm } = longDistance.data;
+if (!from || !to || distanceKm === undefined) {
+  throw new Error(
+    "GlobeBeat.astro: long-distance.json 缺 from/to/distanceKm —— DESIGN §15.1 单一源契约",
+  );
+}
+
+// 距离格式化：10755 → "10,755"
+const distanceLabel = distanceKm.toLocaleString("en-US");
+
+const headingId = "beat-11-heading";
+const ariaHeadingId = "beat-11-aria-heading";
+
+const ariaLabel = `从 ${from.name} 到 ${to.name}，球面大圆距离 ${distanceLabel} 公里`;
+---
+
+<section
+  class="globe-beat"
+  id={headingId}
+  data-beat-id="11"
+  data-kind="globe"
+  aria-labelledby={ariaHeadingId}
+>
+  <div class="globe-stage">
+    <h3 id={ariaHeadingId} class="sr-only">第 11 段 · {lines[0]}</h3>
+
+    <div class="globe-canvas" role="img" aria-label={ariaLabel}>
+      <GlobeDistanceScene
+        from={{ lat: from.lat, lng: from.lng }}
+        to={{ lat: to.lat, lng: to.lng }}
+        client:visible
+      />
+    </div>
+
+    <div class="globe-text">
+      <p class="globe-line cn-kaishu">
+        {
+          lines.map((line, i) => (
+            <span class={`globe-text-line line-${i}`}>{line}</span>
+          ))
+        }
+      </p>
+      <p class="globe-distance">
+        <span class="globe-cities">{from.name} ↔ {to.name}</span>
+        <span class="globe-km">
+          <span class="globe-km-num">{distanceLabel}</span>
+          <span class="globe-km-unit">公里</span>
+        </span>
+      </p>
+    </div>
+
+    <noscript>
+      <p class="globe-fallback">
+        从 {from.name} 到 {to.name}，球面大圆距离 {distanceLabel} 公里。
+      </p>
+    </noscript>
+  </div>
+</section>
+
+<style>
+  .globe-beat {
+    position: relative;
+    /* 与 .poem-beat 同款 hash-anchor 契约 */
+    scroll-margin-top: 0;
+    /* wide 模式给 sticky 100vh 一段 spacer，让滚动有"经过地球"的节奏；
+       portrait/compact 退化为自然高度（在 media query 内覆盖） */
+    min-height: 130vh;
+  }
+
+  .globe-stage {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    place-items: center;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    box-sizing: border-box;
+  }
+
+  .globe-stage .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* canvas 容器：占满 stage，z 在文字之下 */
+  .globe-canvas {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  /* React 岛根（GlobeDistanceScene 渲染出 .globe-canvas-root）：
+     强制 100% 高，让 R3F Canvas 自动撑满（Canvas 默认是 100% 容器） */
+  .globe-canvas :global(.globe-canvas-root) {
+    width: 100%;
+    height: 100%;
+    /* 无背景 → 透明 alpha；让站点 page 背景透出，与 §2 章节呼吸一致 */
+  }
+
+  /* 文字浮卡：居中偏下，sage→honey 渐变弧线呼应；backdrop-blur 与 vignette 同语 */
+  .globe-text {
+    grid-area: 1 / 1;
+    align-self: end;
+    justify-self: center;
+    width: min(540px, 90%);
+    margin-bottom: clamp(2rem, 6vh, 4.5rem);
+    padding: 1.25rem 1.5rem;
+    background: rgba(245, 240, 230, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    z-index: 2;
+    color: var(--c-olive-ink);
+  }
+
+  .globe-line {
+    margin: 0 0 0.85rem;
+    font-size: 1.5rem;
+    line-height: 1.85;
+    font-weight: 300;
+  }
+  .globe-text-line {
+    display: block;
+  }
+
+  .globe-distance {
+    margin: 0;
+    font-size: 1.125rem;
+    line-height: 1.6;
+    color: var(--c-sage-deep);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: center;
+  }
+
+  .globe-cities {
+    color: var(--c-sage);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  .globe-km {
+    color: var(--c-honey, #c69d4e);
+    font-size: 1.65rem;
+    line-height: 1.2;
+    font-weight: 400;
+  }
+  .globe-km-num {
+    /* 数字 cn-kaishu 不合适——保持站点 default 衬线/sans 字族 */
+    margin-right: 0.35em;
+  }
+  .globe-km-unit {
+    font-size: 1rem;
+    color: var(--c-sage);
+  }
+
+  .globe-fallback {
+    grid-area: 1 / 1;
+    align-self: center;
+    justify-self: center;
+    color: var(--c-olive-ink);
+    text-align: center;
+    z-index: 2;
+  }
+
+  /* portrait（小平板 / 大手机竖屏）：释放 sticky，回归自然流式 */
+  @media (max-width: 899px) {
+    .globe-beat {
+      min-height: auto;
+    }
+    .globe-stage {
+      position: relative;
+      top: auto;
+      height: auto;
+      min-height: 80vh;
+      padding-block: clamp(2rem, 6vh, 4rem);
+    }
+    .globe-canvas {
+      min-height: 60vh;
+    }
+  }
+
+  /* compact（≤540 phone）：进一步缩，stage padding 更紧 */
+  @media (max-width: 540px) {
+    .globe-stage {
+      padding: 1rem 0.75rem;
+      gap: 1rem;
+    }
+    .globe-canvas {
+      min-height: 50vh;
+    }
+    .globe-line {
+      font-size: 1.25rem;
+    }
+    .globe-km {
+      font-size: 1.4rem;
+    }
+  }
+</style>
