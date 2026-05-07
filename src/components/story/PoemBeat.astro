@@ -44,7 +44,7 @@
  *   - .poem-beat 加显式 `scroll-margin-top: 0`（未来若加 fixed header，此处一改即可）。
  *
  * v1.1 新增（v1.66 修 v1.65 audit P2-B）：4 套 single-photo layout 的 textPlacement 分化
- *   - overlap → overlay-center（横幅 ghost 收敛 + 单行短句浮卡居中）
+ *   - overlap → below（v1.80 改回 photo 下方短句，避免浮卡遮挡人物主体）
  *   - reveal → overlay-top（竖幅 + clip-path 展开 + 文字浮顶）
  *   - pearl → overlay-top（竖幅 + 高光 sweep + 文字浮顶）
  *   - wooden wide → side-text-photo（信件式 letterbox：诗左 + 木门右）
@@ -289,7 +289,7 @@ const headingLabel = firstLine.replace(/\s*\[N\]\s*天/, "的每一天");
  */
 function getSsrTextPlacement(l: BeatLayout | undefined): string {
   if (l === "vignette") return "overlay-bottom";
-  if (l === "overlap") return "overlay-center";
+  if (l === "overlap") return "below";
   if (l === "reveal" || l === "pearl") return "overlay-top";
   if (l === "parallax-pair" || l === "diagonal-gaze") return "between";
   return "below";
@@ -495,10 +495,10 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     padding: clamp(3rem, 7vh, 5rem) 0;
   }
   .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"] {
-    min-height: 145vh;
+    min-height: 170vh;
   }
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"] {
-    min-height: 152vh;
+    min-height: 175vh;
   }
   .poem-beat[data-story-mode="wide"][data-layout="radial-mask"],
   .poem-beat[data-story-mode="wide"][data-layout="anchor-single"],
@@ -507,7 +507,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-beat[data-story-mode="wide"][data-layout="reveal"],
   .poem-beat[data-story-mode="wide"][data-layout="wooden"],
   .poem-beat[data-story-mode="wide"][data-layout="pearl"] {
-    min-height: 125vh;
+    min-height: 155vh;
   }
 
   /* ────────────────────────────────────────────────────────────── */
@@ -1042,35 +1042,9 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* side-* 模式，让 textPlacement 真正参与构图。                       */
   /* ──────────────────────────────────────────────────────────────  */
 
-  /* —— overlap 单行短诗 → overlay-center（夜色 ghost 收敛之上浮卡） ——
-     v1.79（v1.78 audit P2-1 修）：删 `.poem-stage { position: relative }` 覆盖。
-     原意"给 absolute text 当 containing block"已由 baseline `.poem-stage`
-     的 `position: sticky` 满足（sticky 已建立 containing block）；relative
-     覆盖反而破了 sticky → HOLD_PHASE plateau 在 overlap/reveal/pearl 上失效，
-     完成帧滑过 release 区。 */
-  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
-    .poem-photos {
-    width: var(--photo-w);
-    max-width: var(--photo-w);
-    height: var(--photo-h);
-    position: relative;
-  }
-  .poem-beat[data-layout="overlap"][data-text-placement="overlay-center"]
-    .poem-text {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) translateY(calc((1 - var(--p, 0)) * 6px));
-    width: min(var(--text-max-w), 76%);
-    z-index: 4;
-    padding: 1rem 1.75rem;
-    background: rgba(245, 240, 230, 0.7);
-    backdrop-filter: blur(7px);
-    -webkit-backdrop-filter: blur(7px);
-    border-radius: var(--radius-sm);
-    text-align: center;
-    color: var(--c-olive-ink);
-  }
+  /* overlap v1.80：用户宽屏截图审计指出 overlay-center 浮卡遮挡人物。
+     solver 已改回 data-text-placement="below"，文字跟随 baseline 成为 photo
+     下方短句 caption；这里不再写 absolute overlay 规则。 */
 
   /* —— reveal 竖幅展开 → overlay-top（文字浮在顶端，photo 由内向外露出） ——
      v1.79（v1.78 audit P2-1 修）：同 overlap，删 `.poem-stage { position: relative }`

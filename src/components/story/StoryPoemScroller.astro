@@ -50,7 +50,7 @@
  *   - 接入 getStoryLayoutMode(vw, vh) 单一布局模式来源（compact/portrait/wide）
  *   - 在 applyLayout 内把判定结果写入 `data-story-mode` 给 CSS 跟随
  *   - portrait 模式下 .poem-stage 释放 sticky / 100vh，回归自然纵向流式构图
- *   - finale "未完待续" 弱占位升级为 Pearl_04 主海报 + cn-kaishu 收束句的 .story-end-cap 大画面
+ *   - finale 弱占位升级为 Pearl_04 主海报 + cn-kaishu 收束句的 .story-end-cap 大画面
  *
  * v0.5 新增（v1.59 P2 #1+#2 修）：接入 src/lib/story/beatLayoutSolver.ts
  *   纯函数，把"viewport × layout × photo aspectRatio × textHeight" 求解为 CSS 自定义属性
@@ -81,7 +81,7 @@
  *   ✓ [N] 天 CountUp (v1.74-v1.75)：本 wrapper 第二个 <script> IIFE 单 IO 监
  *     visible .days-together span，入场动画 0 → client-time N over 1.4s ease-out；
  *     visible span aria-hidden + .sr-only sibling 拿稳定终值给 AT
- *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉) + "To be continued"
+ *   ✓ Story end cap：Pearl_04 主海报 + finale.lines (从 schema 拉)
  *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat /
  *     [N] 天 visible aria-hidden + sr-only stable
  *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe Canvas frameloop
@@ -201,7 +201,7 @@ const anchorDate = main.data.anchor_date;
     /* —— Story end cap（v1.60 P2 #3 修）：临时叙事收束 ——
        v1.59 之前 §2 在最后一个 beat 后就是空白背景，访客滚过最后一个 beat 后落到
        看不到任何内容的纯背景区。等 batch 4-6 把 globe / finale 接上之后这块自然
-       被取代；本批先放一个克制的 "未完待续" 收束，让滚动有终点感。*/
+       被取代；本批先放 Pearl_04 主海报 + schema finale.lines，让滚动有终点感。*/
   }
   <div class="story-end-cap" aria-label="故事临时收束">
     <div class="story-end-card">
@@ -227,7 +227,6 @@ const anchorDate = main.data.anchor_date;
         />
       </figure>
       <div class="story-end-copy">
-        <p class="story-end-kicker latin-roman">To be continued</p>
         {/* v1.62 P2-B 修：finale 文案从 schema beat 12 拉，不再硬编码 */}
         {
           finaleLines.map((line) => (
@@ -273,7 +272,7 @@ const anchorDate = main.data.anchor_date;
 
   /* ──────────────────────────────────────────────────────────────  */
   /* story end cap（v1.60 P2 #3）：最后一个 beat 后的叙事收束           */
-  /* 视觉：一行霞鹜文楷"未完待续"，宽字距，柔色 sage，不抢戏              */
+  /* 视觉：Pearl_04 主海报 + schema finale.lines，不再显示英文 kicker       */
   /* min-height 60vh 让用户滚到最后能落在一个 intentional 视觉，不再    */
   /* 看到纯背景空屏；后续 batch 4-6 接 globe/finale 时自然替代。       */
   /* ──────────────────────────────────────────────────────────────  */
@@ -316,12 +315,6 @@ const anchorDate = main.data.anchor_date;
   .story-end-copy {
     text-align: left;
     color: var(--c-olive-ink);
-  }
-  .story-end-kicker {
-    margin: 0 0 1.25rem;
-    color: var(--c-sage);
-    font-size: clamp(1.1rem, 2.2vw, 1.7rem);
-    line-height: 1.1;
   }
   .story-end-line {
     margin: 0;
@@ -418,17 +411,17 @@ const anchorDate = main.data.anchor_date;
      * 释放、下一个 beat 进入视口的同一瞬间 → 完成帧不稳定，下一 beat 已经
      * 半进入视口，"完成态"无可观测 hold zone，影响照片大小 / 间距的逐张微调
      *
-     * 新实现：HOLD_PHASE = 0.6 —— scroll 走过 60% spacer 时动画已到 p=1，剩
-     * 40% spacer 全部 hold 在 p=1；这块 hold zone 也覆盖 sticky release 区
+     * 新实现：HOLD_PHASE = 0.5 —— scroll 走过 50% spacer 时动画已到 p=1，剩
+     * 50% spacer 全部 hold 在 p=1；这块 hold zone 也覆盖 sticky release 区
      * （release 区只占 spacer 末段 ~25-35%），所以下一 beat 进入视口时本 beat
-     * 的最终态已稳定持续了 5-15% spacer 距离的视觉时间，肉眼能清晰看到
+     * 的最终态已稳定持续了 15-25% spacer 距离的视觉时间，肉眼能清晰看到
      * "完成构图"
      *
-     * 副作用：动画整体节奏变快（原 100% scroll 走 0→1，现在 60% 走完），但
-     * 因为 sticky 100vh 期间 scroll 物理距离不变，动画线性"压缩"到前 60%
+     * 副作用：动画整体节奏变快（原 100% scroll 走 0→1，现在 50% 走完），但
+     * 因为 sticky 100vh 期间 scroll 物理距离不变，动画线性"压缩"到前 50%
      * 后视觉感觉更紧凑、更有目的性
      */
-    const HOLD_PHASE = 0.6;
+    const HOLD_PHASE = 0.5;
     function computeProgress(beat: HTMLElement): number {
       const rect = beat.getBoundingClientRect();
       const vh = window.innerHeight;

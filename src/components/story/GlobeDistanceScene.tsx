@@ -1,33 +1,19 @@
 /**
- * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.6 · v1.78 procedural 陆地 + 设计同步）
+ * GlobeDistanceScene.tsx · §2.B 唯一 3D 地球场景（v0.8 · v1.80 canvas landmask + safe-zone layout）
  *
- * v0.6 新增（v1.78 修 v1.77 audit P2-3 globe 不是地图只是球）：
- *   - **<Globe> 用 onBeforeCompile 注入 procedural fbm 大陆涂层**：MeshStandardMaterial
- *     的 fragment shader 加 4-octave value-noise 和 smoothstep 阈值，object-space
- *     normal → 经纬度 → 通过 cos/sin(lng) 平面投影避 seam，得到 organic 陆地/
- *     海洋斑块。AutoRotate 旋转球时 object-space 不动，"陆地"跟着球转（视觉上
- *     "地球转动陆地不动"，符合直觉）。
- *   - 这是过渡方案：fbm 给的是抽象有机斑块，看起来像水彩大陆涂层而不是真实
- *     地图。Phase 3 push `globe-watercolor-2k.jpg` equirectangular 贴图后，
- *     onBeforeCompile 一行换成 useTexture 即可下线。
+ * v0.8 新增（v1.80 修用户截图审计：纯噪声阈值读不成地图）：
+ *   - **<Globe> 用 browser-side canvas 生成 equirectangular landmask 贴图**：
+ *     不标国家、不画国界，只画低精度大陆轮廓 + 柔和 coastline stroke + 纸粒。
+ *     这是为了让截图能读成"世界地图"，而不是 v1.78/v1.79 的噪声 / blob
+ *     shader。Phase 3 push `globe-watercolor-2k.jpg` 后可把 createGlobeTexture
+ *     替换为 useTexture。
  *
- * v0.5 新增（v1.77 修 v1.76 audit P2 globe 端点仍被卡片遮，v1.78 docblock 收口）：
- *   - **wide 模式相机 + OrbitControls target 一起 Y 下移给文字浮卡留底部安全区**：
- *     v1.76 用 CSS margin-bottom 收紧只能把卡片往下推一点点，"fixed margin-bottom
- *     不能跨 viewport 保证端点可见"。
- *   - 实现（v1.78 同步 docblock）：globe 留世界原点 (0,0,0)，**ResponsiveCamera
- *     把 camera.position.y 设为 -0.14 R**（仅 wide）+ <OrbitControls
- *     target={[0, -0.14R, 0]}> 同步偏移；globe 相对 target 永远偏上 → 投影到
- *     canvas 上方。narrow (aspect < 1) y=0 不偏移
- *   - 拖拽手感：OrbitControls 围绕 target 做 orbit，globe 在世界原点不动 →
- *     相对 target 永远偏上 → 拖拽期间 globe 也保持画面上方，**不破坏拖拽**
- *   - 早期 v1.77 docblock 描述 "SceneInner 包 group position 把 globe 整体
- *     上移"是**未采用的方案**（group 上移会让 globe 中心 = OrbitControls
- *     target，反而 centered 不偏移），实际实现是相机 / target 偏移、globe 留
- *     世界原点。v1.78 修 v1.77 audit P3 把这段 docblock 同步到真实实现
- *   - 实测（1920×1080 wide）：Melbourne y_world = -0.61；相对 target (0, -0.14, 0)
- *     的 y = -0.47；NDC ≈ -0.385；canvas y ≈ 692；卡片顶 y ≈ 762，净间距
- *     70px ≫ v1.76 的 8px
+ * v0.7 新增（v1.79 修 v1.78 audit P2-3 globe card overlay）：
+ *   - GlobeBeat 把 stage 从 grid 1×1 overlay 改成 `grid-template-rows: 1fr auto`。
+ *     canvas 独占第一行，文字卡独占第二行，卡片不再压在球面上。
+ *   - 因为 safe zone 由 Astro 外壳布局解决，v1.77 的 camera/OrbitControls target
+ *     Y 偏移已撤销：ResponsiveCamera 只求 z，camera.y=0，OrbitControls target
+ *     回到世界原点。拖拽 orbit 围绕地球中心，手感更自然。
  *
  * v0.4 新增（v1.74 修 v1.73 audit P3，v1.75 收口契约）：
  *   - Endpoint useFrame 改用本地 elapsedRef 累加 dt，不再读 state.clock —— Three.js
@@ -41,7 +27,7 @@
  *     连带屏蔽其它有用 warn）
  *
  * 视觉契约（DESIGN §2.B · v2.21）：
- *   - 球体：深墨绿/纸白低饱和；v0.x 暂用纯色 + 柔和环境光（2K 水彩贴图
+ *   - 球体：深墨绿/纸白低饱和；v1.80 暂用 canvas landmask 贴图（2K 水彩贴图
  *     `globe-watercolor-2k.jpg` 在 misc CDN 仓 Phase 3 上线后切到 useTexture）
  *   - 端点：乌鲁木齐 / 墨尔本，柔和金色脉冲（不用红色 pin）
  *   - 弧线：从乌 → 墨的球面大圆弧，sage → honey 渐变；按 progress 0→1 动画
@@ -120,139 +106,337 @@ const COLOR_PAPER = new THREE.Color("#f5f0e6");
 const COLOR_HONEY = new THREE.Color("#c69d4e");
 
 /* ─────────────────────── Globe sphere ─────────────────────── */
+type GeoPoint = readonly [lng: number, lat: number];
+
+function drawLandPath(
+  ctx: CanvasRenderingContext2D,
+  points: readonly GeoPoint[],
+  width: number,
+  height: number,
+): void {
+  if (points.length === 0) return;
+  const project = ([lng, lat]: GeoPoint): [number, number] => [
+    ((lng + 180) / 360) * width,
+    ((90 - lat) / 180) * height,
+  ];
+  const first = points[0];
+  if (!first) return;
+  const [startX, startY] = project(first);
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  for (let i = 1; i < points.length; i += 1) {
+    const point = points[i];
+    const next = points[(i + 1) % points.length];
+    if (!point || !next) continue;
+    const [x, y] = project(point);
+    const [nextX, nextY] = project(next);
+    ctx.quadraticCurveTo(x, y, (x + nextX) / 2, (y + nextY) / 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawMapTexture(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  ctx.fillStyle = "#182d24";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(245, 240, 230, 0.045)";
+  ctx.lineWidth = 1;
+  for (let lng = -150; lng <= 180; lng += 30) {
+    const x = ((lng + 180) / 360) * width;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const y = ((90 - lat) / 180) * height;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.shadowColor = "rgba(198, 157, 78, 0.28)";
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "#668a58";
+  ctx.strokeStyle = "rgba(213, 178, 88, 0.34)";
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // 粗略 equirectangular landmask：没有国界 / 国家名，只保留大陆轮廓识别度。
+  drawLandPath(
+    ctx,
+    [
+      [-168, 72],
+      [-154, 68],
+      [-140, 62],
+      [-126, 58],
+      [-121, 50],
+      [-108, 49],
+      [-96, 52],
+      [-86, 47],
+      [-76, 44],
+      [-67, 48],
+      [-54, 52],
+      [-58, 42],
+      [-74, 31],
+      [-84, 24],
+      [-96, 18],
+      [-112, 25],
+      [-128, 33],
+      [-144, 45],
+      [-160, 57],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [-83, 12],
+      [-72, 9],
+      [-62, 2],
+      [-54, -8],
+      [-48, -18],
+      [-50, -31],
+      [-58, -45],
+      [-68, -55],
+      [-74, -42],
+      [-79, -26],
+      [-82, -8],
+      [-85, 4],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [-52, 72],
+      [-36, 70],
+      [-22, 62],
+      [-34, 55],
+      [-48, 58],
+      [-60, 65],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [-12, 71],
+      [6, 66],
+      [22, 62],
+      [38, 56],
+      [52, 55],
+      [66, 62],
+      [88, 65],
+      [110, 59],
+      [132, 53],
+      [149, 47],
+      [158, 38],
+      [148, 31],
+      [128, 32],
+      [115, 24],
+      [104, 21],
+      [97, 13],
+      [88, 20],
+      [78, 18],
+      [72, 30],
+      [62, 32],
+      [52, 27],
+      [43, 35],
+      [31, 36],
+      [22, 44],
+      [10, 43],
+      [0, 50],
+      [-10, 44],
+      [-20, 50],
+      [-25, 60],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [-18, 35],
+      [-5, 37],
+      [12, 33],
+      [25, 22],
+      [35, 8],
+      [33, -9],
+      [25, -24],
+      [16, -34],
+      [6, -34],
+      [-5, -22],
+      [-13, -5],
+      [-18, 15],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [35, 30],
+      [48, 28],
+      [58, 18],
+      [54, 12],
+      [46, 14],
+      [42, 22],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [68, 25],
+      [82, 22],
+      [88, 8],
+      [79, 6],
+      [72, 15],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [96, 18],
+      [113, 15],
+      [126, 6],
+      [121, -5],
+      [108, -8],
+      [100, 4],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [112, -12],
+      [128, -13],
+      [144, -18],
+      [153, -28],
+      [148, -39],
+      [132, -43],
+      [116, -36],
+      [111, -25],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [136, 41],
+      [145, 38],
+      [143, 31],
+      [133, 34],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [166, -34],
+      [178, -41],
+      [172, -47],
+      [162, -42],
+    ],
+    width,
+    height,
+  );
+  drawLandPath(
+    ctx,
+    [
+      [-180, -74],
+      [-90, -68],
+      [0, -72],
+      [90, -68],
+      [180, -74],
+      [180, -90],
+      [-180, -90],
+    ],
+    width,
+    height,
+  );
+
+  ctx.restore();
+
+  for (let i = 0; i < 1400; i += 1) {
+    const x = (i * 37) % width;
+    const y = (i * 71) % height;
+    const alpha = ((i * 17) % 19) / 900;
+    ctx.fillStyle = `rgba(245, 240, 230, ${alpha})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+}
+
+function createGlobeTexture(): THREE.CanvasTexture | undefined {
+  if (typeof document === "undefined") return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return undefined;
+  drawMapTexture(ctx, canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /**
- * v0.6（v1.78 修 v1.77 audit P2-3）：globe 表面加 procedural fbm land/ocean
- * 着色，用 onBeforeCompile 把 4-octave value-noise + smoothstep 阈值塞到
- * MeshStandardMaterial 的 fragment shader，没有外部贴图依赖。
+ * v0.8（v1.80 修用户截图审计）：用 browser-side canvas 生成低精度
+ * equirectangular landmask 贴图。它不标国家、不画国界，但比 v1.79 的 blob/noise
+ * shader 更像世界地图：大陆轮廓先由粗略多边形定锚，再叠轻微水彩纸粒。
  *
- * 用 **object-space normal** 作为 3D 坐标（球的 normal 等于归一化位置），通过
- * sin/cos(longitude) 投影到 2D noise 域 → 经度方向自然 wrap，无 seam；纬度
- * 方向作为额外维度让 fbm 在南北也有变化。AutoRotate 旋转球时 object-space 不
- * 动，"陆地"跟着球转（视觉上"地球转动陆地不动"，符合直觉）。
- *
- * 这是过渡方案，**不是真实大陆地理**：fbm 给的是抽象有机斑块，看起来像水彩
- * 大陆涂层而不是真实地图。Phase 3 push `globe-watercolor-2k.jpg` equirectangular
- * 贴图后，这套 onBeforeCompile 一行换成 `map={useTexture(...)}` 即可下线。
+ * 这是过渡方案，**不是 Natural Earth 级真实 coastline**。Phase 3 push
+ * `globe-watercolor-2k.jpg` equirectangular 贴图后，这套 createGlobeTexture
+ * 一行换成 `useTexture(...)` 即可下线。
  */
 function Globe(): React.ReactElement {
+  const texture = useMemo(() => createGlobeTexture(), []);
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, // base 1，乘后由 fragment 内 mix 给真实色
+      color: 0xffffff,
       roughness: 0.85,
       metalness: 0.05,
       emissive: COLOR_SAGE,
       emissiveIntensity: 0.05,
     });
-
-    mat.onBeforeCompile = (shader) => {
-      // VERTEX：把 object-space normal 当 varying 传给 fragment
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          "#include <common>",
-          `#include <common>
-varying vec3 vObjNormal;`,
-        )
-        .replace(
-          "#include <begin_vertex>",
-          `#include <begin_vertex>
-vObjNormal = normal;`,
-        );
-
-      // FRAGMENT：注入 hash + value-noise + fbm + 大陆 Gaussian falloff，在
-      // color_fragment 后覆写 diffuseColor。
-      // v1.79（修 v1.78 audit P2-2）：纯 fbm 给出的是水波/布纹纵向条带，没有
-      // 可识别大陆位置。改为：先按 7 个大陆中心 (lat, lng) 做 great-circle
-      // distance Gaussian falloff 求"基础 land density"，再叠加低幅度 fbm 给
-      // 海岸线 organic noise。这样大陆位置定锚（北美 / 南美 / 欧 / 非 / 亚 /
-      // 大洋洲 / 南极），形状是 organic 但锚点对 → 视觉上能读出"地图"。
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          "#include <common>",
-          `#include <common>
-varying vec3 vObjNormal;
-
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-
-float noise2(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  float a = hash21(i);
-  float b = hash21(i + vec2(1.0, 0.0));
-  float c = hash21(i + vec2(0.0, 1.0));
-  float d = hash21(i + vec2(1.0, 1.0));
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-float fbm(vec2 p) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 4; i++) {
-    v += a * noise2(p);
-    p *= 2.0;
-    a *= 0.5;
-  }
-  return v;
-}
-
-// (lat°, lng°) → 单位球面 Vec3
-vec3 latLngToVec3(float latDeg, float lngDeg) {
-  float lat = latDeg * 0.017453293; // PI / 180
-  float lng = lngDeg * 0.017453293;
-  float c = cos(lat);
-  return vec3(c * cos(lng), sin(lat), c * sin(lng));
-}
-
-// 大陆 blob：great-circle 距离 Gaussian falloff（angularDist^2 / radius^2）
-// 用 dot(normal, center)：1 = 同点，-1 = 对偶点；acos 给弧度距离
-float continentBlob(vec3 normal, float centerLat, float centerLng, float radiusRad) {
-  vec3 center = latLngToVec3(centerLat, centerLng);
-  float cosAngle = clamp(dot(normal, center), -1.0, 1.0);
-  float angularDist = acos(cosAngle);
-  float r = angularDist / radiusRad;
-  return exp(-r * r);
-}`,
-        )
-        .replace(
-          "#include <color_fragment>",
-          `#include <color_fragment>
-// 7 个大陆 Gaussian 中心（lat°, lng°, 角度半径 radians）：
-// 数据来自 NaturalEarth 简化质心 + 视觉验证选定的覆盖半径，
-// 不画国界 / 不写国家名，仅给出"陆地位置"的几何锚点
-float landDensity = 0.0;
-landDensity += continentBlob(vObjNormal,  45.0, -100.0, 0.50); // 北美
-landDensity += continentBlob(vObjNormal, -15.0,  -60.0, 0.40); // 南美
-landDensity += continentBlob(vObjNormal,  50.0,   15.0, 0.28); // 欧洲
-landDensity += continentBlob(vObjNormal,   5.0,   20.0, 0.42); // 非洲
-landDensity += continentBlob(vObjNormal,  45.0,   90.0, 0.55); // 亚洲
-landDensity += continentBlob(vObjNormal, -25.0,  135.0, 0.30); // 大洋洲
-landDensity += continentBlob(vObjNormal, -82.0,    0.0, 0.50); // 南极
-// 海岸线 organic noise（低幅度叠加，给海陆边界自然感）
-float lat = asin(clamp(vObjNormal.y, -1.0, 1.0));
-float lng = atan(vObjNormal.z, vObjNormal.x);
-vec2 noiseUv = vec2(cos(lng) * 1.6 + lat * 0.6, sin(lng) * 1.6 + lat * 0.4);
-float noiseShift = (fbm(noiseUv * 2.0) - 0.5) * 0.18;
-float landScore = landDensity + noiseShift;
-float landMask = smoothstep(0.32, 0.45, landScore);
-vec3 oceanColor = vec3(0.10, 0.18, 0.14); // 深 sage，海洋
-vec3 landColor  = vec3(0.30, 0.44, 0.32); // 中 sage，陆地
-diffuseColor.rgb = mix(oceanColor, landColor, landMask);`,
-        );
-    };
+    if (texture) {
+      mat.map = texture;
+      mat.needsUpdate = true;
+    }
 
     return mat;
-  }, []);
+  }, [texture]);
 
   // mat dispose on unmount 防内存泄漏
   useEffect(() => {
     return () => {
       material.dispose();
+      texture?.dispose();
     };
-  }, [material]);
+  }, [material, texture]);
 
   return (
     <mesh material={material}>
@@ -556,8 +740,8 @@ function SceneInner({
         color={COLOR_SAGE}
       />
 
-      {/* globe 留在世界原点；上移效果靠 ResponsiveCamera 把相机 Y 设为负 +
-          OrbitControls target 同步设为负，相对位置让 globe 显示在画面上方 */}
+      {/* globe 留在世界原点；GlobeBeat 外壳用 canvas/text 双行 safe zone
+          避免文字卡压球，3D 场景自身保持居中便于拖拽 */}
       <AutoRotate enabled={autoRotate} speed={0.06}>
         <Globe />
         <Arc from={fromV} to={toV} progress={progress} />

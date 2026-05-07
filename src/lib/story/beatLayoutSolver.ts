@@ -58,8 +58,10 @@ export type StoryLayoutMode = "compact" | "portrait" | "wide";
  *   - parallax-pair portrait → "between"（display:contents + order，文字夹在两图之间）
  *   - diagonal-gaze wide → "overlay-center"（文字浮卡居中 + backdrop-blur）
  *   - diagonal-gaze portrait → "between"
- *   - radial-mask / anchor-single / overlap / reveal / wooden / pearl → "below"
+ *   - radial-mask / anchor-single / overlap → "below"
  *   - vignette → "overlay-bottom"（文字浮在夜色暗角图底部，营造亲密语境）
+ *   - reveal / pearl → "overlay-top"
+ *   - wooden wide → "side-text-photo"，portrait / compact → "below"
  */
 export type TextPlacement =
   | "below"
@@ -451,19 +453,20 @@ function solveVignette(input: SolverInput): SolverResult {
 }
 
 // ─── overlap（beat 07 · snow_09 契合双层 ghost）────────────────────────
-// v1.66（v1.65 audit P2-B 修）：横幅 ghost 双合 + 单行短诗 → overlay-center
-//   "两个契合的灵魂" 单行 → 文字浮卡居中漂在 ghost 收敛的图上，更具戏剧性
+// v1.80：用户截图审计指出 "两个契合的灵魂" 居中浮卡会遮挡人物主体。
+//   这里退回 below，让文字成为 photo 下方短句 caption，保留 ghost 收敛动效，
+//   但不再把半透明卡片压在人脸 / 身体上。
 function solveOverlap(input: SolverInput): SolverResult {
   return solveSinglePhoto(
     input,
     {
-      photoMaxWFactor: 0.86,
-      photoMaxAbs: 760,
-      gap: 0,
-      textTopReserveFactor: 0,
+      photoMaxWFactor: 0.82,
+      photoMaxAbs: 720,
+      gap: 20,
+      textTopReserveFactor: 0.1,
       textOverhang: 80,
     },
-    "overlay-center",
+    "below",
   );
 }
 
