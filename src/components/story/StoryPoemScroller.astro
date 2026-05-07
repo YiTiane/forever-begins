@@ -124,9 +124,9 @@
  *   .days-together textContent。
  */
 import { getCollection } from "astro:content";
-import CdnImage from "@/components/CdnImage.astro";
 import PoemBeat from "@/components/story/PoemBeat.astro";
 import GlobeBeat from "@/components/story/GlobeBeat.astro";
+import FinaleBeat from "@/components/story/FinaleBeat.astro";
 
 interface Props {
   /** 渲染前 N 个 photo-poem beat。v1.62 默认 10（覆盖全部 photo-poem）；
@@ -207,48 +207,11 @@ const anchorDate = main.data.anchor_date;
   {globeLines.length > 0 && <GlobeBeat lines={globeLines} />}
 
   {
-    /* batch 4 · §2.C StarCarouselFinale 将插在这里，对应 main.json beats[11]（id="12" kind="finale"）*/
+    /* —— §2.C StarCarouselFinale · v1.90 batch 8 接入（beat 12 · kind="finale"）——
+       走马灯 + final Pearl_04 定格取代了 v1.60 起的 .story-end-cap 静态占位。
+       FinaleBeat 内部已含 SSR fallback（Pearl_04 + lines），无 JS / R3F 失败时仍有终幕。*/
   }
-
-  {
-    /* —— Story end cap（v1.60 P2 #3 修）：临时叙事收束 ——
-       v1.59 之前 §2 在最后一个 beat 后就是空白背景，访客滚过最后一个 beat 后落到
-       看不到任何内容的纯背景区。等 batch 4-6 把 globe / finale 接上之后这块自然
-       被取代；本批先放 Pearl_04 主海报 + schema finale.lines，让滚动有终点感。*/
-  }
-  <div class="story-end-cap" aria-label="故事临时收束">
-    <div class="story-end-card">
-      <figure class="story-end-photo">
-        {
-          /* v1.62 P2-A 修：priority 从 high → auto。Pearl_04 在 §2 末尾，
-            滚到时再 lazy-load；不与 §0 part_1（真正 LCP）抢 HTTP/2 头几个连接。 */
-        }
-        {
-          /* v1.64：CDN 实测 Pearl_04 是 1600×2400 竖幅，非 3000×2000；
-            修正 width/height 让 CLS 几何预留正确，避免画面跳动。
-            竖幅人像照默认 object-fit: contain（在 .story-end-photo CSS 兜底）。*/
-        }
-        <CdnImage
-          cdnTarget="pearl"
-          stem="Pearl_04"
-          alt="珍珠系列主海报 · 两个人相拥"
-          priority="auto"
-          widths={[320, 640, 1024, 1600, 2400]}
-          sizes="(min-width: 960px) 480px, (min-width: 540px) 56vw, 80vw"
-          width={2000}
-          height={3000}
-        />
-      </figure>
-      <div class="story-end-copy">
-        {/* v1.62 P2-B 修：finale 文案从 schema beat 12 拉，不再硬编码 */}
-        {
-          finaleLines.map((line) => (
-            <p class="story-end-line cn-kaishu">{line}</p>
-          ))
-        }
-      </div>
-    </div>
-  </div>
+  {finaleLines.length > 0 && <FinaleBeat lines={finaleLines} />}
 </section>
 
 <style>
@@ -283,75 +246,9 @@ const anchorDate = main.data.anchor_date;
     }
   }
 
-  /* ──────────────────────────────────────────────────────────────  */
-  /* story end cap（v1.60 P2 #3）：最后一个 beat 后的叙事收束           */
-  /* 视觉：Pearl_04 主海报 + schema finale.lines，不再显示英文 kicker       */
-  /* min-height 60vh 让用户滚到最后能落在一个 intentional 视觉，不再    */
-  /* 看到纯背景空屏；后续 batch 4-6 接 globe/finale 时自然替代。       */
-  /* ──────────────────────────────────────────────────────────────  */
-  .story-end-cap {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: clamp(4rem, 10vh, 7rem) 1.5rem;
-  }
-  .story-end-card {
-    display: grid;
-    /* v1.64：Pearl_04 实际 2:3 portrait；左列收紧到 380-460 给竖幅留合适宽度 */
-    grid-template-columns: minmax(0, 460px) minmax(16rem, 24rem);
-    align-items: center;
-    gap: clamp(2rem, 6vw, 4.5rem);
-    max-width: min(1080px, calc(100vw - 3rem));
-    width: 100%;
-  }
-  .story-end-photo {
-    margin: 0;
-    box-shadow: var(--shadow-paper);
-    /* v1.64：竖幅人像 max-height 防 wide stage 把图撑得过高 */
-    max-height: min(70vh, 700px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-  .story-end-photo :global(picture),
-  .story-end-photo :global(img) {
-    display: block;
-    width: 100%;
-    height: 100%;
-    /* v1.64：portrait 主海报用 contain 保人物完整，不裁切 */
-    object-fit: contain;
-    border-radius: var(--radius-sm);
-  }
-  .story-end-copy {
-    text-align: left;
-    color: var(--c-olive-ink);
-  }
-  .story-end-line {
-    margin: 0;
-    font-size: clamp(1.25rem, 3.3vw, 2rem);
-    line-height: 1.8;
-    letter-spacing: 0;
-  }
-
-  @media (max-width: 899px) {
-    .story-end-card {
-      grid-template-columns: 1fr;
-      justify-items: center;
-      gap: 1.75rem;
-      max-width: min(640px, calc(100vw - 2rem));
-    }
-    .story-end-photo {
-      width: min(72vw, 380px);
-      /* portrait 模式下让 max-height 自由长高，依靠 width 控制大小 */
-      max-height: none;
-    }
-    .story-end-copy {
-      text-align: center;
-    }
-  }
+  /* v1.90: 旧 .story-end-cap 静态收束 CSS 已下线（FinaleBeat 取代）。
+     finale 视觉契约由 src/components/story/FinaleBeat.astro 内部 scoped CSS
+     提供（sticky stage + canvas + 文字浮卡 + reduced-motion fallback）。 */
 </style>
 
 <script>

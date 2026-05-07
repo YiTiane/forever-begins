@@ -1,0 +1,233 @@
+---
+/**
+ * FinaleBeat.astro · §2.C 星空照片走马灯 · 包装 StarCarouselFinale React 岛
+ *   v0.1（Phase 2 §2 batch 8 · v1.90）
+ *
+ * 数据流（DESIGN §15.1 单一源）：
+ *   - finale.lines 来自 main.json beat 12 (kind="finale")
+ *   - 15 张照片序列 + CDN URL 来自 src/lib/story/finalePhotos.ts
+ *   - <CdnImage> SSR fallback 用 final Pearl_04 占位（与 v1.80 之前的 .story-end-cap 同款几何
+ *     契约：1600×2400 portrait + contain），让无 JS / 滚动未到位的访客先看到主海报
+ *
+ * 渲染机制：
+ *   - 外层 .finale-beat 给 hash 锚 #beat-12-heading（与 PoemBeat / GlobeBeat 同款契约）
+ *   - 长 spacer ~700vh：给 15 张照片各 ~45vh 走完 lifecycle（入场 18% + hold 44% + dissolve 38%）
+ *   - 内层 .finale-stage 100vh sticky：canvas 占满 + final 文字浮卡居底
+ *   - <StarCarouselFinale client:visible /> 仅视口内 hydrate；R3F 与 §2.B 共享 three /
+ *     r3f-drei chunk
+ *   - <noscript> + 静态 <CdnImage> Pearl_04 双重 fallback：无 JS / R3F 失败时仍有终幕主海报
+ *   - reduced-motion 由 React 岛内部处理（progress 钉 1，opacity-only 替代 dissolve）
+ *
+ * a11y：
+ *   - section aria-labelledby 指向 sr-only h3（与 PoemBeat / GlobeBeat 同款契约）
+ *   - canvas 容器 role="img" + aria-label "走过的回忆 · 最终定格主海报"
+ *   - shader dissolve 动画对 AT 不可见，AT 仍只读到 sr-only h3 + 浮卡 lines
+ *
+ * NOT in this batch（v0.2+ 留刀）：
+ *   - DESIGN §2.C "高端机 GPU 粒子星尘"（当前 StarField 是静态 320 点）
+ *   - 入场方位变化（每张从不同方向进，DESIGN 提"照片从不同方位出现"）—— 当前
+ *     全部从中心 scale 0.82→1.04，rotate Y 微小
+ *   - 文字 stagger / 节奏控制（poems lines 是定格静态，不随 progress 渐显）
+ */
+import { getCollection } from "astro:content";
+import CdnImage from "@/components/CdnImage.astro";
+import { StarCarouselFinale } from "@/components/story/StarCarouselFinale";
+
+interface Props {
+  /** main.json beat 12 的 lines（"还好我们有牢牢抱紧。" "幸好最终是你。"） */
+  lines: readonly string[];
+}
+
+const { lines } = Astro.props;
+
+// 校验 schema 数据可用（与 GlobeBeat 同款契约）
+const storyEntries = await getCollection("storyPoem");
+const main = storyEntries.find((e) => e.id === "main");
+if (!main) {
+  throw new Error(
+    "FinaleBeat.astro: src/content/story-poem/main.json missing — schema 已严约束 12=finale",
+  );
+}
+const finaleBeat = main.data.beats.find((b) => b.kind === "finale");
+if (!finaleBeat) {
+  throw new Error(
+    "FinaleBeat.astro: schema 缺 finale beat（应是 beats[11].kind === 'finale'）",
+  );
+}
+
+const headingId = "beat-12-heading";
+const ariaHeadingId = "beat-12-aria-heading";
+
+const ariaLabel = `走过的回忆 · 最终定格主海报：${(lines[0] ?? "还好我们有牢牢抱紧。").replace(/[，。]$/, "")}`;
+---
+
+<section
+  class="finale-beat"
+  id={headingId}
+  data-beat-id="12"
+  data-kind="finale"
+  aria-labelledby={ariaHeadingId}
+>
+  <div class="finale-stage">
+    <h3 id={ariaHeadingId} class="sr-only">
+      第 12 段 · {lines[0]}
+    </h3>
+
+    <div class="finale-canvas" role="img" aria-label={ariaLabel}>
+      {
+        /* SSR / noscript / hydration 前 fallback：直接显示 final Pearl_04 主海报。
+          R3F 岛 client:visible hydrate 后接管，shader carousel 覆盖 fallback。 */
+      }
+      <figure class="finale-fallback-photo">
+        <CdnImage
+          cdnTarget="pearl"
+          stem="Pearl_04"
+          alt="珍珠系列主海报 · 两个人相拥"
+          priority="auto"
+          widths={[320, 640, 1024, 1600, 2400]}
+          sizes="(min-width: 960px) 480px, (min-width: 540px) 56vw, 80vw"
+          width={2000}
+          height={3000}
+        />
+      </figure>
+      <StarCarouselFinale client:visible />
+    </div>
+
+    <div class="finale-text">
+      <p class="finale-line cn-kaishu">
+        {lines.map((line) => <span class="finale-text-line">{line}</span>)}
+      </p>
+    </div>
+
+    <noscript>
+      <p class="finale-noscript">{lines.join(" ")}</p>
+    </noscript>
+  </div>
+</section>
+
+<style>
+  .finale-beat {
+    position: relative;
+    scroll-margin-top: 0;
+    /* 15 张照片 × ~45vh per lifecycle = ~700vh 滚动空间 + 100vh sticky stage
+       让走马灯有充足节奏 + 最后定格区。compact 在 media query 内再压缩。 */
+    min-height: 700vh;
+  }
+
+  .finale-stage {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    justify-items: center;
+    align-items: stretch;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 1.25rem;
+    gap: 1rem;
+    box-sizing: border-box;
+    background: var(--c-paper);
+  }
+
+  .finale-stage .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .finale-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    position: relative; /* 给 fallback 与 React 岛叠层用 */
+  }
+
+  /* SSR fallback：Pearl_04 居中展示，z 在 R3F 岛之下；hydrate 后被 canvas 覆盖 */
+  .finale-fallback-photo {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 0;
+  }
+  .finale-fallback-photo picture,
+  .finale-fallback-photo img {
+    max-width: min(420px, 70%);
+    max-height: 80%;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+  }
+
+  /* React 岛根：覆盖 fallback */
+  .finale-canvas :global(.finale-canvas-root) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  .finale-text {
+    width: min(420px, 86%);
+    padding: 0.85rem 1.25rem;
+    text-align: center;
+    color: var(--c-olive-ink);
+    background: rgba(245, 240, 230, 0.62);
+    border-radius: var(--radius-sm);
+    z-index: 2;
+  }
+  .finale-line {
+    margin: 0;
+    font-size: 1.25rem;
+    line-height: 1.85;
+    font-weight: 300;
+  }
+  .finale-text-line {
+    display: block;
+  }
+
+  .finale-noscript {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    align-self: end;
+    color: var(--c-olive-ink);
+    text-align: center;
+    z-index: 3;
+  }
+
+  /* portrait（小平板 / 大手机竖屏）：释放 sticky；走马灯改为单屏走完 */
+  @media (max-width: 899px) {
+    .finale-beat {
+      min-height: 500vh; /* 仍给 15 张足够 spacer */
+    }
+    .finale-stage {
+      padding: 1rem 1rem 0.75rem;
+    }
+  }
+
+  /* compact（≤540 phone）：进一步压缩 spacer */
+  @media (max-width: 540px) {
+    .finale-beat {
+      min-height: 380vh;
+    }
+    .finale-stage {
+      padding: 0.75rem 0.75rem 0.5rem;
+      gap: 0.5rem;
+    }
+    .finale-line {
+      font-size: 1.05rem;
+      line-height: 1.7;
+    }
+  }
+</style>
