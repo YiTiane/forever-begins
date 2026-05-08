@@ -5,8 +5,9 @@
  *   - 入场区从约 1.8% 全局 scroll 拉长到约 5.9%，滚轮不会一跳就错过；
  *     scale 0.42→1.08、ENTRY_DISTANCE 4.15，让"从不同方位由小变大进入"
  *     成为肉眼可见的主动画，而不是参数上的短瞬间。
- *   - 删除黄色 edge glow / burning-like dissolve；照片平面只做透明碎孔，
- *     另由 PhotoDustBurst 按照片纹理采样真实像素点，向外散开并渐变成星尘。
+ *   - 删除黄色 edge glow / burning-like dissolve；照片平面只干净淡出，
+ *     由 PhotoDustBurst 按照片纹理采样真实像素点，形成清晰"照片点阵
+ *     → 向外喷散 → 珍珠白星尘"三段式退场。
  *   - ACTIVE_RANGE 从 ±1 扩到 ±2，覆盖长入场、上一张退场粒子、下一张接力。
  *
  * v0.4 修 v1.93 视觉复审：
@@ -55,11 +56,11 @@
  *   - reduced motion：跳过 dissolve / rotate / scale，只 opacity 交叉淡入
  *
  * 星尘 dissolve 实现：
- *   - PhotoPlane：value-noise 混频 → smoothstep 阈值 → alpha 逐片变透明；
- *     不加黄色边缘、不做"燃烧"式高亮。
- *   - PhotoDustBurst：从照片 footprint 采样点云，按照片像素色向外散开，
- *     末端渐变成暖白星尘。
- *   - PhotoResidueStars：每张照片退场区间释放持久星点，留在背景星空里。
+ *   - PhotoPlane：只做整体 alpha 淡出；不再做噪声破洞，避免"烧穿"语义。
+ *   - PhotoDustBurst：从照片 footprint 采样 3K-5K 点云，退场初段先显出
+ *     照片颜色点阵，中段向外喷散，末端渐变成珍珠白星尘。
+ *   - PhotoResidueStars：每张照片退场后在原 footprint 周围留下更亮的持久
+ *     星群，视觉上可追溯为"刚才那张照片留下的星星"。
  *
  * 滚动进度：
  *   - StarCarouselFinale 自驱：内置 IO + scroll listener，把 root.getBoundingClientRect
@@ -274,37 +275,12 @@ const FRAG_SHADER = /* glsl */ `
   uniform float uDissolve;    // 0..1, 0=full photo, 1=fully dissolved
   varying vec2 vUv;
 
-  // value-noise hash（与 GlobeDistanceScene 同款）
-  float hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-  float noise2(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-  }
-
   void main() {
     vec4 photo = texture2D(uTex, vUv);
     // v1.95：持有期直接输出原纹理采样，不做 gamma / brightness / filter 调整；
-    // dissolve 时也不加黄色边缘光，避免出现"燃烧"语义。
+    // dissolve 时只做干净淡出；碎散由 PhotoDustBurst 负责，避免出现"烧穿"语义。
     if (uDissolve > 0.0) {
-      // 双频 noise：低频给"大块脱落"，高频给"细粒碎散"。
-      // v1.95：不再混入黄色边缘光，避免像焚烧；照片本体只是被透明碎孔
-      // 温和带走，真正的星尘散开由 PhotoDustBurst points 负责。
-      float n1 = noise2(vUv * 12.0);
-      float n2 = noise2(vUv * 60.0);
-      float n  = n1 * 0.6 + n2 * 0.4;
-      float threshold = uDissolve * 1.08 - 0.04;
-      float keep = smoothstep(threshold, threshold + 0.22, n);
-      photo.a *= keep;
+      photo.a *= 1.0 - smoothstep(0.10, 0.82, uDissolve);
     }
     photo.a *= uOpacity;
     if (photo.a <= 0.0) discard;
@@ -319,21 +295,28 @@ const DUST_VERT = /* glsl */ `
   attribute float aSpeed;
   attribute float aSize;
   attribute float aDelay;
+  attribute float aResidue;
   uniform float uBurst;
   varying vec2 vUv;
   varying float vT;
   varying float vAlpha;
+  varying float vResidue;
   void main() {
-    float t = smoothstep(aDelay, 1.0, uBurst);
+    float delayed = clamp((uBurst - aDelay * 0.42) / max(0.001, 1.0 - aDelay * 0.42), 0.0, 1.0);
+    float t = smoothstep(0.0, 1.0, delayed);
     vec3 pos = position;
-    pos.xy += aDir * aSpeed * pow(t, 1.15);
-    pos.z += 0.42 * t;
+    pos.xy += aDir * aSpeed * pow(t, 1.08);
+    pos.z += 0.16 + 0.62 * t;
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * (0.75 + t * 1.85);
+    gl_PointSize = aSize * (0.9 + t * 1.55);
     vUv = aUv;
     vT = t;
-    vAlpha = smoothstep(0.02, 0.2, uBurst) * (1.0 - smoothstep(0.86, 1.0, t));
+    vResidue = aResidue;
+    float appear = smoothstep(0.0, 0.08, uBurst);
+    float transientFade = 1.0 - smoothstep(0.78, 0.98, uBurst);
+    float settled = smoothstep(0.70, 0.96, uBurst) * aResidue;
+    vAlpha = appear * max(transientFade, settled * 0.72);
   }
 `;
 
@@ -343,15 +326,19 @@ const DUST_FRAG = /* glsl */ `
   varying vec2 vUv;
   varying float vT;
   varying float vAlpha;
+  varying float vResidue;
   void main() {
     if (vAlpha < 0.001) discard;
     vec2 c = gl_PointCoord - 0.5;
     float d = length(c) * 2.0;
     if (d > 1.0) discard;
     vec4 photo = texture2D(uTex, vUv);
-    vec3 starCol = vec3(1.0, 0.94, 0.74);
-    vec3 col = mix(photo.rgb, starCol, smoothstep(0.28, 1.0, vT));
-    float alpha = pow(1.0 - d, 1.35) * vAlpha * photo.a;
+    vec3 starCol = vec3(0.94, 0.97, 1.0);
+    vec3 pearlCol = vec3(1.0, 0.96, 0.82);
+    vec3 col = mix(photo.rgb, mix(starCol, pearlCol, vResidue * 0.55), smoothstep(0.46, 1.0, vT));
+    float core = pow(1.0 - d, 1.15);
+    float alpha = core * vAlpha * photo.a;
+    alpha += (1.0 - smoothstep(0.18, 0.72, d)) * smoothstep(0.72, 1.0, vT) * vResidue * 0.18;
     gl_FragColor = vec4(col, alpha);
     #include <colorspace_fragment>
   }
@@ -375,8 +362,8 @@ function PhotoDustBurst({
 
     const [w, h] = planeSize;
     const landscape = w >= h;
-    const cols = landscape ? 46 : 32;
-    const rows = landscape ? 32 : 46;
+    const cols = landscape ? 76 : 52;
+    const rows = landscape ? 52 : 76;
     const total = cols * rows;
     const positions = new Float32Array(total * 3);
     const uvs = new Float32Array(total * 2);
@@ -384,6 +371,7 @@ function PhotoDustBurst({
     const speeds = new Float32Array(total);
     const sizes = new Float32Array(total);
     const delays = new Float32Array(total);
+    const residues = new Float32Array(total);
 
     let cursor = 0;
     for (let y = 0; y < rows; y += 1) {
@@ -398,15 +386,24 @@ function PhotoDustBurst({
         uvs[cursor * 2] = u;
         uvs[cursor * 2 + 1] = v;
 
-        const angle =
-          Math.atan2(localY / Math.max(0.001, h), localX / Math.max(0.001, w)) +
-          (rand() - 0.5) * 1.3;
-        const outward = 0.45 + rand() * 0.65;
+        const radial = Math.atan2(
+          localY / Math.max(0.001, h),
+          localX / Math.max(0.001, w),
+        );
+        const swirl = 0.46 + rand() * 0.44;
+        const angle = radial + swirl + (rand() - 0.5) * 0.72;
+        const centerBias = Math.min(
+          1,
+          Math.hypot(localX / Math.max(0.001, w), localY / Math.max(0.001, h)) *
+            2,
+        );
+        const outward = 0.72 + centerBias * 0.95 + rand() * 0.52;
         dirs[cursor * 2] = Math.cos(angle) * outward;
         dirs[cursor * 2 + 1] = Math.sin(angle) * outward;
-        speeds[cursor] = 0.35 + rand() * 1.45;
-        sizes[cursor] = 1.15 + rand() * 2.55;
-        delays[cursor] = rand() * 0.34;
+        speeds[cursor] = 0.82 + rand() * 2.45;
+        sizes[cursor] = 0.95 + rand() * 2.15;
+        delays[cursor] = rand() * 0.28;
+        residues[cursor] = rand() < 0.22 ? 1 : 0;
         cursor += 1;
       }
     }
@@ -418,6 +415,7 @@ function PhotoDustBurst({
     geom.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 1));
     geom.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
     geom.setAttribute("aDelay", new THREE.BufferAttribute(delays, 1));
+    geom.setAttribute("aResidue", new THREE.BufferAttribute(residues, 1));
     return geom;
   }, [planeSize]);
 
@@ -750,26 +748,34 @@ const RESIDUE_VERT = /* glsl */ `
   attribute float aRevealEnd;
   attribute float aSize;
   attribute float aBrightness;
+  attribute float aTwinkle;
+  attribute vec3 aColor;
   varying float vBrightness;
+  varying vec3 vColor;
+  uniform float uTime;
   uniform float uProgress;
   void main() {
     float t = smoothstep(aRevealStart, aRevealEnd, uProgress);
+    float settlePulse = 1.0 + (1.0 - smoothstep(0.0, 1.0, t)) * 1.35;
+    float twinkle = 0.74 + 0.26 * sin(uTime * (0.8 + aTwinkle * 1.7) + aTwinkle * 19.0);
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * t;
-    vBrightness = aBrightness * t;
+    gl_PointSize = aSize * t * settlePulse;
+    vBrightness = aBrightness * t * twinkle;
+    vColor = aColor;
   }
 `;
 const RESIDUE_FRAG = /* glsl */ `
   precision highp float;
   varying float vBrightness;
+  varying vec3 vColor;
   void main() {
     if (vBrightness < 0.001) discard;
     vec2 c = gl_PointCoord - 0.5;
     float d = length(c) * 2.0;
     if (d > 1.0) discard;
     float alpha = pow(1.0 - d, 1.6) * vBrightness;
-    vec3 starCol = vec3(1.0, 0.90, 0.64);
+    vec3 starCol = vColor;
     gl_FragColor = vec4(starCol, alpha);
   }
 `;
@@ -796,58 +802,82 @@ function PhotoResidueStars({
   progress: number;
 }): React.ReactElement {
   const { viewport } = useThree();
-  const { positions, sizes, brightness, revealStart, revealEnd } =
-    useMemo(() => {
-      let seed = 113;
-      function rand(): number {
-        seed = (seed * 1664525 + 1013904223) % 4294967296;
-        return seed / 4294967296;
+  const {
+    positions,
+    sizes,
+    brightness,
+    revealStart,
+    revealEnd,
+    twinkle,
+    colors,
+  } = useMemo(() => {
+    let seed = 113;
+    function rand(): number {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    }
+
+    const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
+    const perPhoto = 260;
+    const total = photos.length * perPhoto;
+    const positions = new Float32Array(total * 3);
+    const sizes = new Float32Array(total);
+    const brightness = new Float32Array(total);
+    const revealStart = new Float32Array(total);
+    const revealEnd = new Float32Array(total);
+    const twinkle = new Float32Array(total);
+    const colors = new Float32Array(total * 3);
+    const n = FINALE_PHOTO_SEQUENCE.length;
+
+    let cursor = 0;
+    for (let photoIndex = 0; photoIndex < photos.length; photoIndex += 1) {
+      const photo = photos[photoIndex];
+      if (!photo) continue;
+      const [w, h] = fitPlaneSize(
+        viewport.width,
+        viewport.height,
+        photo.aspectRatio,
+      );
+      const start = (photoIndex + HOLD_END * LIFE_DURATION) / n;
+      const end = Math.min(1, (photoIndex + LIFE_DURATION) / n);
+
+      for (let j = 0; j < perPhoto; j += 1) {
+        const angle = rand() * Math.PI * 2;
+        const radius = Math.pow(rand(), 0.65);
+        const localX = (rand() - 0.5) * w;
+        const localY = (rand() - 0.5) * h;
+        const scatter = 0.22 + rand() * 0.58;
+        positions[cursor * 3] = localX + Math.cos(angle) * radius * w * scatter;
+        positions[cursor * 3 + 1] =
+          localY + Math.sin(angle) * radius * h * scatter;
+        positions[cursor * 3 + 2] = -0.03 - rand() * 0.34;
+        const bright = rand() > 0.72;
+        sizes[cursor] = bright ? 2.8 + rand() * 3.6 : 1.35 + rand() * 2.4;
+        brightness[cursor] = bright
+          ? 0.74 + rand() * 0.5
+          : 0.46 + rand() * 0.42;
+        revealStart[cursor] =
+          start + rand() * Math.max(0.001, (end - start) * 0.16);
+        revealEnd[cursor] = start + (end - start) * (0.32 + rand() * 0.38);
+        twinkle[cursor] = rand();
+        const pearl = rand();
+        colors[cursor * 3] = 0.88 + pearl * 0.12;
+        colors[cursor * 3 + 1] = 0.92 + pearl * 0.06;
+        colors[cursor * 3 + 2] = 1.0;
+        cursor += 1;
       }
+    }
 
-      const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
-      const perPhoto = 96;
-      const total = photos.length * perPhoto;
-      const positions = new Float32Array(total * 3);
-      const sizes = new Float32Array(total);
-      const brightness = new Float32Array(total);
-      const revealStart = new Float32Array(total);
-      const revealEnd = new Float32Array(total);
-      const n = FINALE_PHOTO_SEQUENCE.length;
-
-      let cursor = 0;
-      for (let photoIndex = 0; photoIndex < photos.length; photoIndex += 1) {
-        const photo = photos[photoIndex];
-        if (!photo) continue;
-        const [w, h] = fitPlaneSize(
-          viewport.width,
-          viewport.height,
-          photo.aspectRatio,
-        );
-        const start = (photoIndex + HOLD_END * LIFE_DURATION) / n;
-        const end = Math.min(1, (photoIndex + LIFE_DURATION) / n);
-
-        for (let j = 0; j < perPhoto; j += 1) {
-          const angle = rand() * Math.PI * 2;
-          const radius = Math.pow(rand(), 0.65);
-          const localX = (rand() - 0.5) * w;
-          const localY = (rand() - 0.5) * h;
-          const scatter = 0.1 + rand() * 0.28;
-          positions[cursor * 3] =
-            localX + Math.cos(angle) * radius * w * scatter;
-          positions[cursor * 3 + 1] =
-            localY + Math.sin(angle) * radius * h * scatter;
-          positions[cursor * 3 + 2] = -0.08 - rand() * 0.45;
-          sizes[cursor] = 1.2 + rand() * 2.8;
-          brightness[cursor] = 0.46 + rand() * 0.54;
-          revealStart[cursor] =
-            start + rand() * Math.max(0.001, (end - start) * 0.28);
-          revealEnd[cursor] = start + (end - start) * (0.55 + rand() * 0.45);
-          cursor += 1;
-        }
-      }
-
-      return { positions, sizes, brightness, revealStart, revealEnd };
-    }, [viewport.width, viewport.height]);
+    return {
+      positions,
+      sizes,
+      brightness,
+      revealStart,
+      revealEnd,
+      twinkle,
+      colors,
+    };
+  }, [viewport.width, viewport.height]);
 
   const geometry = useMemo(() => {
     const geom = new THREE.BufferGeometry();
@@ -859,16 +889,23 @@ function PhotoResidueStars({
       new THREE.BufferAttribute(revealStart, 1),
     );
     geom.setAttribute("aRevealEnd", new THREE.BufferAttribute(revealEnd, 1));
+    geom.setAttribute("aTwinkle", new THREE.BufferAttribute(twinkle, 1));
+    geom.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
     return geom;
-  }, [positions, sizes, brightness, revealStart, revealEnd]);
+  }, [positions, sizes, brightness, revealStart, revealEnd, twinkle, colors]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  const uniforms = useMemo(() => ({ uProgress: { value: 0 } }), []);
+  const uniforms = useMemo(
+    () => ({ uProgress: { value: 0 }, uTime: { value: 0 } }),
+    [],
+  );
   const matRef = useRef<THREE.ShaderMaterial>(null);
-  useFrame(() => {
+  useFrame((_state, delta) => {
     const u = matRef.current?.uniforms["uProgress"];
     if (u) u.value = progress;
+    const time = matRef.current?.uniforms["uTime"];
+    if (time) time.value += delta;
   });
 
   return (
