@@ -223,7 +223,9 @@ const anchorDate = main.data.anchor_date;
     isolation: isolate;
     /* 章节自带版心；PoemBeat 内部再各自 max-width: 1280px 居中 */
     width: 100%;
-    padding: 4rem 0 2rem;
+    /* v1.100 finale 收口：底部 2rem paper padding 会在最终 Pearl_04 定格时露出
+       浅色条带；§2 结尾现在由 FinaleBeat 自己负责完整深色舞台。 */
+    padding: 4rem 0 0;
   }
 
   .section-title {

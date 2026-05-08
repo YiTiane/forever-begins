@@ -1,5 +1,12 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.8 · v1.98 finale hardening）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.9 · finale single-source hold）
+ *
+ * v0.9 修 finale 尾帧重复：
+ *   - 移除 React 岛里的 HTML `.finale-final-poster` 叠层；最终 Pearl_04 只由
+ *     R3F final PhotoPlane 定格。v1.98 额外叠一张 HTML poster，再加 Astro
+ *     end-frame，导致滚到结尾时出现"同一张主海报重复接力"。
+ *   - timeline 从 scrollable 前 86% 放宽到 96% 完成；最后只留约 4% scroll
+ *     作为主海报呼吸停顿，避免用户继续滚很久都看到同一张图。
  *
  * v0.8 修 v1.97 hardening：
  *   - progress 0→1 映射到 scrollable 前 86%，后段作为 final poster hold；
@@ -153,8 +160,7 @@ class DualHostTextureLoader extends THREE.Loader {
 
 const CAMERA_FOV = 38;
 const HASH_LANDING_PROGRESS = 0.04;
-const TIMELINE_SCROLL_FRACTION = 0.86;
-const FINAL_POSTER_VISIBLE_PROGRESS = 0.985;
+const TIMELINE_SCROLL_FRACTION = 0.96;
 // Hydration note: SSR renders data-progress="0.000". If client initial state is
 // also exactly 0.04 and the first effect writes 0.04 again, React may not patch
 // the mismatched SSR attribute. Add an invisible epsilon so the first client
@@ -1294,9 +1300,6 @@ export function StarCarouselFinale(): React.ReactElement {
       ref={containerRef}
       className="finale-canvas-root"
       data-progress={progress.toFixed(3)}
-      data-final-hold={
-        progress >= FINAL_POSTER_VISIBLE_PROGRESS ? "true" : "false"
-      }
     >
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
@@ -1320,17 +1323,6 @@ export function StarCarouselFinale(): React.ReactElement {
           <SceneInner globalProgress={progress} reducedMotion={reducedMotion} />
         </Suspense>
       </Canvas>
-      <div className="finale-final-poster" aria-hidden="true">
-        <img
-          src={finalePhotoUrl(
-            FINALE_PHOTO_SEQUENCE[FINALE_PHOTO_SEQUENCE.length - 1]!,
-            "primary",
-          )}
-          alt=""
-          loading="lazy"
-          decoding="async"
-        />
-      </div>
     </div>
   );
 }
