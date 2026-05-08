@@ -441,7 +441,13 @@ function PhotoDustBurst({
         dirs[cursor * 2] = Math.cos(angle) * outward;
         dirs[cursor * 2 + 1] = Math.sin(angle) * outward;
         speeds[cursor] = 0.92 + rand() * 2.65;
-        sizes[cursor] = 1.55 + rand() * 2.75;
+        const fragmentSizeRoll = rand();
+        sizes[cursor] =
+          fragmentSizeRoll < 0.58
+            ? 1.75 + rand() * 1.35
+            : fragmentSizeRoll < 0.92
+              ? 3.15 + rand() * 2.05
+              : 5.4 + rand() * 1.9;
         delays[cursor] = rand() * 0.22;
         residues[cursor] = rand() < 0.28 ? 1 : 0;
         cursor += 1;
@@ -731,11 +737,11 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
       positions[i * 3] = (rand() - 0.5) * 8.5;
       positions[i * 3 + 1] = (rand() - 0.5) * 5.6;
       positions[i * 3 + 2] = -3.5 - rand() * 2.5;
-      // 绝大多数是 1-2px 细星，少量 2-3px 亮星
+      // 背景星要有明显大小层级：多数细星、少量亮星、极少数近景星。
       const r = rand();
-      if (r < 0.88) sizes[i] = 0.65 + rand() * 0.95;
-      else if (r < 0.985) sizes[i] = 1.7 + rand() * 1.0;
-      else sizes[i] = 3.0 + rand() * 1.2;
+      if (r < 0.82) sizes[i] = 0.85 + rand() * 1.05;
+      else if (r < 0.975) sizes[i] = 2.15 + rand() * 1.45;
+      else sizes[i] = 4.35 + rand() * 1.95;
       brightness[i] = 0.26 + rand() * 0.68;
       // 约 42% 初始可见；给照片破碎后形成的新星群留出视觉主导权。
       revealAt[i] = rand() < 0.42 ? rand() * 0.08 : 0.08 + rand() * 0.92;
@@ -893,7 +899,7 @@ function PhotoResidueStars({
           localY + Math.sin(angle) * radius * h * scatter;
         positions[cursor * 3 + 2] = -0.03 - rand() * 0.34;
         const bright = rand() > 0.72;
-        sizes[cursor] = bright ? 3.7 + rand() * 3.0 : 1.95 + rand() * 2.35;
+        sizes[cursor] = bright ? 4.2 + rand() * 2.8 : 2.2 + rand() * 2.4;
         brightness[cursor] = bright
           ? 0.74 + rand() * 0.5
           : 0.46 + rand() * 0.42;
