@@ -538,23 +538,32 @@ const anchorDate = main.data.anchor_date;
         return;
       }
 
-      // v1.92（修 v1.91 audit P2-1）：finale 走马灯落点 0.07 → 0.04。
-      // 旧 0.07 × 15 = 1.05 → 第 0 张 lifecycle 已完全 dissolve，第 1 张刚要
-      // 入场（life ≈ 0.05，基本不可见）；用户访谈到 #beat-12-heading 看到
-      // 的是空白深色 stage + 文字浮卡。
-      // 新 0.04 × 15 = 0.60，配合 v1.92 LIFE_DURATION = 1.4 → 第 0 张 lifecycle
-      // ≈ 0.43（HOLD 中段，opacity=1 / scale ≈ 1.0），稳定可视的"导演帧"。
-      // StarCarouselFinale.tsx 的 useState lazy initializer 在 island mount
-      // 时同步读 scroll position，确保首帧即可正确呈现 progress=0.04 的画面。
+      // v1.93（修 v1.92 audit P2-1）：finale hash 硬同步。
+      // v1.92 把 target 从 0.07 改 0.04 + lazy useState init 期望读对的 scroll，
+      // 但部署后实测 #beat-12-heading 仍显 data-progress=0.000。根因可能是：
+      //   (a) island hydrate 与 alignHash 的相对时序不稳定；
+      //   (b) scrollTo 在某些浏览器下不一定立即 fire scroll 事件。
+      // v1.93 用三件套硬同步：
+      //   ① 写 data-initial-progress="0.04" 到 .finale-beat（dataset 形式）
+      //   ② scrollTo（保留 0.04 视觉目标：photo 0 lifecycle ≈ 0.43，HOLD 中段）
+      //   ③ dispatchEvent('scroll') 显式叫醒 island 的 listener
+      // StarCarouselFinale lazy useState 现在 **优先读 dataset.initialProgress**，
+      // 没有 attribute 时才 fall through 到 scroll-derived。
       const finaleBeat = anchor.closest<HTMLElement>(".finale-beat");
       if (finaleBeat) {
+        const targetProgress = 0.04;
+        finaleBeat.dataset.initialProgress = String(targetProgress);
         const rect = finaleBeat.getBoundingClientRect();
         const absoluteTop = window.scrollY + rect.top;
         const vh = window.innerHeight || 1;
         const scrollable = Math.max(0, finaleBeat.offsetHeight - vh);
         const top =
-          scrollable > 0 ? absoluteTop + scrollable * 0.04 : absoluteTop;
+          scrollable > 0
+            ? absoluteTop + scrollable * targetProgress
+            : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        // 显式 fire scroll 事件保险（某些 UA 在 auto behavior 下不 fire）
+        window.dispatchEvent(new Event("scroll"));
       }
     }
 
