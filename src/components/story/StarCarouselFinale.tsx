@@ -1,5 +1,15 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.3 · v1.92 修 v1.91 audit 3 P2）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.4 · v1.94 视觉契约重做）
+ *
+ * v0.4 修 v1.93 视觉复审：
+ *   - finale 夜空不再借用 §2.B globe 的深色场，也不再只是单色 clearColor：
+ *     NightSkyBackground + StarField 共同构成独立的满天星辰背景。
+ *   - 照片持有期直接输出原纹理采样，不做 gamma/brightness/filter 调整；只有
+ *     dissolve 边缘临时混入星金色。
+ *   - ENTRY_DIRECTIONS + 更强 entry distance/scale，让 15 张照片从不同方位进入、
+ *     由小变大后停在中央。
+ *   - PhotoResidueStars 用每张照片的 plane footprint 采样出持久星点；照片进入
+ *     dissolve 后逐批释放这些点，形成"散开成为星空的一部分"，而不是单纯消失。
  *
  * v0.3 修 v1.91 audit：
  *   - **lazy useState initializer**：mount 时同步读 .finale-beat 滚动位置，让
@@ -21,8 +31,7 @@
  *     拿到的是 hydrated island 自身，不是外层 700vh scroll spacer，结果 progress
  *     一次 wheel 就 0 → 1 跳过走马灯
  *   - **Canvas 不透明 + clearColor 深色**：v0.1 alpha=true 让 SSR Pearl_04 fallback
- *     穿透到走马灯之下混色；alpha=false + clearColor `#1d1d18` 给"夜空 starfield"
- *     opaque 底，DESIGN "背景从地球的深色星场延续下来" 落到位
+ *     穿透到走马灯之下混色；alpha=false + clearColor 给 finale 夜空 opaque 底
  *   - **PhotoPlane 限定到 currentI ± 1**：v0.1 一次性挂载 15 张 useTexture，岛
  *     hydrate 后立刻请求 15 张 1600px JPG（~3MB）；v0.2 SceneInner 按 globalProgress
  *     算 currentI，只渲染 ±1 active 范围的 PhotoPlane，其它不挂载（也不 fetch
@@ -32,9 +41,9 @@
  * 视觉契约（DESIGN §2.C · v2.21）：
  *   - 15 张照片按钦定顺序串接：grassland × 5 → wooden-door × 3 → pearl × 2 →
  *     retro × 4 → final Pearl_04（定格）
- *   - 每张 lifecycle：opacity 0→1、scale 0.82→1.04、轻微 3D rotate 入场，
+ *   - 每张 lifecycle：opacity 0→1、scale 0.68→1.06、方位 offset → center，
  *     hold ~0.4-0.5 屏，然后 Shader Dissolve 为星点
- *   - 同屏最多 1 张主照片 + 上一张残留 dissolve；避免视觉拥挤
+ *   - 同屏最多 1 张主照片 + 上一张残留 dissolve；dissolve 同步释放持久星点
  *   - final Pearl_04：lifecycle 停在 hold 阶段，**永不 dissolve**，定格成主海报
  *   - reduced motion：跳过 dissolve / rotate / scale，只 opacity 交叉淡入
  *
@@ -43,7 +52,7 @@
  *     keep / 否则 discard
  *   - threshold 由 uDissolve uniform 0→1 推进
  *   - 边缘带（noise 接近 threshold ±0.06）混入星金色（rgb 1.0, 0.85, 0.55）
- *     → "碎片成为星点" 的 fragment-shader 效果
+ *     → 与 PhotoResidueStars 的持久点云一起形成"碎片成为星点"的效果
  *
  * 滚动进度：
  *   - StarCarouselFinale 自驱：内置 IO + scroll listener，把 root.getBoundingClientRect
@@ -113,7 +122,7 @@ class DualHostTextureLoader extends THREE.Loader {
 
 const CAMERA_FOV = 38;
 /** 照片在 canvas 上沿约束维度填充的比例（与 GlobeDistanceScene 同款理念） */
-const PHOTO_FILL_FRACTION = 0.78;
+const PHOTO_FILL_FRACTION = 0.84;
 /** 每张照片 lifecycle 阶段切分（fraction of own lifecycle） */
 const ENTER_END = 0.18;
 const HOLD_END = 0.62;
@@ -135,18 +144,18 @@ const HOLD_END = 0.62;
  * 不 dissolve，自然定格。globalProgress = (N - 1) / N = 14/15 ≈ 0.933 时
  * final 在 lifecycle = 1/1.4 = 0.71，仍在 HOLD 内（因为 isFinal 强制 dissolve=0）。
  */
-const LIFE_DURATION = 1.4;
+const LIFE_DURATION = 1.5;
 
-/** 入场期 scale 曲线：0.82 → 1.04 → 1.0 */
+/** 入场期 scale 曲线：0.68 → 1.06 → 1.0 */
 function scaleCurve(life: number, reduced: boolean): number {
   if (reduced) return 1;
   if (life < ENTER_END) {
     const t = life / ENTER_END;
-    return 0.82 + (1.04 - 0.82) * t;
+    return 0.68 + (1.06 - 0.68) * t;
   }
   if (life < HOLD_END) {
     const t = (life - ENTER_END) / (HOLD_END - ENTER_END);
-    return 1.04 + (1.0 - 1.04) * t;
+    return 1.06 + (1.0 - 1.06) * t;
   }
   return 1.0;
 }
@@ -193,7 +202,7 @@ const ENTRY_DIRECTIONS: readonly [number, number][] = [
   [-1, -1], // 6 bottom-left
   [-1.4, 0], // 7 left
 ];
-const ENTRY_DISTANCE = 1.4; // 世界单位（相对 plane 自身尺寸）
+const ENTRY_DISTANCE = 2.35; // 世界单位（足够让 wide 视口明确感到"从方位进入"）
 
 /** 入场期 (x, y) 偏移：从方位飘到中央。reduced-motion 直接 [0, 0] */
 function positionOffsetCurve(
@@ -267,12 +276,8 @@ const FRAG_SHADER = /* glsl */ `
 
   void main() {
     vec4 photo = texture2D(uTex, vUv);
-    // v1.93（v1.92 audit"照片调暗"修）：自定义 ShaderMaterial 不像 Three 内
-    // 置 lit material 那样自动注入 sRGB→linear 转换，渲染管线 outputColorSpace
-    // = sRGB 时未转的 sRGB 样本会被当作 linear 二次 encode → 看上去比原图暗
-    // 一档（gamma 2.2 的差异）。这里手动做一次 sRGB→linear，让 renderer 的
-    // 输出 encode 后回到原图色阶。
-    photo.rgb = pow(photo.rgb, vec3(2.2));
+    // v1.94：持有期直接输出原纹理采样，不做 gamma / brightness / filter 调整。
+    // 只有 dissolve 边缘临时混入星金色；非 dissolve 区域保持原照片色阶。
     if (uDissolve > 0.0) {
       // 双频 noise：低频给"大块剥落"，高频给"细粒星尘"
       float n1 = noise2(vUv * 12.0);
@@ -280,10 +285,10 @@ const FRAG_SHADER = /* glsl */ `
       float n  = n1 * 0.6 + n2 * 0.4;
       float edge = uDissolve - n;
       if (edge > 0.0) discard;
-      // 边缘带：把 photo.rgb 推向星金色（已在 linear 空间）
+      // 边缘带：把 photo.rgb 推向星金色
       if (edge > -0.08) {
         float band = (-edge) / 0.08; // 0 = 边缘最亮 / 1 = 内部本色
-        vec3 starGlow = pow(vec3(1.0, 0.86, 0.55), vec3(2.2));
+        vec3 starGlow = vec3(1.0, 0.88, 0.58);
         photo.rgb = mix(starGlow, photo.rgb, band);
       }
     }
@@ -404,11 +409,10 @@ function PhotoPlane({
 /* ─────────────────────── Star dust background ─────────────────────── */
 /* ─────────────────────── NightSkyBackground ─────────────────────── */
 /**
- * v1.93（v1.92 audit P2-2 修）：独立 finale 夜空 backdrop。脱离 §2.B 地球场景
- * 的"延续 dark olive starfield"基调，按 finale 自身的视觉意图重设：
- *   - 全屏 mesh 用径向渐变 shader：中心深邃午夜蓝（#070a1c），向外渐淡到墨黑
- *   - 加微弱 fbm 让"色相不死板"，像真实夜空有云层 / 银河晕；强度极低不抢
- *     主体
+ * v1.94：独立 finale 夜空 backdrop。目标不是延续 globe，而是给婚礼终幕一个
+ * 明亮但不俗的星空舞台：
+ *   - 深蓝紫径向夜空，中心微亮，四角压暗，给照片留视觉主场
+ *   - 低频云气 + 斜向银河晕，让背景有"满天星辰"的深度而不是单色幕布
  * 几何：一块大 plane 放在最远处（z=-10）；camera 看向它，覆盖整个 frustum。
  */
 const NIGHT_SKY_VERT = /* glsl */ `
@@ -439,13 +443,18 @@ const NIGHT_SKY_FRAG = /* glsl */ `
   void main() {
     vec2 p = vUv - 0.5;
     float r = length(p) * 1.6;
-    // 径向渐变：中心稍亮深蓝，向外快速归零接近墨黑
-    vec3 inner  = vec3(0.027, 0.039, 0.110); // #070a1c 深邃午夜蓝
-    vec3 outer  = vec3(0.012, 0.016, 0.030); // 接近墨黑
-    vec3 col    = mix(inner, outer, smoothstep(0.0, 1.0, r));
-    // 微弱 fbm 加云层 / 银河晕（强度 0.012，不抢主体）
-    float n     = noise2(vUv * 4.0) * 0.7 + noise2(vUv * 12.0) * 0.3;
-    col        += (n - 0.5) * 0.012;
+    // 径向渐变：中心蓝紫微亮，外圈压到深海军蓝
+    vec3 inner  = vec3(0.035, 0.047, 0.145);
+    vec3 mid    = vec3(0.018, 0.024, 0.070);
+    vec3 outer  = vec3(0.006, 0.008, 0.020);
+    vec3 col    = mix(inner, mid, smoothstep(0.0, 0.72, r));
+    col         = mix(col, outer, smoothstep(0.62, 1.15, r));
+
+    // 斜向银河晕：不画成一条明显丝带，只让天空上半部有一点层次
+    float band  = exp(-pow((p.y + p.x * 0.42 - 0.04) * 3.1, 2.0));
+    float n     = noise2(vUv * 3.5) * 0.65 + noise2(vUv * 11.0) * 0.35;
+    col        += vec3(0.030, 0.026, 0.055) * band * 0.38;
+    col        += (n - 0.5) * 0.018;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -473,16 +482,13 @@ function NightSkyBackground(): React.ReactElement {
 
 /* ─────────────────────── StarField ─────────────────────── */
 /**
- * v1.93（v1.92 audit P2-4 修）：星点池 1500 颗，按 progress 分批 reveal。
+ * v1.94：星空底层星点池 2600 颗。它负责"满天星辰"的底色；照片碎片
+ * 另由 PhotoResidueStars 负责，避免把背景星与照片残片混为一个弱效果。
  *
  * 视觉契约（v1.92 audit）："碎片化作星尘，成为星空的一部分"——每张照片
  * dissolve 时贡献 ~100 颗永久星点。具体实现：
- *   - 池子 1500 颗，hash-rand 分布；每颗带 (size, brightness) 随机变量
- *   - uniform `uReveal` 0..1 控制有多少比例可见；vertexShader 根据
- *     attribute aRevealAt 决定可见性（0..1 排序后均匀分布）
- *   - globalProgress 0..1 → uReveal 从 base (0.06，hash 落点首屏的初始稀疏星点)
- *     到 1.0；photo i dissolve 完成时 uReveal ≈ (i+1)/N
- *   - 视觉上：访客滚到第 5 张时星点已是 5/15 ≈ 33% 满，且永远不再消失
+ *   - 初始即显示大量基础星点（不是等照片 dissolve 后才有星空）
+ *   - globalProgress 只略微增加亮星密度，真正"碎片成为星"交给下方残片点云
  */
 const STARFIELD_VERT = /* glsl */ `
   attribute float aRevealAt;
@@ -495,7 +501,7 @@ const STARFIELD_VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
     // aRevealAt > uReveal → 星点尚未"被照片碎片化贡献"出来；置 size = 0 隐藏
     float visible = step(aRevealAt, uReveal);
-    gl_PointSize = aSize * visible * (320.0 / -mv.z);
+    gl_PointSize = aSize * visible;
     vBrightness = aBrightness * visible;
   }
 `;
@@ -516,7 +522,7 @@ const STARFIELD_FRAG = /* glsl */ `
 `;
 
 function StarField({ progress }: { progress: number }): React.ReactElement {
-  const N_STARS = 1500;
+  const N_STARS = 2600;
   const { positions, sizes, brightness, revealAt } = useMemo(() => {
     let seed = 17;
     function rand(): number {
@@ -528,21 +534,17 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
     const brightness = new Float32Array(N_STARS);
     const revealAt = new Float32Array(N_STARS);
     for (let i = 0; i < N_STARS; i += 1) {
-      // 球面外推 + 矩形分布混合：大部分星点在 viewport 范围内 ±1.2 宽 / ±0.8 高
-      // z 拉远到 -3..-6 给视差感
-      positions[i * 3] = (rand() - 0.5) * 7;
-      positions[i * 3 + 1] = (rand() - 0.5) * 5;
-      positions[i * 3 + 2] = -3 + rand() * -3;
-      // 80% 小星 (1-2 px) + 20% 大星 (3-5 px) + 极少数 7-10 px 亮星
+      positions[i * 3] = (rand() - 0.5) * 8.5;
+      positions[i * 3 + 1] = (rand() - 0.5) * 5.6;
+      positions[i * 3 + 2] = -3.5 - rand() * 2.5;
+      // 绝大多数是 1-2px 细星，少量 2-3px 亮星
       const r = rand();
-      if (r < 0.8) sizes[i] = 1.0 + rand() * 1.0;
-      else if (r < 0.97) sizes[i] = 3.0 + rand() * 2.0;
-      else sizes[i] = 7.0 + rand() * 3.0;
-      brightness[i] = 0.45 + rand() * 0.55;
-      // revealAt 按"已 dissolve 的照片数"映射到 [0..1]：
-      // 第 0..0.06 是 hash landing 首屏即可见的"基础天空"
-      // 第 i 张 dissolve 期 (life 0.62..1.0 → globalProgress 段) 把 ~100 颗 reveal
-      revealAt[i] = i < 90 ? rand() * 0.06 : 0.06 + rand() * 0.94;
+      if (r < 0.88) sizes[i] = 0.65 + rand() * 0.95;
+      else if (r < 0.985) sizes[i] = 1.7 + rand() * 1.0;
+      else sizes[i] = 3.0 + rand() * 1.2;
+      brightness[i] = 0.26 + rand() * 0.68;
+      // 约 58% 初始可见；后续 progress 只缓慢补出更多星点
+      revealAt[i] = rand() < 0.58 ? rand() * 0.08 : 0.08 + rand() * 0.92;
     }
     return { positions, sizes, brightness, revealAt };
   }, []);
@@ -563,12 +565,12 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
   }, [geometry]);
 
   const uniforms = useMemo(() => ({ uReveal: { value: 0.06 } }), []);
-  // progress 直接驱动 uReveal；初始 0.06 给 hash landing 首屏一些星点
+  // progress 直接驱动 uReveal；初始 0.18 给 hash landing 首屏足够星点
   const matRef = useRef<THREE.ShaderMaterial>(null);
   useFrame(() => {
     if (matRef.current) {
       const u = matRef.current.uniforms["uReveal"];
-      if (u) u.value = Math.max(0.06, Math.min(1, progress + 0.06));
+      if (u) u.value = Math.max(0.18, Math.min(1, 0.18 + progress * 0.82));
     }
   });
 
@@ -579,6 +581,147 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
         uniforms={uniforms}
         vertexShader={STARFIELD_VERT}
         fragmentShader={STARFIELD_FRAG}
+        transparent
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+/* ─────────────────────── PhotoResidueStars ─────────────────────── */
+const RESIDUE_VERT = /* glsl */ `
+  attribute float aRevealStart;
+  attribute float aRevealEnd;
+  attribute float aSize;
+  attribute float aBrightness;
+  varying float vBrightness;
+  uniform float uProgress;
+  void main() {
+    float t = smoothstep(aRevealStart, aRevealEnd, uProgress);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = aSize * t;
+    vBrightness = aBrightness * t;
+  }
+`;
+const RESIDUE_FRAG = /* glsl */ `
+  precision highp float;
+  varying float vBrightness;
+  void main() {
+    if (vBrightness < 0.001) discard;
+    vec2 c = gl_PointCoord - 0.5;
+    float d = length(c) * 2.0;
+    if (d > 1.0) discard;
+    float alpha = pow(1.0 - d, 1.6) * vBrightness;
+    vec3 starCol = vec3(1.0, 0.90, 0.64);
+    gl_FragColor = vec4(starCol, alpha);
+  }
+`;
+
+function fitPlaneSize(
+  viewW: number,
+  viewH: number,
+  aspect: number,
+): [number, number] {
+  const maxW = viewW * PHOTO_FILL_FRACTION;
+  const maxH = viewH * PHOTO_FILL_FRACTION;
+  if (maxW / aspect <= maxH) return [maxW, maxW / aspect];
+  return [maxH * aspect, maxH];
+}
+
+/**
+ * 每张照片 dissolve 时释放一组持久星点。这些点采样自该照片在画面中的
+ * plane footprint，并略向四周散开；照片完整时被 photo plane 挡住，进入
+ * dissolve 后从破碎区域露出，随后留在星空里。
+ */
+function PhotoResidueStars({
+  progress,
+}: {
+  progress: number;
+}): React.ReactElement {
+  const { viewport } = useThree();
+  const { positions, sizes, brightness, revealStart, revealEnd } =
+    useMemo(() => {
+      let seed = 113;
+      function rand(): number {
+        seed = (seed * 1664525 + 1013904223) % 4294967296;
+        return seed / 4294967296;
+      }
+
+      const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
+      const perPhoto = 96;
+      const total = photos.length * perPhoto;
+      const positions = new Float32Array(total * 3);
+      const sizes = new Float32Array(total);
+      const brightness = new Float32Array(total);
+      const revealStart = new Float32Array(total);
+      const revealEnd = new Float32Array(total);
+      const n = FINALE_PHOTO_SEQUENCE.length;
+
+      let cursor = 0;
+      for (let photoIndex = 0; photoIndex < photos.length; photoIndex += 1) {
+        const photo = photos[photoIndex];
+        if (!photo) continue;
+        const [w, h] = fitPlaneSize(
+          viewport.width,
+          viewport.height,
+          photo.aspectRatio,
+        );
+        const start = (photoIndex + HOLD_END * LIFE_DURATION) / n;
+        const end = Math.min(1, (photoIndex + LIFE_DURATION) / n);
+
+        for (let j = 0; j < perPhoto; j += 1) {
+          const angle = rand() * Math.PI * 2;
+          const radius = Math.pow(rand(), 0.65);
+          const localX = (rand() - 0.5) * w;
+          const localY = (rand() - 0.5) * h;
+          const scatter = 0.1 + rand() * 0.28;
+          positions[cursor * 3] =
+            localX + Math.cos(angle) * radius * w * scatter;
+          positions[cursor * 3 + 1] =
+            localY + Math.sin(angle) * radius * h * scatter;
+          positions[cursor * 3 + 2] = -0.08 - rand() * 0.45;
+          sizes[cursor] = 1.2 + rand() * 2.8;
+          brightness[cursor] = 0.46 + rand() * 0.54;
+          revealStart[cursor] =
+            start + rand() * Math.max(0.001, (end - start) * 0.28);
+          revealEnd[cursor] = start + (end - start) * (0.55 + rand() * 0.45);
+          cursor += 1;
+        }
+      }
+
+      return { positions, sizes, brightness, revealStart, revealEnd };
+    }, [viewport.width, viewport.height]);
+
+  const geometry = useMemo(() => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+    geom.setAttribute("aBrightness", new THREE.BufferAttribute(brightness, 1));
+    geom.setAttribute(
+      "aRevealStart",
+      new THREE.BufferAttribute(revealStart, 1),
+    );
+    geom.setAttribute("aRevealEnd", new THREE.BufferAttribute(revealEnd, 1));
+    return geom;
+  }, [positions, sizes, brightness, revealStart, revealEnd]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const uniforms = useMemo(() => ({ uProgress: { value: 0 } }), []);
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+  useFrame(() => {
+    const u = matRef.current?.uniforms["uProgress"];
+    if (u) u.value = progress;
+  });
+
+  return (
+    <points geometry={geometry} renderOrder={0}>
+      <shaderMaterial
+        ref={matRef}
+        uniforms={uniforms}
+        vertexShader={RESIDUE_VERT}
+        fragmentShader={RESIDUE_FRAG}
         transparent
         depthWrite={false}
       />
@@ -639,6 +782,7 @@ function SceneInner({
       <ProgressInvalidator progress={globalProgress} />
       <NightSkyBackground />
       <StarField progress={globalProgress} />
+      <PhotoResidueStars progress={globalProgress} />
       {activeIndices.map((i) => {
         const photo = FINALE_PHOTO_SEQUENCE[i];
         if (!photo) return null;
@@ -729,6 +873,15 @@ export function StarCarouselFinale(): React.ReactElement {
       const root =
         containerRef.current?.closest<HTMLElement>(".finale-beat") ?? null;
       if (!root) return;
+      const initial = root.dataset["initialProgress"];
+      if (initial) {
+        const parsed = parseFloat(initial);
+        if (!Number.isNaN(parsed)) {
+          setProgress(Math.min(1, Math.max(0, parsed)));
+          delete root.dataset["initialProgress"];
+          return;
+        }
+      }
       const rect = root.getBoundingClientRect();
       const vh = window.innerHeight || 1;
       // root.top 在视口底（rect.top = vh）→ progress 0
@@ -767,9 +920,8 @@ export function StarCarouselFinale(): React.ReactElement {
         // 是 "always" 让 GPU 每帧空跑（progress 不变也写一遍 uniform）；现在 demand
         // + ProgressInvalidator 在 progress 变时显式 invalidate()，idle 期间 0 CPU/GPU
         frameloop="demand"
-        // v0.2 alpha=false 不透明；v1.93 clearColor 改为 finale 独立设计的
-        // 深邃午夜蓝 #06091a（与 NightSkyBackground 着色器内圈色一致），
-        // 脱离 §2.B 地球场景沿用的 #1d1d18 dark olive 调性
+        // alpha=false 不透明；clearColor 是 finale 独立夜空的保底色。
+        // 真正的满天星辰由 NightSkyBackground / StarField / PhotoResidueStars 绘制。
         gl={{ antialias: true, alpha: false }}
         onCreated={({ gl }) => {
           gl.setClearColor("#06091a", 1);
