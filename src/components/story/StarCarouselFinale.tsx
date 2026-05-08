@@ -1,5 +1,20 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.5 · v1.95 入场/星尘重做）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.7 · v1.97 先碎成星再换片）
+ *
+ * v0.7 修 v1.96 视觉复审：
+ *   - timeline 改成"上一张先完整破碎 → 星点散开 → 下一张再可见入场"；
+ *     避免下一张从边缘进场时盖住破碎瞬间。
+ *   - 入场增加 ENTER_START + late fade：照片在屏外/边缘时保持不可见，进入
+ *     安全区后再淡入，仍保留八方向来源但不出现半张照片裁切。
+ *   - 照片点阵加入像素级 jitter，避免规整网格感；散开更早开始。
+ *
+ * v0.6 修 v1.95 视觉复审：
+ *   - 退场改为断点式：照片保持完整到 break point，然后快速切到照片颜色
+ *     点阵；点阵再散开并有一部分定居为珍珠白星点。
+ *   - LIFE_DURATION 从 2.2 收回 1.7：下一张不再过早盖住上一张的破碎瞬间。
+ *   - PhotoDustBurst 提升到约 5.7K 点/照片，点径适度增大，避免肉眼看不见。
+ *   - PhotoResidueStars 提升到 520 点/照片，并加入低频 twinkle invalidator；
+ *     星点留在照片 footprint 附近，能看出"这张照片留下了星星"。
  *
  * v0.5 修 v1.94 视觉复审：
  *   - 入场区从约 1.8% 全局 scroll 拉长到约 5.9%，滚轮不会一跳就错过；
@@ -139,9 +154,16 @@ const HASH_LANDING_COMMIT_PROGRESS = HASH_LANDING_PROGRESS + 0.0001;
 /** 照片在 canvas 上沿约束维度填充的比例（与 GlobeDistanceScene 同款理念） */
 const PHOTO_FILL_FRACTION = 0.84;
 /** 每张照片 lifecycle 阶段切分（fraction of own lifecycle） */
-const ENTER_END = 0.4;
-const HOLD_END = 0.6;
+const ENTER_START = 0.16;
+const ENTER_END = 0.52;
+const HOLD_END = 0.64;
 // EXIT: HOLD_END..1.0
+const SHATTER_APPEAR_START = 0.0;
+const SHATTER_APPEAR_END = 0.035;
+const PHOTO_BREAK_START = 0.02;
+const PHOTO_BREAK_END = 0.08;
+const DUST_SCATTER_START = 0.06;
+const DUST_SCATTER_END = 0.72;
 
 /**
  * v0.3（v1.91 audit P2-2 修）：每张照片 lifecycle 占用的全局 progress 倍数。
@@ -154,22 +176,33 @@ const HOLD_END = 0.6;
  * 用户肉眼只能看到照片已经在中央。现在 ENTER 占约 5.9% 全局 progress，
  * 方向入场和由小变大都能在正常滚动中被看见。
  *
+ * v0.7（v1.97）把 LIFE_DURATION 收回 1.35，并配合 ENTER_START：下一张
+ * 在自己 slot 开始后不会立刻可见；上一张 life 已接近 0.9、星尘事件基本完成
+ * 后，下一张才从安全区淡入。
+ *
  * 注意：globalProgress = 1 时最后一张 photo (i = N-1 = 14) lifecycle =
- * (1 × 15 - 14) / 2.2 = 0.45，已经完成入场；isFinal 分支让它永远不 dissolve，
+ * (1 × 15 - 14) / 1.35 ≈ 0.74，已经完成入场；isFinal 分支让它永远不 dissolve，
  * 自然定格为主海报。
  */
-const LIFE_DURATION = 2.2;
+const LIFE_DURATION = 1.35;
 
-/** 入场期 scale 曲线：0.42 → 1.08 → 1.0 */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** 入场期 scale 曲线：0.30 → 1.06 → 1.0 */
 function scaleCurve(life: number, reduced: boolean): number {
   if (reduced) return 1;
+  if (life < ENTER_START) return 0.3;
   if (life < ENTER_END) {
-    const t = life / ENTER_END;
-    return 0.42 + (1.08 - 0.42) * t;
+    const raw = (life - ENTER_START) / (ENTER_END - ENTER_START);
+    const t = 1 - Math.pow(1 - Math.max(0, raw), 2.1);
+    return 0.3 + (1.06 - 0.3) * t;
   }
   if (life < HOLD_END) {
     const t = (life - ENTER_END) / (HOLD_END - ENTER_END);
-    return 1.08 + (1.0 - 1.08) * t;
+    return 1.06 + (1.0 - 1.06) * t;
   }
   return 1.0;
 }
@@ -177,9 +210,11 @@ function scaleCurve(life: number, reduced: boolean): number {
 /** 入场期 opacity 0 → 1；hold 期 1；exit 期由 dissolve shader 处理 alpha 衰减 */
 function opacityCurve(life: number): number {
   if (life < 0) return 0;
+  if (life < ENTER_START) return 0;
   if (life < ENTER_END) {
-    const t = Math.max(0, life / ENTER_END);
-    return Math.min(1, 0.12 + t * 0.88);
+    const raw = (life - ENTER_START) / (ENTER_END - ENTER_START);
+    const t = Math.max(0, Math.min(1, raw));
+    return smoothstep(0.32, 0.76, t);
   }
   return 1;
 }
@@ -187,8 +222,8 @@ function opacityCurve(life: number): number {
 /** 入场期 Y 轴轻微 rotate -0.06 → 0；reduced-motion 直接 0 */
 function rotateYCurve(life: number, reduced: boolean): number {
   if (reduced) return 0;
-  if (life < ENTER_END) {
-    const t = life / ENTER_END;
+  if (life >= ENTER_START && life < ENTER_END) {
+    const t = (life - ENTER_START) / (ENTER_END - ENTER_START);
     return -0.06 * (1 - t); // -0.06 rad ≈ -3.4°
   }
   return 0;
@@ -203,23 +238,23 @@ function rotateYCurve(life: number, reduced: boolean): number {
  *   0: top-left, 1: top, 2: top-right, 3: right,
  *   4: bottom-right, 5: bottom, 6: bottom-left, 7: left
  *
- * 入场时 photo position = direction × (1 - life/ENTER_END) × ENTRY_DISTANCE，
- * 配合 scaleCurve 0.42 → 1.08 → 1.0 形成"由远方某方位飘入中央并放大"。
+ * 入场时 photo position = direction × easedDistance。life < ENTER_START 时保持
+ * 不可见；进入安全区后再淡入，避免只看见被裁掉的半张照片。
  *
  * final Pearl_04 (i=14, 14%8=6=bottom-left) 也走方位入场——但它的 lifecycle
  * 在 globalProgress 末尾才进入，且 isFinal 永不 dissolve，自然定格。
  */
 const ENTRY_DIRECTIONS: readonly [number, number][] = [
   [-1, 1], // 0 top-left
-  [0, 1.2], // 1 top（垂直方向给得更远，纵向强调）
+  [0, 1], // 1 top
   [1, 1], // 2 top-right
-  [1.4, 0], // 3 right（横向给得更远，横向强调）
+  [1.1, 0], // 3 right（横向略强调）
   [1, -1], // 4 bottom-right
-  [0, -1.2], // 5 bottom
+  [0, -1], // 5 bottom
   [-1, -1], // 6 bottom-left
-  [-1.4, 0], // 7 left
+  [-1.1, 0], // 7 left
 ];
-const ENTRY_DISTANCE = 4.15; // 世界单位（正常滚轮下也能明确看见"从方位进入"）
+const ENTRY_DISTANCE = 1.75; // 世界单位：在安全区内保留方位感，避免裁切半张照片
 
 /** 入场期 (x, y) 偏移：从方位飘到中央。reduced-motion 直接 [0, 0] */
 function positionOffsetCurve(
@@ -230,10 +265,12 @@ function positionOffsetCurve(
   if (reduced || life >= ENTER_END) return [0, 0];
   const dir = ENTRY_DIRECTIONS[index % ENTRY_DIRECTIONS.length];
   if (!dir) return [0, 0];
-  const t = Math.max(0, life) / ENTER_END;
-  // v1.95 audit follow-up：cubic ease-out 太快回到中央，真实滚轮下仍像
-  // "从中心出现"。smoothstep 让入场中段仍保留清晰方位偏移。
-  const eased = t * t * (3 - 2 * t);
+  if (life < ENTER_START) {
+    return [dir[0] * ENTRY_DISTANCE, dir[1] * ENTRY_DISTANCE];
+  }
+  const raw = (life - ENTER_START) / (ENTER_END - ENTER_START);
+  const t = Math.max(0, Math.min(1, raw));
+  const eased = 1 - Math.pow(1 - t, 2.1);
   const k = (1 - eased) * ENTRY_DISTANCE;
   return [dir[0] * k, dir[1] * k];
 }
@@ -277,10 +314,10 @@ const FRAG_SHADER = /* glsl */ `
 
   void main() {
     vec4 photo = texture2D(uTex, vUv);
-    // v1.95：持有期直接输出原纹理采样，不做 gamma / brightness / filter 调整；
-    // dissolve 时只做干净淡出；碎散由 PhotoDustBurst 负责，避免出现"烧穿"语义。
+    // v1.96：退场断点前保持完整；断点后快速让位给照片点阵。
+    // 不做噪声破洞，避免"烧穿"语义。
     if (uDissolve > 0.0) {
-      photo.a *= 1.0 - smoothstep(0.10, 0.82, uDissolve);
+      photo.a *= 1.0 - smoothstep(${PHOTO_BREAK_START.toFixed(3)}, ${PHOTO_BREAK_END.toFixed(3)}, uDissolve);
     }
     photo.a *= uOpacity;
     if (photo.a <= 0.0) discard;
@@ -302,20 +339,22 @@ const DUST_VERT = /* glsl */ `
   varying float vAlpha;
   varying float vResidue;
   void main() {
-    float delayed = clamp((uBurst - aDelay * 0.42) / max(0.001, 1.0 - aDelay * 0.42), 0.0, 1.0);
+    float delayed = clamp((uBurst - ${DUST_SCATTER_START.toFixed(3)} - aDelay * 0.14) / max(0.001, ${(
+      DUST_SCATTER_END - DUST_SCATTER_START
+    ).toFixed(3)}), 0.0, 1.0);
     float t = smoothstep(0.0, 1.0, delayed);
     vec3 pos = position;
     pos.xy += aDir * aSpeed * pow(t, 1.08);
     pos.z += 0.16 + 0.62 * t;
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * (0.9 + t * 1.55);
+    gl_PointSize = aSize * (1.22 + t * 1.48);
     vUv = aUv;
     vT = t;
     vResidue = aResidue;
-    float appear = smoothstep(0.0, 0.08, uBurst);
-    float transientFade = 1.0 - smoothstep(0.78, 0.98, uBurst);
-    float settled = smoothstep(0.70, 0.96, uBurst) * aResidue;
+    float appear = smoothstep(${SHATTER_APPEAR_START.toFixed(3)}, ${SHATTER_APPEAR_END.toFixed(3)}, uBurst);
+    float transientFade = 1.0 - smoothstep(0.84, 1.0, uBurst);
+    float settled = smoothstep(0.68, 0.96, uBurst) * aResidue;
     vAlpha = appear * max(transientFade, settled * 0.72);
   }
 `;
@@ -335,9 +374,10 @@ const DUST_FRAG = /* glsl */ `
     vec4 photo = texture2D(uTex, vUv);
     vec3 starCol = vec3(0.94, 0.97, 1.0);
     vec3 pearlCol = vec3(1.0, 0.96, 0.82);
-    vec3 col = mix(photo.rgb, mix(starCol, pearlCol, vResidue * 0.55), smoothstep(0.46, 1.0, vT));
+    vec3 photoSpark = max(photo.rgb * 1.18, vec3(0.58, 0.60, 0.66));
+    vec3 col = mix(photoSpark, mix(starCol, pearlCol, vResidue * 0.55), smoothstep(0.38, 1.0, vT));
     float core = pow(1.0 - d, 1.15);
-    float alpha = core * vAlpha * photo.a;
+    float alpha = core * vAlpha * photo.a * (0.92 + vResidue * 0.24);
     alpha += (1.0 - smoothstep(0.18, 0.72, d)) * smoothstep(0.72, 1.0, vT) * vResidue * 0.18;
     gl_FragColor = vec4(col, alpha);
     #include <colorspace_fragment>
@@ -362,8 +402,8 @@ function PhotoDustBurst({
 
     const [w, h] = planeSize;
     const landscape = w >= h;
-    const cols = landscape ? 76 : 52;
-    const rows = landscape ? 52 : 76;
+    const cols = landscape ? 92 : 62;
+    const rows = landscape ? 62 : 92;
     const total = cols * rows;
     const positions = new Float32Array(total * 3);
     const uvs = new Float32Array(total * 2);
@@ -400,10 +440,10 @@ function PhotoDustBurst({
         const outward = 0.72 + centerBias * 0.95 + rand() * 0.52;
         dirs[cursor * 2] = Math.cos(angle) * outward;
         dirs[cursor * 2 + 1] = Math.sin(angle) * outward;
-        speeds[cursor] = 0.82 + rand() * 2.45;
-        sizes[cursor] = 0.95 + rand() * 2.15;
-        delays[cursor] = rand() * 0.28;
-        residues[cursor] = rand() < 0.22 ? 1 : 0;
+        speeds[cursor] = 0.92 + rand() * 2.65;
+        sizes[cursor] = 1.55 + rand() * 2.75;
+        delays[cursor] = rand() * 0.22;
+        residues[cursor] = rand() < 0.28 ? 1 : 0;
         cursor += 1;
       }
     }
@@ -676,7 +716,7 @@ const STARFIELD_FRAG = /* glsl */ `
 `;
 
 function StarField({ progress }: { progress: number }): React.ReactElement {
-  const N_STARS = 2600;
+  const N_STARS = 1900;
   const { positions, sizes, brightness, revealAt } = useMemo(() => {
     let seed = 17;
     function rand(): number {
@@ -697,8 +737,8 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
       else if (r < 0.985) sizes[i] = 1.7 + rand() * 1.0;
       else sizes[i] = 3.0 + rand() * 1.2;
       brightness[i] = 0.26 + rand() * 0.68;
-      // 约 58% 初始可见；后续 progress 只缓慢补出更多星点
-      revealAt[i] = rand() < 0.58 ? rand() * 0.08 : 0.08 + rand() * 0.92;
+      // 约 42% 初始可见；给照片破碎后形成的新星群留出视觉主导权。
+      revealAt[i] = rand() < 0.42 ? rand() * 0.08 : 0.08 + rand() * 0.92;
     }
     return { positions, sizes, brightness, revealAt };
   }, []);
@@ -719,12 +759,13 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
   }, [geometry]);
 
   const uniforms = useMemo(() => ({ uReveal: { value: 0.06 } }), []);
-  // progress 直接驱动 uReveal；初始 0.18 给 hash landing 首屏足够星点
+  // progress 直接驱动 uReveal；初始 0.12 给 hash landing 首屏足够星点，
+  // 但不抢照片碎裂后的新星群。
   const matRef = useRef<THREE.ShaderMaterial>(null);
   useFrame(() => {
     if (matRef.current) {
       const u = matRef.current.uniforms["uReveal"];
-      if (u) u.value = Math.max(0.18, Math.min(1, 0.18 + progress * 0.82));
+      if (u) u.value = Math.max(0.12, Math.min(1, 0.12 + progress * 0.88));
     }
   });
 
@@ -818,7 +859,7 @@ function PhotoResidueStars({
     }
 
     const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
-    const perPhoto = 260;
+    const perPhoto = 520;
     const total = photos.length * perPhoto;
     const positions = new Float32Array(total * 3);
     const sizes = new Float32Array(total);
@@ -852,7 +893,7 @@ function PhotoResidueStars({
           localY + Math.sin(angle) * radius * h * scatter;
         positions[cursor * 3 + 2] = -0.03 - rand() * 0.34;
         const bright = rand() > 0.72;
-        sizes[cursor] = bright ? 2.8 + rand() * 3.6 : 1.35 + rand() * 2.4;
+        sizes[cursor] = bright ? 3.7 + rand() * 3.0 : 1.95 + rand() * 2.35;
         brightness[cursor] = bright
           ? 0.74 + rand() * 0.5
           : 0.46 + rand() * 0.42;
@@ -944,6 +985,34 @@ function ProgressInvalidator({
   return null;
 }
 
+/**
+ * Finale 星空需要"定居后仍在闪烁"。frameloop 仍保持 demand，不回到 60fps；
+ * 这里只在 finale island 可见时用低频 10fps invalidate，让 uTime 推动持久星点
+ * twinkle。reduced-motion 下不启用。
+ */
+function TwinkleInvalidator({
+  enabled,
+}: {
+  enabled: boolean;
+}): React.ReactElement | null {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    if (!enabled) return;
+    let raf = 0;
+    let last = 0;
+    const tick = (time: number) => {
+      if (time - last >= 100) {
+        last = time;
+        invalidate();
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [enabled, invalidate]);
+  return null;
+}
+
 /* ─────────────────────── Scene root ─────────────────────── */
 interface SceneInnerProps {
   globalProgress: number;
@@ -973,14 +1042,15 @@ function SceneInner({
   return (
     <>
       <ProgressInvalidator progress={globalProgress} />
+      <TwinkleInvalidator enabled={!reducedMotion} />
       <NightSkyBackground />
       <StarField progress={globalProgress} />
       <PhotoResidueStars progress={globalProgress} />
       {activeIndices.map((i) => {
         const photo = FINALE_PHOTO_SEQUENCE[i];
         if (!photo) return null;
-        // v0.5（v1.95）：lifecycle 除以 LIFE_DURATION = 2.2，入场和退场
-        // 都占更长 scroll 区间，正常滚轮不会一跳就错过方位入场 / 星尘散开。
+        // v0.7（v1.97）：LIFE_DURATION = 1.35 + ENTER_START late fade。
+        // 上一张先完成破碎散星，下一张再进入安全区淡入。
         const life = (globalProgress * N - i) / LIFE_DURATION;
         const isFinal = i === N - 1;
         // 每张 PhotoPlane 自带 <Suspense fallback={null}>：纹理加载期间该
