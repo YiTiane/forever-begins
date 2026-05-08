@@ -1,5 +1,11 @@
 /**
- * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.7 · v1.97 先碎成星再换片）
+ * StarCarouselFinale.tsx · §2.C 星空照片走马灯（v0.8 · v1.98 finale hardening）
+ *
+ * v0.8 修 v1.97 hardening：
+ *   - progress 0→1 映射到 scrollable 前 86%，后段作为 final poster hold；
+ *     避免滚到 progress=1 时 sticky stage 已释放、露出浅色页面背景。
+ *   - twinkle invalidate 加 visibility gate：只有 finale stage 仍在视口附近且
+ *     document 可见时才低频 10fps 重绘；离屏/后台停止。
  *
  * v0.7 修 v1.96 视觉复审：
  *   - timeline 改成"上一张先完整破碎 → 星点散开 → 下一张再可见入场"；
@@ -46,8 +52,8 @@
  *   - **frameloop="demand" 全模式 + ProgressInvalidator**：v1.91 普通模式
  *     "always" 让 GPU 在 idle 时每帧空跑（progress 不变也写一遍 uniform）。
  *     改全 demand，用 ProgressInvalidator 在 progress prop 变化时 invalidate()
- *     → useFrame 触发一次 → 写新 uniform → 再 idle 0 CPU/GPU。同时 OrbitControls
- *     drag / Suspense texture mount 也会 invalidate（drei / R3F 默认行为）
+ *     → useFrame 触发一次 → 写新 uniform → 再 idle，不回 60fps 常驻。同时
+ *     OrbitControls drag / Suspense texture mount 也会 invalidate（drei / R3F 默认行为）
  *
  * v0.2 修 v1.90 audit：
  *   - **progress 源换 closest('.finale-beat')**：v0.1 用 containerRef.parentElement
@@ -64,22 +70,23 @@
  * 视觉契约（DESIGN §2.C · v2.21）：
  *   - 15 张照片按钦定顺序串接：grassland × 5 → wooden-door × 3 → pearl × 2 →
  *     retro × 4 → final Pearl_04（定格）
- *   - 每张 lifecycle：opacity 0→1、scale 0.42→1.08、方位 offset → center，
- *     hold ~0.4-0.5 屏，然后 Shader Dissolve 为星点
+ *   - 每张 lifecycle：ENTER_START 后 opacity 0→1、scale 0.30→1.06→1.0、
+ *     方位 offset → center；hold 后断点式切到照片点阵并散成星
  *   - 同屏最多 1 张主照片 + 上一张残留 dissolve；dissolve 同步释放持久星点
  *   - final Pearl_04：lifecycle 停在 hold 阶段，**永不 dissolve**，定格成主海报
  *   - reduced motion：跳过 dissolve / rotate / scale，只 opacity 交叉淡入
  *
  * 星尘 dissolve 实现：
  *   - PhotoPlane：只做整体 alpha 淡出；不再做噪声破洞，避免"烧穿"语义。
- *   - PhotoDustBurst：从照片 footprint 采样 3K-5K 点云，退场初段先显出
- *     照片颜色点阵，中段向外喷散，末端渐变成珍珠白星尘。
+ *   - PhotoDustBurst：从照片 footprint 采样约 5.7K 点云，退场初段先显出
+ *     照片颜色点阵，中段向外喷散，末端渐变成珍珠白星尘；点径有小/中/大层级。
  *   - PhotoResidueStars：每张照片退场后在原 footprint 周围留下更亮的持久
  *     星群，视觉上可追溯为"刚才那张照片留下的星星"。
  *
  * 滚动进度：
- *   - StarCarouselFinale 自驱：内置 IO + scroll listener，把 root.getBoundingClientRect
- *     的 top 映射到全局 progress 0..1
+ *   - StarCarouselFinale 自驱：内置 scroll listener，把 root.getBoundingClientRect
+ *     的 top 映射到全局 progress 0..1；v1.98 起前 86% scrollable 完成 timeline，
+ *     后段留给 final Pearl_04 hold
  *   - per-photo lifecycle = (global × N - i) / LIFE_DURATION
  *   - 边界 clamp 到 [0, 1]：lifecycle <= 0 表示该照片还没入场；lifecycle >= 1 表示
  *     已完全 dissolve（或 final 定格）
@@ -146,6 +153,8 @@ class DualHostTextureLoader extends THREE.Loader {
 
 const CAMERA_FOV = 38;
 const HASH_LANDING_PROGRESS = 0.04;
+const TIMELINE_SCROLL_FRACTION = 0.86;
+const FINAL_POSTER_VISIBLE_PROGRESS = 0.985;
 // Hydration note: SSR renders data-progress="0.000". If client initial state is
 // also exactly 0.04 and the first effect writes 0.04 again, React may not patch
 // the mismatched SSR attribute. Add an invisible epsilon so the first client
@@ -682,13 +691,14 @@ function NightSkyBackground(): React.ReactElement {
 
 /* ─────────────────────── StarField ─────────────────────── */
 /**
- * v1.94：星空底层星点池 2600 颗。它负责"满天星辰"的底色；照片碎片
+ * v1.98：星空底层星点池 1900 颗。它负责"满天星辰"的底色；照片碎片
  * 另由 PhotoResidueStars 负责，避免把背景星与照片残片混为一个弱效果。
  *
  * 视觉契约（v1.92 audit）："碎片化作星尘，成为星空的一部分"——每张照片
  * dissolve 时贡献 ~100 颗永久星点。具体实现：
  *   - 初始即显示大量基础星点（不是等照片 dissolve 后才有星空）
  *   - globalProgress 只略微增加亮星密度，真正"碎片成为星"交给下方残片点云
+ *   - 星点大小有三档：细星 / 亮星 / 少量近景大星
  */
 const STARFIELD_VERT = /* glsl */ `
   attribute float aRevealAt;
@@ -993,8 +1003,8 @@ function ProgressInvalidator({
 
 /**
  * Finale 星空需要"定居后仍在闪烁"。frameloop 仍保持 demand，不回到 60fps；
- * 这里只在 finale island 可见时用低频 10fps invalidate，让 uTime 推动持久星点
- * twinkle。reduced-motion 下不启用。
+ * 这里只在 finale spacer 仍接近视口且页面可见时用低频 10fps invalidate，
+ * 让 uTime 推动持久星点 twinkle。离屏 / 后台 / reduced-motion 下都不启用。
  */
 function TwinkleInvalidator({
   enabled,
@@ -1004,17 +1014,64 @@ function TwinkleInvalidator({
   const invalidate = useThree((state) => state.invalidate);
   useEffect(() => {
     if (!enabled) return;
+    const beat = document.querySelector<HTMLElement>(".finale-beat");
+    let active = false;
     let raf = 0;
     let last = 0;
+    const stop = () => {
+      if (raf !== 0) {
+        window.cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
     const tick = (time: number) => {
+      if (!active) {
+        raf = 0;
+        return;
+      }
       if (time - last >= 100) {
         last = time;
         invalidate();
       }
       raf = window.requestAnimationFrame(tick);
     };
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
+    const start = () => {
+      if (raf === 0) {
+        raf = window.requestAnimationFrame(tick);
+      }
+    };
+    const updateActive = () => {
+      if (!beat) {
+        const wasActive = active;
+        active = false;
+        if (wasActive) stop();
+        return;
+      }
+      const rect = beat.getBoundingClientRect();
+      const vh = window.innerHeight || 1;
+      const nextActive =
+        document.visibilityState === "visible" &&
+        rect.bottom > -vh * 0.15 &&
+        rect.top < vh * 1.15;
+      if (nextActive === active) return;
+      active = nextActive;
+      if (active) {
+        last = 0;
+        start();
+      } else {
+        stop();
+      }
+    };
+    updateActive();
+    window.addEventListener("scroll", updateActive, { passive: true });
+    window.addEventListener("resize", updateActive, { passive: true });
+    document.addEventListener("visibilitychange", updateActive);
+    return () => {
+      window.removeEventListener("scroll", updateActive);
+      window.removeEventListener("resize", updateActive);
+      document.removeEventListener("visibilitychange", updateActive);
+      stop();
+    };
   }, [enabled, invalidate]);
   return null;
 }
@@ -1130,9 +1187,10 @@ export function StarCarouselFinale(): React.ReactElement {
     const rect = beat.getBoundingClientRect();
     const vh = window.innerHeight || 1;
     const scrollable = rect.height - vh;
-    if (scrollable <= 0) return 1;
+    const timelineScrollable = scrollable * TIMELINE_SCROLL_FRACTION;
+    if (timelineScrollable <= 0) return 1;
     const scrolled = Math.max(0, -rect.top);
-    return Math.min(1, scrolled / scrollable);
+    return Math.min(1, scrolled / timelineScrollable);
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1179,9 +1237,10 @@ export function StarCarouselFinale(): React.ReactElement {
         const absoluteTop = window.scrollY + rect.top;
         const vh = window.innerHeight || 1;
         const scrollable = Math.max(0, root.offsetHeight - vh);
+        const timelineScrollable = scrollable * TIMELINE_SCROLL_FRACTION;
         const top =
-          scrollable > 0
-            ? absoluteTop + scrollable * HASH_LANDING_PROGRESS
+          timelineScrollable > 0
+            ? absoluteTop + timelineScrollable * HASH_LANDING_PROGRESS
             : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
         setProgress(HASH_LANDING_COMMIT_PROGRESS);
@@ -1199,14 +1258,15 @@ export function StarCarouselFinale(): React.ReactElement {
       const rect = root.getBoundingClientRect();
       const vh = window.innerHeight || 1;
       // root.top 在视口底（rect.top = vh）→ progress 0
-      // root.bottom 离开视口底 → progress 1
+      // v1.98: progress=1 提前到 scrollable 前 86%，后段留给 final poster hold。
       const scrollable = rect.height - vh;
-      if (scrollable <= 0) {
+      const timelineScrollable = scrollable * TIMELINE_SCROLL_FRACTION;
+      if (timelineScrollable <= 0) {
         setProgress(1);
         return;
       }
       const scrolled = Math.max(0, -rect.top);
-      let nextProgress = Math.min(1, scrolled / scrollable);
+      let nextProgress = Math.min(1, scrolled / timelineScrollable);
       if (
         window.location.hash === "#beat-12-heading" &&
         nextProgress < HASH_LANDING_PROGRESS
@@ -1234,12 +1294,15 @@ export function StarCarouselFinale(): React.ReactElement {
       ref={containerRef}
       className="finale-canvas-root"
       data-progress={progress.toFixed(3)}
+      data-final-hold={
+        progress >= FINAL_POSTER_VISIBLE_PROGRESS ? "true" : "false"
+      }
     >
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
         // v0.3（v1.91 audit P2-3 修）：frameloop 全模式 demand —— 普通模式 v1.91
         // 是 "always" 让 GPU 每帧空跑（progress 不变也写一遍 uniform）；现在 demand
-        // + ProgressInvalidator 在 progress 变时显式 invalidate()，idle 期间 0 CPU/GPU
+        // + ProgressInvalidator 在 progress 变时显式 invalidate()，idle 不回 60fps
         frameloop="demand"
         // alpha=false 不透明；clearColor 是 finale 独立夜空的保底色。
         // 真正的满天星辰由 NightSkyBackground / StarField / PhotoResidueStars 绘制。
@@ -1257,6 +1320,17 @@ export function StarCarouselFinale(): React.ReactElement {
           <SceneInner globalProgress={progress} reducedMotion={reducedMotion} />
         </Suspense>
       </Canvas>
+      <div className="finale-final-poster" aria-hidden="true">
+        <img
+          src={finalePhotoUrl(
+            FINALE_PHOTO_SEQUENCE[FINALE_PHOTO_SEQUENCE.length - 1]!,
+            "primary",
+          )}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
     </div>
   );
 }
