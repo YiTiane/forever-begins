@@ -121,6 +121,7 @@ class DualHostTextureLoader extends THREE.Loader {
 }
 
 const CAMERA_FOV = 38;
+const HASH_LANDING_PROGRESS = 0.04;
 /** 照片在 canvas 上沿约束维度填充的比例（与 GlobeDistanceScene 同款理念） */
 const PHOTO_FILL_FRACTION = 0.84;
 /** 每张照片 lifecycle 阶段切分（fraction of own lifecycle） */
@@ -187,7 +188,7 @@ function rotateYCurve(life: number, reduced: boolean): number {
  *   4: bottom-right, 5: bottom, 6: bottom-left, 7: left
  *
  * 入场时 photo position = direction × (1 - life/ENTER_END) × ENTRY_DISTANCE，
- * 配合 scaleCurve 0.82 → 1.04 → 1.0 形成"由远方某方位飘入中央并放大"。
+ * 配合 scaleCurve 0.68 → 1.06 → 1.0 形成"由远方某方位飘入中央并放大"。
  *
  * final Pearl_04 (i=14, 14%8=6=bottom-left) 也走方位入场——但它的 lifecycle
  * 在 globalProgress 末尾才进入，且 isFinal 永不 dissolve，自然定格。
@@ -842,6 +843,9 @@ export function StarCarouselFinale(): React.ReactElement {
    */
   const [progress, setProgress] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
+    if (window.location.hash === "#beat-12-heading") {
+      return HASH_LANDING_PROGRESS;
+    }
     const beat = document.querySelector<HTMLElement>(".finale-beat");
     if (!beat) return 0;
     // v0.4 先读 alignHash 意图传递的 data-initial-progress
@@ -865,6 +869,7 @@ export function StarCarouselFinale(): React.ReactElement {
       return;
     }
     let raf = 0;
+    let pendingHashLanding = window.location.hash === "#beat-12-heading";
     const compute = () => {
       raf = 0;
       // v0.2（v1.90 audit P2-1 修）：progress 源是 .finale-beat 700vh scroll
@@ -873,6 +878,20 @@ export function StarCarouselFinale(): React.ReactElement {
       const root =
         containerRef.current?.closest<HTMLElement>(".finale-beat") ?? null;
       if (!root) return;
+      if (pendingHashLanding) {
+        pendingHashLanding = false;
+        const rect = root.getBoundingClientRect();
+        const absoluteTop = window.scrollY + rect.top;
+        const vh = window.innerHeight || 1;
+        const scrollable = Math.max(0, root.offsetHeight - vh);
+        const top =
+          scrollable > 0
+            ? absoluteTop + scrollable * HASH_LANDING_PROGRESS
+            : absoluteTop;
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        setProgress(HASH_LANDING_PROGRESS);
+        return;
+      }
       const initial = root.dataset["initialProgress"];
       if (initial) {
         const parsed = parseFloat(initial);
