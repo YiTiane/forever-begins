@@ -1,6 +1,13 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 Story 长卷 orchestrator（v1.0 · v1.87 hash composed-frame anchor）
+ * StoryPoemScroller.astro · §2 Story 长卷 orchestrator（v1.1 · v1.99 hardening）
+ *
+ * v1.99 hardening：
+ *   - Globe hash deep-link 与 finale 同步进入 hard-sync 模式：alignHash 写
+ *     data-initial-progress / data-progress，并派发 globe:set-progress，确保
+ *     #beat-11-heading 首帧就是 composed globe frame。
+ *   - FinaleBeat 已从静态 .story-end-cap 升级为 R3F StarCarouselFinale；本 wrapper
+ *     只负责传 finale.lines 与 hash 对齐，不再渲染或描述 story-end-cap。
  *
  * v1.0 新增（v1.78-v1.87 收口）：
  *   - v1.78：wide sticky beat 加 HOLD_PHASE plateau，动画先到终态再 hold，避免
@@ -33,7 +40,7 @@
  *     真正挂在 photo-poem 之后、end-cap 之前，渲染 .globe-beat#beat-11-heading
  *     并 client:visible 懒 hydrate R3F 岛。本 wrapper 现在的责任不再只是
  *     "10 个 photo-poem beat 渲染"，而是"photo-poem × 10 + globe × 1 +
- *     temporary end-cap (临时取代 finale 直到 §2.C 接入)"
+ *     finale × 1"
  *   - 加 `globeBeat = main.data.beats.find(kind==="globe")` + `globeLines` 数据
  *     拉取；GlobeBeat 内部再去 journey/long-distance.json 拿 from/to/distanceKm
  *     —— DESIGN §15.1 单一源（地球场景的"来源/目的/距离"事实只在
@@ -75,10 +82,8 @@
  *   1. photo-poem × maxBeats (默认 10 = 全部 photo-poem) → <PoemBeat>
  *      含 [N] 占位的行（当前仅 beat 05）由 PoemBeat 拆 prefix / .days-together-wrap /
  *      suffix；本 wrapper 通过 anchorDate prop 透传锚定日期
- *   2. globe (beat 11) → <GlobeBeat>（v1.71 起实接入；R3F 岛 client:visible
- *      懒 hydrate）
- *   3. <div class="story-end-cap">：Pearl_04 主海报 + finale.lines (临时收束，
- *      等 §2.C StarCarouselFinale 接入后取代)
+ *   2. globe (beat 11) → <GlobeBeat>（R3F 岛 client:visible 懒 hydrate）
+ *   3. finale (beat 12) → <FinaleBeat>（R3F StarCarouselFinale + HTML fallback）
  *
  * 运行机制（v1.87 现状）：
  *   ✓ photo-poem beat：solver + applyLayout + scroll-progress choreography
@@ -105,8 +110,8 @@
  * **NOT in current batch**（仍留 §2 后续刀）：
  *   ✗ §2.B GlobeDistanceScene v1.3+：水彩贴图 / Bloom postprocessing / 距离 CountUp
  *     同步弧线 / 3D <Html> 城市标签
- *   ✗ §2.C StarCarouselFinale v0.3+：高端机 GPU 粒子星尘 / 入场方位变化 / 文字
- *     stagger
+ *   ✗ §2.C StarCarouselFinale motion polish：更高端 GPU 粒子风场 / 文字 stagger /
+ *     结尾节奏微调
  *   ✗ beat 09 缝线 SVG path 真实纹理 / beat 10 珍珠高光真实闪动（motion polish）
  *   ✗ 文字字符级 stagger / 鼠标 inertia parallax（Phase 5 motion polish）
  *
@@ -499,7 +504,8 @@ const anchorDate = main.data.anchor_date;
      * 策略：
      *   - photo-poem wide：直接滚到 HOLD_PHASE 起点（动画已到 p=1，进入稳定 hold）
      *   - photo-poem portrait/compact：滚到段落上沿略低于视口顶部，保留标题/图文
-     *   - globe：滚入 sticky spacer 内部约 22% 处，确保 canvas/text stage 已接管
+     *   - globe：滚入 sticky spacer 内部约 22% 处，同时写 data-initial-progress
+     *     并派发 globe:set-progress，确保 R3F island 首帧就接住 composed frame
      * 调用时机：初始 load 一帧后 + hashchange。scroll 后同步更新 progress，避免
      * 落点先闪现 p≈0 再补帧。
      */
@@ -530,13 +536,24 @@ const anchorDate = main.data.anchor_date;
 
       const globeBeat = anchor.closest<HTMLElement>(".globe-beat");
       if (globeBeat) {
+        const targetProgress = 0.22;
+        globeBeat.dataset.initialProgress = String(targetProgress);
+        globeBeat.dataset.progress = targetProgress.toFixed(3);
         const rect = globeBeat.getBoundingClientRect();
         const absoluteTop = window.scrollY + rect.top;
         const vh = window.innerHeight || 1;
         const scrollable = Math.max(0, globeBeat.offsetHeight - vh);
         const top =
-          scrollable > 0 ? absoluteTop + scrollable * 0.22 : absoluteTop;
+          scrollable > 0
+            ? absoluteTop + scrollable * targetProgress
+            : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+        window.dispatchEvent(
+          new CustomEvent("globe:set-progress", {
+            detail: { progress: targetProgress },
+          }),
+        );
+        window.dispatchEvent(new Event("scroll"));
         return;
       }
 
@@ -606,8 +623,17 @@ const anchorDate = main.data.anchor_date;
       scheduleUpdate();
     });
     window.addEventListener("hashchange", () => {
-      window.requestAnimationFrame(alignHashToComposedFrame);
+      scheduleHashAlignmentBurst();
     });
+
+    function scheduleHashAlignmentBurst(): void {
+      if (!window.location.hash || window.location.hash.length <= 1) return;
+      [0, 120, 360, 900, 1600].forEach((delay) => {
+        window.setTimeout(() => {
+          window.requestAnimationFrame(alignHashToComposedFrame);
+        }, delay);
+      });
+    }
 
     // ResizeObserver：图片懒加载完成 / 字体回流改变 .poem-beat offsetHeight 时
     // computeProgress 的分母会变，scrolled 也可能漂；用 RO 兜一道，保证布局 shift
@@ -639,7 +665,7 @@ const anchorDate = main.data.anchor_date;
     beats.forEach((beat) =>
       setProgressImmediately(beat, computeTargetProgress(beat)),
     );
-    window.requestAnimationFrame(alignHashToComposedFrame);
+    scheduleHashAlignmentBurst();
 
     // 调试钩子：window.__storyPoem.progress() / .list() / .active()
     (

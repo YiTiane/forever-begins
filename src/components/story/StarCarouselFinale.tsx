@@ -113,7 +113,7 @@ import {
 } from "@/lib/story/finalePhotos";
 
 /**
- * v0.3（v1.91 audit P2-4 修）：自定义 Loader 给 finale 照片 dual-host fallback。
+ * v1.99 hardening：自定义 Loader 给 finale 照片 dual-host timeout fallback。
  *
  * v1.91 PhotoPlane 用 drei `useTexture(primaryUrl)` 单 URL，jsDelivr 区域性
  * 抖动时整张 photo 加载失败 → Suspense 永挂 → 该 photo 永远空白。runtime 不
@@ -121,12 +121,65 @@ import {
  *
  * Loader 协议：
  *   - 把 primary 与 backup 编码成 "primary||backup"，作为 useLoader 的 URL key
- *   - .load 拆开：先 fetch primary；onError 自动 fall back fetch backup
- *   - 两个都失败才向上 throw（被外层 <Suspense fallback={null}> 吃掉，单张隐藏）
+ *   - primary / backup 并发 fetch + 5s timeout，首个成功的 Blob 解码成 Texture
+ *   - 首胜后 abort 输者；两个都失败时返回带失败标记的透明 texture，不向
+ *     React 抛错，只隐藏该 PhotoPlane，并输出 stem + 两侧失败原因
  *   - colorSpace 自动设 SRGB（与 drei useTexture 对齐）
  */
 const DUAL_URL_SEP = "||";
-type FinaleWindow = Window & { __finaleInitialProgress?: number };
+const TEXTURE_FETCH_TIMEOUT_MS = 5000;
+const FAILED_TEXTURE_USER_DATA_KEY = "finaleTextureFailed";
+const FIRST_FRAME_READY_OPACITY = 0.08;
+type FinaleWindow = Window & {
+  __finaleInitialProgress?: number;
+  __finaleFirstFrameReady?: boolean;
+};
+
+function inferTextureStem(url: string): string {
+  return /\/jpg\/([^/?#]+?)-\d+\.jpg(?:[?#].*)?$/u.exec(url)?.[1] ?? "unknown";
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}
+
+async function decodeBlobToTexture(blob: Blob): Promise<THREE.Texture> {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () =>
+        reject(new Error("image decode failed after successful fetch"));
+      image.src = objectUrl;
+    });
+    if ("decode" in image) {
+      await image.decode().catch(() => {
+        /* onload has already completed; decode() may reject for cached blobs in older WebKit. */
+      });
+    }
+    const texture = new THREE.Texture(image);
+    texture.needsUpdate = true;
+    return texture;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function createFailedTexture(stem: string): THREE.Texture {
+  const data = new Uint8Array([0, 0, 0, 0]);
+  const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+  texture.name = `failed:${stem}`;
+  texture.userData[FAILED_TEXTURE_USER_DATA_KEY] = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function isFailedTexture(texture: THREE.Texture): boolean {
+  return texture.userData[FAILED_TEXTURE_USER_DATA_KEY] === true;
+}
 
 class DualHostTextureLoader extends THREE.Loader {
   override load(
@@ -138,23 +191,71 @@ class DualHostTextureLoader extends THREE.Loader {
     const sep = encoded.indexOf(DUAL_URL_SEP);
     const primary = sep >= 0 ? encoded.slice(0, sep) : encoded;
     const backup = sep >= 0 ? encoded.slice(sep + DUAL_URL_SEP.length) : "";
-    const sub = new THREE.TextureLoader(this.manager);
-    if (this.crossOrigin) sub.setCrossOrigin(this.crossOrigin);
+    const candidates = [
+      { host: "primary" as const, url: primary },
+      ...(backup ? [{ host: "backup" as const, url: backup }] : []),
+    ];
+    const stem = inferTextureStem(primary);
+    const ctrls = candidates.map(() => new AbortController());
+    const failures: string[] = [];
 
-    const finishOk = (tex: THREE.Texture) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      onLoad(tex);
+    const tryOne = async (
+      candidate: (typeof candidates)[number],
+      ctrl: AbortController,
+    ): Promise<THREE.Texture> => {
+      const timer = window.setTimeout(
+        () => ctrl.abort(),
+        TEXTURE_FETCH_TIMEOUT_MS,
+      );
+      try {
+        const response = await fetch(candidate.url, {
+          cache: "force-cache",
+          mode: "cors",
+          signal: ctrl.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const texture = await decodeBlobToTexture(blob);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+      } catch (err) {
+        failures.push(`${candidate.host}: ${describeError(err)}`);
+        throw err;
+      } finally {
+        window.clearTimeout(timer);
+      }
     };
 
-    sub.load(primary, finishOk, undefined, () => {
-      if (!backup) {
-        onError?.(new Error("dual-host: primary failed, no backup"));
-        return;
-      }
-      sub.load(backup, finishOk, undefined, (err) => {
-        onError?.(err as ErrorEvent);
+    void Promise.any(
+      candidates.map((candidate, i) => tryOne(candidate, ctrls[i]!)),
+    )
+      .then((texture) => {
+        for (const ctrl of ctrls) {
+          if (!ctrl.signal.aborted) ctrl.abort();
+        }
+        onLoad(texture);
+      })
+      .catch((err) => {
+        console.warn(
+          `[StarCarouselFinale] texture failed for ${stem}; hiding this photo`,
+          {
+            primary,
+            backup: backup || null,
+            failures,
+          },
+        );
+        if (onError) {
+          // Keep the aggregate visible in verbose consoles without surfacing it
+          // to React/useLoader as an uncaught render error.
+          console.debug?.(
+            "[StarCarouselFinale] swallowed texture error after reporting",
+            err,
+          );
+        }
+        onLoad(createFailedTexture(stem));
       });
-    });
   }
 }
 
@@ -537,12 +638,14 @@ function PhotoPlane({
     DualHostTextureLoader,
     dualEncoded,
   ) as THREE.Texture;
+  const textureFailed = isFailedTexture(texture);
   const meshRef = useRef<THREE.Mesh>(null);
   const matRef = useRef<THREE.ShaderMaterial>(null);
 
   // texture 加载后用真实 image 尺寸覆写 plane aspect（防 SSR 占位裁切人物主体）
   const [naturalAspect, setNaturalAspect] = useState<number>(photo.aspectRatio);
   useEffect(() => {
+    if (textureFailed) return;
     const img = texture.image as
       | HTMLImageElement
       | HTMLCanvasElement
@@ -552,7 +655,25 @@ function PhotoPlane({
       setNaturalAspect(img.width / img.height);
     }
     texture.colorSpace = THREE.SRGBColorSpace;
-  }, [texture]);
+    if (typeof window !== "undefined") {
+      const finaleWindow = window as FinaleWindow;
+      const readyOpacity = reducedMotion
+        ? Math.min(
+            opacityCurve(lifecycle),
+            reducedExitOpacityCurve(lifecycle, isFinal),
+          )
+        : opacityCurve(lifecycle);
+      if (
+        !finaleWindow.__finaleFirstFrameReady &&
+        readyOpacity >= FIRST_FRAME_READY_OPACITY
+      ) {
+        finaleWindow.__finaleFirstFrameReady = true;
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("finale:first-frame-ready"));
+        });
+      }
+    }
+  }, [isFinal, lifecycle, reducedMotion, texture, textureFailed]);
 
   const uniforms = useMemo(
     () => ({
@@ -575,6 +696,10 @@ function PhotoPlane({
   }, [viewport.width, viewport.height, naturalAspect]);
 
   useFrame(() => {
+    if (textureFailed) {
+      if (meshRef.current) meshRef.current.visible = false;
+      return;
+    }
     if (!meshRef.current || !matRef.current) return;
     const life = lifecycle;
     if (life < 0) {
@@ -600,6 +725,8 @@ function PhotoPlane({
   });
 
   const burst = dissolveCurve(lifecycle, isFinal, reducedMotion);
+
+  if (textureFailed) return null;
 
   return (
     <>
@@ -1303,6 +1430,7 @@ export function StarCarouselFinale(): React.ReactElement {
     >
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
+        style={{ width: "100%", height: "100%", display: "block" }}
         // v0.3（v1.91 audit P2-3 修）：frameloop 全模式 demand —— 普通模式 v1.91
         // 是 "always" 让 GPU 每帧空跑（progress 不变也写一遍 uniform）；现在 demand
         // + ProgressInvalidator 在 progress 变时显式 invalidate()，idle 不回 60fps

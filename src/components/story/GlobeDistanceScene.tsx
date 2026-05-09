@@ -129,6 +129,27 @@ const COLOR_HONEY = new THREE.Color("#c69d4e");
 const COLOR_ROUTE_PRIMARY = new THREE.Color("#ffd45a");
 /** secondary route：暖白线，比地图 land/coast 更亮，避免与 sage 绿混色 */
 const COLOR_ROUTE_SECONDARY = new THREE.Color("#fff1b8");
+const GLOBE_HASH_LANDING_PROGRESS = 0.22;
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function readInitialGlobeProgress(): number {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return 0;
+  }
+  const beat = document.querySelector<HTMLElement>(".globe-beat");
+  const raw = beat?.dataset.initialProgress ?? beat?.dataset.progress;
+  if (raw) {
+    const parsed = parseFloat(raw);
+    if (!Number.isNaN(parsed)) return clamp01(parsed);
+  }
+  if (window.location.hash === "#beat-11-heading") {
+    return GLOBE_HASH_LANDING_PROGRESS;
+  }
+  return 0;
+}
 
 /* ─────────────────────── Globe sphere ─────────────────────── */
 type GeoPoint = readonly [lng: number, lat: number];
@@ -735,8 +756,23 @@ export function GlobeDistanceScene({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // 内置 progress：父没传时按 element 在视口的进度自驱动（第一版简化）
-  const [internalProgress, setInternalProgress] = useState(0);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // 内置 progress：父没传时按 .globe-beat scroll spacer 的进度自驱动。
+  const [internalProgress, setInternalProgress] = useState(
+    readInitialGlobeProgress,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onForcedProgress = (event: Event) => {
+      const detail = (event as CustomEvent<{ progress?: number }>).detail;
+      if (typeof detail?.progress !== "number") return;
+      setInternalProgress(clamp01(detail.progress));
+    };
+    window.addEventListener("globe:set-progress", onForcedProgress);
+    return () =>
+      window.removeEventListener("globe:set-progress", onForcedProgress);
+  }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (reducedMotion) {
@@ -746,17 +782,61 @@ export function GlobeDistanceScene({
     let raf = 0;
     const compute = () => {
       raf = 0;
-      const root = canvasContainerRef.current;
+      const root =
+        canvasContainerRef.current?.closest<HTMLElement>(".globe-beat") ??
+        canvasContainerRef.current;
       if (!root) return;
+      const forced =
+        root.dataset["initialProgress"] ??
+        (window.location.hash === "#beat-11-heading"
+          ? root.dataset["progress"]
+          : undefined);
+      if (forced) {
+        const parsed = parseFloat(forced);
+        if (!Number.isNaN(parsed)) {
+          const targetProgress = clamp01(parsed);
+          const rect = root.getBoundingClientRect();
+          const vh = window.innerHeight || 1;
+          const scrollable = Math.max(0, root.offsetHeight - vh);
+          let aligned = true;
+          if (scrollable > 0) {
+            const desiredTop =
+              window.scrollY + rect.top + scrollable * targetProgress;
+            if (Math.abs(window.scrollY - desiredTop) > 2) {
+              aligned = false;
+              window.scrollTo({
+                top: Math.max(0, desiredTop),
+                behavior: "auto",
+              });
+            }
+          }
+          setInternalProgress(targetProgress);
+          if (aligned) {
+            delete root.dataset["initialProgress"];
+            delete root.dataset["progress"];
+          }
+          return;
+        }
+      }
       const rect = root.getBoundingClientRect();
       const vh = window.innerHeight || 1;
-      // 当 root 顶部从视口底部开始上移到视口中央 = 0→1
-      const top = rect.top;
-      const start = vh; // 顶部在视口底
-      const end = vh * 0.4; // 顶部在视口 40%
-      const raw = (start - top) / Math.max(1, start - end);
-      const clamped = Math.max(0, Math.min(1, raw));
-      setInternalProgress(clamped);
+      if (
+        window.location.hash === "#beat-11-heading" &&
+        Math.abs(rect.top) <= 4
+      ) {
+        setInternalProgress(GLOBE_HASH_LANDING_PROGRESS);
+        return;
+      }
+      const scrollable = root.offsetHeight - vh;
+      if (scrollable > 0) {
+        setInternalProgress(clamp01(-rect.top / scrollable));
+        return;
+      }
+      // fallback：非 sticky / 自然高度 viewport 下按元素入场位置估算。
+      const start = vh;
+      const end = vh * 0.4;
+      const raw = (start - rect.top) / Math.max(1, start - end);
+      setInternalProgress(clamp01(raw));
     };
     const schedule = () => {
       if (raf !== 0) return;
@@ -772,7 +852,6 @@ export function GlobeDistanceScene({
     };
   }, [reducedMotion]);
 
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
   const effectiveProgress = reducedMotion ? 1 : (progress ?? internalProgress);
 
   return (
@@ -785,6 +864,7 @@ export function GlobeDistanceScene({
         // 初始相机 z 是个 sensible default；ResponsiveCamera 在 useEffect 里
         // 按真实 canvas aspect 重算（v0.2 / v1.72 audit 视觉诉求修）
         camera={{ position: [0, 0, 3.55], fov: CAMERA_FOV }}
+        style={{ width: "100%", height: "100%", display: "block" }}
         // v0.3（v1.72 audit P2 修）：reduced-motion → "demand" 帧循环
         // - 普通模式 "always"：60fps rAF 渲染，Endpoint 心跳脉冲 / AutoRotate 慢转都靠它
         // - reduced-motion "demand"：rAF 不再常驻；首帧渲染后只在显式 invalidate()
