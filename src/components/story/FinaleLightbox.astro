@@ -1,0 +1,387 @@
+---
+/**
+ * FinaleLightbox.astro · Phase 4 optional Lightbox（v0.1）
+ *
+ * Scope:
+ *   - 只覆盖 StarCarouselFinale 的 15 张 finale photos。
+ *   - 不接入 StoryPoem / Globe / future Cats，避免改变主滚动叙事。
+ *   - 图片顺序与 CDN URL 只读 src/lib/story/finalePhotos.ts。
+ *
+ * Runtime:
+ *   - 默认不加载任何 lightbox 大图；打开时才写入当前图 srcset。
+ *   - 只预取前后一张 JPG，不一次性拉 15 张。
+ *   - native <dialog> + focus trap + ESC / arrows / swipe。
+ */
+import { cdnUrl } from "@/lib/images/asset-versions";
+import { FINALE_PHOTO_SEQUENCE } from "@/lib/story/finalePhotos";
+
+const items = FINALE_PHOTO_SEQUENCE.map((photo) => ({
+  alt: photo.alt,
+  aspectRatio: photo.aspectRatio,
+  primary: {
+    avif: cdnUrl("primary", photo.cdnTarget, `avif/${photo.stem}-1600.avif`),
+    webp: cdnUrl("primary", photo.cdnTarget, `webp/${photo.stem}-1600.webp`),
+    jpg: cdnUrl("primary", photo.cdnTarget, `jpg/${photo.stem}-1600.jpg`),
+  },
+  backup: {
+    avif: cdnUrl("backup", photo.cdnTarget, `avif/${photo.stem}-1600.avif`),
+    webp: cdnUrl("backup", photo.cdnTarget, `webp/${photo.stem}-1600.webp`),
+    jpg: cdnUrl("backup", photo.cdnTarget, `jpg/${photo.stem}-1600.jpg`),
+  },
+}));
+---
+
+<div
+  class="finale-lightbox"
+  data-finale-lightbox
+  data-items={JSON.stringify(items)}
+>
+  <button
+    class="finale-lightbox-trigger"
+    type="button"
+    data-open
+    aria-label="打开终幕照片查看器"
+  >
+    <span aria-hidden="true">↗</span>
+  </button>
+
+  <dialog
+    class="finale-lightbox-dialog"
+    data-dialog
+    aria-label="终幕照片查看器"
+  >
+    <div class="finale-lightbox-shell" data-swipe-zone>
+      <button
+        class="finale-lightbox-close"
+        type="button"
+        data-close
+        aria-label="关闭照片查看器"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+      <button
+        class="finale-lightbox-nav prev"
+        type="button"
+        data-prev
+        aria-label="上一张照片"
+      >
+        <span aria-hidden="true">‹</span>
+      </button>
+      <figure class="finale-lightbox-figure">
+        <picture>
+          <source data-avif type="image/avif" />
+          <source data-webp type="image/webp" />
+          <img data-img alt="" decoding="async" />
+        </picture>
+        <figcaption data-caption></figcaption>
+      </figure>
+      <button
+        class="finale-lightbox-nav next"
+        type="button"
+        data-next
+        aria-label="下一张照片"
+      >
+        <span aria-hidden="true">›</span>
+      </button>
+    </div>
+  </dialog>
+
+  <script is:inline>
+    (() => {
+      const root = document.currentScript?.closest("[data-finale-lightbox]");
+      if (!root) return;
+      const items = JSON.parse(root.getAttribute("data-items") || "[]");
+      const dialog = root.querySelector("[data-dialog]");
+      const openButton = root.querySelector("[data-open]");
+      const closeButton = root.querySelector("[data-close]");
+      const prevButton = root.querySelector("[data-prev]");
+      const nextButton = root.querySelector("[data-next]");
+      const img = root.querySelector("[data-img]");
+      const avif = root.querySelector("[data-avif]");
+      const webp = root.querySelector("[data-webp]");
+      const caption = root.querySelector("[data-caption]");
+      const swipeZone = root.querySelector("[data-swipe-zone]");
+      if (!dialog || !openButton || !img || !avif || !webp || !caption) return;
+
+      let index = 0;
+      let restoreScrollY = 0;
+      let lastFocus = null;
+      let pointerStartX = 0;
+      let previousHtmlOverflow = "";
+      let previousBodyOverflow = "";
+
+      function clampIndex(value) {
+        if (!items.length) return 0;
+        return (value + items.length) % items.length;
+      }
+
+      function currentFinaleIndex() {
+        const root = document.querySelector(".finale-canvas-root");
+        const raw = root?.getAttribute("data-current-index");
+        const parsed = raw ? Number.parseInt(raw, 10) : 0;
+        return Number.isFinite(parsed) ? clampIndex(parsed) : 0;
+      }
+
+      function applyItem(nextIndex) {
+        index = clampIndex(nextIndex);
+        const item = items[index];
+        if (!item) return;
+        avif.setAttribute("srcset", `${item.primary.avif} 1600w`);
+        avif.setAttribute("data-srcset-alt", `${item.backup.avif} 1600w`);
+        webp.setAttribute("srcset", `${item.primary.webp} 1600w`);
+        webp.setAttribute("data-srcset-alt", `${item.backup.webp} 1600w`);
+        img.setAttribute("src", item.primary.jpg);
+        img.setAttribute("data-src-alt", item.backup.jpg);
+        img.setAttribute("alt", item.alt);
+        caption.textContent = `${index + 1} / ${items.length} · ${item.alt}`;
+        prefetch(index + 1);
+        prefetch(index - 1);
+      }
+
+      function prefetch(nextIndex) {
+        const item = items[clampIndex(nextIndex)];
+        if (!item) return;
+        const preload = new Image();
+        preload.decoding = "async";
+        preload.src = item.primary.jpg;
+      }
+
+      function lockScroll() {
+        restoreScrollY = window.scrollY;
+        previousHtmlOverflow = document.documentElement.style.overflow;
+        previousBodyOverflow = document.body.style.overflow;
+        document.documentElement.style.overflow = "hidden";
+        document.body.style.overflow = "hidden";
+      }
+
+      function unlockScroll() {
+        document.documentElement.style.overflow = previousHtmlOverflow;
+        document.body.style.overflow = previousBodyOverflow;
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+        });
+      }
+
+      function focusables() {
+        return Array.from(
+          dialog.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.disabled && el.offsetParent !== null);
+      }
+
+      function openAt(nextIndex) {
+        lastFocus = document.activeElement;
+        applyItem(nextIndex);
+        lockScroll();
+        dialog.showModal();
+        closeButton?.focus();
+      }
+
+      function close() {
+        if (!dialog.open) return;
+        dialog.close();
+        unlockScroll();
+        if (lastFocus && typeof lastFocus.focus === "function")
+          lastFocus.focus();
+      }
+
+      openButton.addEventListener("click", () => openAt(currentFinaleIndex()));
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest(".finale-canvas-root canvas")) return;
+        openAt(currentFinaleIndex());
+      });
+      closeButton?.addEventListener("click", close);
+      prevButton?.addEventListener("click", () => applyItem(index - 1));
+      nextButton?.addEventListener("click", () => applyItem(index + 1));
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        close();
+      });
+      dialog.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          applyItem(index - 1);
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          applyItem(index + 1);
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const nodes = focusables();
+        if (!nodes.length) return;
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+      swipeZone?.addEventListener("pointerdown", (event) => {
+        pointerStartX = event.clientX;
+      });
+      swipeZone?.addEventListener("pointerup", (event) => {
+        const delta = event.clientX - pointerStartX;
+        if (Math.abs(delta) < 42) return;
+        applyItem(delta > 0 ? index - 1 : index + 1);
+      });
+    })();
+  </script>
+</div>
+
+<style>
+  .finale-lightbox {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+  }
+
+  .finale-lightbox-trigger {
+    position: absolute;
+    right: clamp(0.75rem, 2vw, 1.4rem);
+    top: clamp(0.75rem, 2vw, 1.4rem);
+    width: 2.35rem;
+    height: 2.35rem;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    background: rgba(8, 11, 32, 0.42);
+    color: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(10px);
+    cursor: pointer;
+    pointer-events: auto;
+    display: inline-grid;
+    place-items: center;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .finale-lightbox-dialog {
+    width: min(94vw, 1180px);
+    height: min(88vh, 900px);
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: white;
+  }
+
+  .finale-lightbox-dialog::backdrop {
+    background:
+      radial-gradient(
+        circle at 50% 40%,
+        rgba(18, 24, 58, 0.92),
+        rgba(3, 4, 12, 0.96)
+      ),
+      rgba(0, 0, 0, 0.85);
+  }
+
+  .finale-lightbox-shell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 3.25rem 1fr 3.25rem;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .finale-lightbox-figure {
+    margin: 0;
+    min-width: 0;
+    height: 100%;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    gap: 0.85rem;
+    justify-items: center;
+    align-items: center;
+  }
+
+  .finale-lightbox-figure picture,
+  .finale-lightbox-figure img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .finale-lightbox-figure img {
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  }
+
+  .finale-lightbox-figure figcaption {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.76);
+    text-align: center;
+  }
+
+  .finale-lightbox-close,
+  .finale-lightbox-nav {
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+    background: rgba(8, 11, 32, 0.56);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+  }
+
+  .finale-lightbox-close {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.5rem;
+  }
+
+  .finale-lightbox-nav {
+    width: 3.15rem;
+    height: 3.15rem;
+    font-size: 2rem;
+  }
+
+  @media (max-width: 540px) {
+    .finale-lightbox-dialog {
+      width: 100vw;
+      height: 100vh;
+      max-width: none;
+      max-height: none;
+    }
+
+    .finale-lightbox-shell {
+      grid-template-columns: 1fr;
+      padding: 4rem 1rem 2rem;
+      box-sizing: border-box;
+    }
+
+    .finale-lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 2.7rem;
+      height: 2.7rem;
+      font-size: 1.6rem;
+    }
+
+    .finale-lightbox-nav.prev {
+      left: 0.6rem;
+    }
+
+    .finale-lightbox-nav.next {
+      right: 0.6rem;
+    }
+  }
+</style>

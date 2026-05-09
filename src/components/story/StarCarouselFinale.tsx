@@ -81,7 +81,8 @@
  *     方位 offset → center；hold 后断点式切到照片点阵并散成星
  *   - 同屏最多 1 张主照片 + 上一张残留 dissolve；dissolve 同步释放持久星点
  *   - final Pearl_04：lifecycle 停在 hold 阶段，**永不 dissolve**，定格成主海报
- *   - reduced motion：跳过 dissolve / rotate / scale，只 opacity 交叉淡入
+ *   - motion tier：full/lite 都保留"方位入场 → 点阵星尘 → 持久星群"语义；
+ *     static 仅用于 reduced-motion / WebGL failure，直接显示 HTML poster + 静态星空
  *
  * 星尘 dissolve 实现：
  *   - PhotoPlane：只做整体 alpha 淡出；不再做噪声破洞，避免"烧穿"语义。
@@ -130,10 +131,60 @@ const DUAL_URL_SEP = "||";
 const TEXTURE_FETCH_TIMEOUT_MS = 5000;
 const FAILED_TEXTURE_USER_DATA_KEY = "finaleTextureFailed";
 const FIRST_FRAME_READY_OPACITY = 0.08;
+type MotionTier = "full" | "lite" | "static";
 type FinaleWindow = Window & {
   __finaleInitialProgress?: number;
   __finaleFirstFrameReady?: boolean;
 };
+
+type NavigatorWithDeviceHints = Navigator & {
+  connection?: { saveData?: boolean };
+  deviceMemory?: number;
+};
+
+function hasWebGLSupport(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
+function detectMotionTier(): MotionTier {
+  if (typeof window === "undefined") return "full";
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return "static";
+  }
+  if (!hasWebGLSupport()) return "static";
+
+  const nav = navigator as NavigatorWithDeviceHints;
+  if (nav.connection?.saveData === true) return "lite";
+  if (typeof nav.deviceMemory === "number" && nav.deviceMemory <= 4) {
+    return "lite";
+  }
+  if (
+    typeof navigator.hardwareConcurrency === "number" &&
+    navigator.hardwareConcurrency <= 4
+  ) {
+    return "lite";
+  }
+  const smallViewport = Math.min(window.innerWidth, window.innerHeight) <= 540;
+  const coarseSmall =
+    window.matchMedia("(pointer: coarse)").matches && smallViewport;
+  return coarseSmall || smallViewport ? "lite" : "full";
+}
+
+function finaleTextureWidth(motionTier: MotionTier): number {
+  return motionTier === "lite" ? 1024 : 1600;
+}
+
+function staticProgressForTier(
+  motionTier: MotionTier,
+  progress: number,
+): number {
+  return motionTier === "static" ? 1 : progress;
+}
 
 function inferTextureStem(url: string): string {
   return /\/jpg\/([^/?#]+?)-\d+\.jpg(?:[?#].*)?$/u.exec(url)?.[1] ?? "unknown";
@@ -238,6 +289,13 @@ class DualHostTextureLoader extends THREE.Loader {
         onLoad(texture);
       })
       .catch((err) => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("finale:texture-failed", {
+              detail: { stem, failures },
+            }),
+          );
+        }
         console.warn(
           `[StarCarouselFinale] texture failed for ${stem}; hiding this photo`,
           {
@@ -308,8 +366,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /** 入场期 scale 曲线：0.30 → 1.06 → 1.0 */
-function scaleCurve(life: number, reduced: boolean): number {
-  if (reduced) return 1;
+function scaleCurve(life: number): number {
   if (life < ENTER_START) return 0.3;
   if (life < ENTER_END) {
     const raw = (life - ENTER_START) / (ENTER_END - ENTER_START);
@@ -335,9 +392,8 @@ function opacityCurve(life: number): number {
   return 1;
 }
 
-/** 入场期 Y 轴轻微 rotate -0.06 → 0；reduced-motion 直接 0 */
-function rotateYCurve(life: number, reduced: boolean): number {
-  if (reduced) return 0;
+/** 入场期 Y 轴轻微 rotate -0.06 → 0 */
+function rotateYCurve(life: number): number {
   if (life >= ENTER_START && life < ENTER_END) {
     const t = (life - ENTER_START) / (ENTER_END - ENTER_START);
     return -0.06 * (1 - t); // -0.06 rad ≈ -3.4°
@@ -372,13 +428,9 @@ const ENTRY_DIRECTIONS: readonly [number, number][] = [
 ];
 const ENTRY_DISTANCE = 1.75; // 世界单位：在安全区内保留方位感，避免裁切半张照片
 
-/** 入场期 (x, y) 偏移：从方位飘到中央。reduced-motion 直接 [0, 0] */
-function positionOffsetCurve(
-  life: number,
-  index: number,
-  reduced: boolean,
-): [number, number] {
-  if (reduced || life >= ENTER_END) return [0, 0];
+/** 入场期 (x, y) 偏移：从方位飘到中央 */
+function positionOffsetCurve(life: number, index: number): [number, number] {
+  if (life >= ENTER_END) return [0, 0];
   const dir = ENTRY_DIRECTIONS[index % ENTRY_DIRECTIONS.length];
   if (!dir) return [0, 0];
   if (life < ENTER_START) {
@@ -391,25 +443,12 @@ function positionOffsetCurve(
   return [dir[0] * k, dir[1] * k];
 }
 
-/** Exit 期 dissolve 0 → 1；reduced-motion 不 dissolve（用 opacity 淡出代替，下方处理） */
-function dissolveCurve(
-  life: number,
-  isFinal: boolean,
-  reduced: boolean,
-): number {
+/** Exit 期 dissolve 0 → 1；static tier 不进入 R3F timeline */
+function dissolveCurve(life: number, isFinal: boolean): number {
   if (isFinal) return 0; // final 永不 dissolve
-  if (reduced) return 0; // reduced 不走 shader dissolve
   if (life < HOLD_END) return 0;
   if (life > 1) return 1;
   return (life - HOLD_END) / (1 - HOLD_END);
-}
-
-/** Reduced-motion 模式下的 alpha 退场（替代 dissolve） */
-function reducedExitOpacityCurve(life: number, isFinal: boolean): number {
-  if (isFinal) return 1;
-  if (life < HOLD_END) return 1;
-  if (life > 1) return 0;
-  return 1 - (life - HOLD_END) / (1 - HOLD_END);
 }
 
 /* ─────────────────────── PhotoPlane Shader ─────────────────────── */
@@ -504,10 +543,12 @@ function PhotoDustBurst({
   texture,
   planeSize,
   burst,
+  motionTier,
 }: {
   texture: THREE.Texture;
   planeSize: [number, number];
   burst: number;
+  motionTier: MotionTier;
 }): React.ReactElement {
   const geometry = useMemo(() => {
     let seed = 911;
@@ -518,8 +559,10 @@ function PhotoDustBurst({
 
     const [w, h] = planeSize;
     const landscape = w >= h;
-    const cols = landscape ? 92 : 62;
-    const rows = landscape ? 62 : 92;
+    const cols =
+      motionTier === "lite" ? (landscape ? 52 : 36) : landscape ? 92 : 62;
+    const rows =
+      motionTier === "lite" ? (landscape ? 36 : 52) : landscape ? 62 : 92;
     const total = cols * rows;
     const positions = new Float32Array(total * 3);
     const uvs = new Float32Array(total * 2);
@@ -579,7 +622,7 @@ function PhotoDustBurst({
     geom.setAttribute("aDelay", new THREE.BufferAttribute(delays, 1));
     geom.setAttribute("aResidue", new THREE.BufferAttribute(residues, 1));
     return geom;
-  }, [planeSize]);
+  }, [motionTier, planeSize]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -614,7 +657,7 @@ interface PhotoPlaneProps {
   /** 0..1 的 lifecycle；< 0 表示还没入场（mesh 隐藏） */
   lifecycle: number;
   isFinal: boolean;
-  reducedMotion: boolean;
+  motionTier: MotionTier;
 }
 
 function PhotoPlane({
@@ -622,17 +665,18 @@ function PhotoPlane({
   index,
   lifecycle,
   isFinal,
-  reducedMotion,
+  motionTier,
 }: PhotoPlaneProps): React.ReactElement | null {
   // v0.3（v1.91 audit P2-4 修）：用 DualHostTextureLoader 走 primary→backup
   // fallback；编码 "primary||backup" 给 useLoader 当 cache key
   const dualEncoded = useMemo(
     () =>
-      `${finalePhotoUrl(photo, "primary")}${DUAL_URL_SEP}${finalePhotoUrl(
+      `${finalePhotoUrl(photo, "primary", finaleTextureWidth(motionTier))}${DUAL_URL_SEP}${finalePhotoUrl(
         photo,
         "backup",
+        finaleTextureWidth(motionTier),
       )}`,
-    [photo],
+    [motionTier, photo],
   );
   const texture = useLoader(
     DualHostTextureLoader,
@@ -657,12 +701,7 @@ function PhotoPlane({
     texture.colorSpace = THREE.SRGBColorSpace;
     if (typeof window !== "undefined") {
       const finaleWindow = window as FinaleWindow;
-      const readyOpacity = reducedMotion
-        ? Math.min(
-            opacityCurve(lifecycle),
-            reducedExitOpacityCurve(lifecycle, isFinal),
-          )
-        : opacityCurve(lifecycle);
+      const readyOpacity = opacityCurve(lifecycle);
       if (
         !finaleWindow.__finaleFirstFrameReady &&
         readyOpacity >= FIRST_FRAME_READY_OPACITY
@@ -673,7 +712,7 @@ function PhotoPlane({
         });
       }
     }
-  }, [isFinal, lifecycle, reducedMotion, texture, textureFailed]);
+  }, [lifecycle, texture, textureFailed]);
 
   const uniforms = useMemo(
     () => ({
@@ -707,24 +746,21 @@ function PhotoPlane({
       return;
     }
     meshRef.current.visible = true;
-    const op = reducedMotion
-      ? Math.min(opacityCurve(life), reducedExitOpacityCurve(life, isFinal))
-      : opacityCurve(life);
-    const sc = scaleCurve(life, reducedMotion);
+    const op = opacityCurve(life);
+    const sc = scaleCurve(life);
     meshRef.current.scale.setScalar(sc);
-    meshRef.current.rotation.y = rotateYCurve(life, reducedMotion);
+    meshRef.current.rotation.y = rotateYCurve(life);
     // v1.93 P2-3：方位入场——按索引选 8 方位之一，ENTER 期 position 从远方
     // 漂回中央
-    const [offX, offY] = positionOffsetCurve(life, index, reducedMotion);
+    const [offX, offY] = positionOffsetCurve(life, index);
     meshRef.current.position.set(offX, offY, 0);
     const opacityUniform = matRef.current.uniforms.uOpacity;
     const dissolveUniform = matRef.current.uniforms.uDissolve;
     if (opacityUniform) opacityUniform.value = op;
-    if (dissolveUniform)
-      dissolveUniform.value = dissolveCurve(life, isFinal, reducedMotion);
+    if (dissolveUniform) dissolveUniform.value = dissolveCurve(life, isFinal);
   });
 
-  const burst = dissolveCurve(lifecycle, isFinal, reducedMotion);
+  const burst = dissolveCurve(lifecycle, isFinal);
 
   if (textureFailed) return null;
 
@@ -741,8 +777,13 @@ function PhotoPlane({
           depthWrite={false}
         />
       </mesh>
-      {!isFinal && !reducedMotion ? (
-        <PhotoDustBurst texture={texture} planeSize={planeSize} burst={burst} />
+      {!isFinal ? (
+        <PhotoDustBurst
+          texture={texture}
+          planeSize={planeSize}
+          burst={burst}
+          motionTier={motionTier}
+        />
       ) : null}
     </>
   );
@@ -864,8 +905,14 @@ const STARFIELD_FRAG = /* glsl */ `
   }
 `;
 
-function StarField({ progress }: { progress: number }): React.ReactElement {
-  const N_STARS = 1900;
+function StarField({
+  progress,
+  motionTier,
+}: {
+  progress: number;
+  motionTier: MotionTier;
+}): React.ReactElement {
+  const N_STARS = motionTier === "lite" ? 900 : 1900;
   const { positions, sizes, brightness, revealAt } = useMemo(() => {
     let seed = 17;
     function rand(): number {
@@ -890,7 +937,7 @@ function StarField({ progress }: { progress: number }): React.ReactElement {
       revealAt[i] = rand() < 0.42 ? rand() * 0.08 : 0.08 + rand() * 0.92;
     }
     return { positions, sizes, brightness, revealAt };
-  }, []);
+  }, [N_STARS]);
 
   const geometry = useMemo(() => {
     const geom = new THREE.BufferGeometry();
@@ -988,8 +1035,10 @@ function fitPlaneSize(
  */
 function PhotoResidueStars({
   progress,
+  motionTier,
 }: {
   progress: number;
+  motionTier: MotionTier;
 }): React.ReactElement {
   const { viewport } = useThree();
   const {
@@ -1008,7 +1057,7 @@ function PhotoResidueStars({
     }
 
     const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
-    const perPhoto = 520;
+    const perPhoto = motionTier === "lite" ? 180 : 520;
     const total = photos.length * perPhoto;
     const positions = new Float32Array(total * 3);
     const sizes = new Float32Array(total);
@@ -1067,7 +1116,7 @@ function PhotoResidueStars({
       twinkle,
       colors,
     };
-  }, [viewport.width, viewport.height]);
+  }, [motionTier, viewport.width, viewport.height]);
 
   const geometry = useMemo(() => {
     const geom = new THREE.BufferGeometry();
@@ -1141,8 +1190,10 @@ function ProgressInvalidator({
  */
 function TwinkleInvalidator({
   enabled,
+  motionTier,
 }: {
   enabled: boolean;
+  motionTier: MotionTier;
 }): React.ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   useEffect(() => {
@@ -1162,7 +1213,7 @@ function TwinkleInvalidator({
         raf = 0;
         return;
       }
-      if (time - last >= 100) {
+      if (time - last >= (motionTier === "lite" ? 250 : 100)) {
         last = time;
         invalidate();
       }
@@ -1205,19 +1256,19 @@ function TwinkleInvalidator({
       document.removeEventListener("visibilitychange", updateActive);
       stop();
     };
-  }, [enabled, invalidate]);
+  }, [enabled, invalidate, motionTier]);
   return null;
 }
 
 /* ─────────────────────── Scene root ─────────────────────── */
 interface SceneInnerProps {
   globalProgress: number;
-  reducedMotion: boolean;
+  motionTier: MotionTier;
 }
 
 function SceneInner({
   globalProgress,
-  reducedMotion,
+  motionTier,
 }: SceneInnerProps): React.ReactElement {
   const N = FINALE_PHOTO_SEQUENCE.length;
   // 全局 progress 0..1 → 每张照片 lifecycle = globalProgress × N - i
@@ -1228,7 +1279,7 @@ function SceneInner({
   // 限制活跃集合到最多 5 张避免初次 hydrate 就请求 15 × ~200KB = ~3MB 图片。
   // currentI 跟 globalProgress 走，自动 swap：滚到第 5 张时活跃约为
   // [3, 4, 5, 6, 7]，既覆盖长入场，也覆盖上一张的散开退场。
-  const ACTIVE_RANGE = 2;
+  const ACTIVE_RANGE = motionTier === "lite" ? 1 : 2;
   const currentI = Math.min(N - 1, Math.max(0, Math.floor(globalProgress * N)));
   const activeIndices: number[] = [];
   for (let i = currentI - ACTIVE_RANGE; i <= currentI + ACTIVE_RANGE; i += 1) {
@@ -1238,10 +1289,13 @@ function SceneInner({
   return (
     <>
       <ProgressInvalidator progress={globalProgress} />
-      <TwinkleInvalidator enabled={!reducedMotion} />
+      <TwinkleInvalidator
+        enabled={motionTier !== "static"}
+        motionTier={motionTier}
+      />
       <NightSkyBackground />
-      <StarField progress={globalProgress} />
-      <PhotoResidueStars progress={globalProgress} />
+      <StarField progress={globalProgress} motionTier={motionTier} />
+      <PhotoResidueStars progress={globalProgress} motionTier={motionTier} />
       {activeIndices.map((i) => {
         const photo = FINALE_PHOTO_SEQUENCE[i];
         if (!photo) return null;
@@ -1258,7 +1312,7 @@ function SceneInner({
               index={i}
               lifecycle={life}
               isFinal={isFinal}
-              reducedMotion={reducedMotion}
+              motionTier={motionTier}
             />
           </Suspense>
         );
@@ -1269,15 +1323,17 @@ function SceneInner({
 
 /* ─────────────────────── Public Canvas wrapper ─────────────────────── */
 export function StarCarouselFinale(): React.ReactElement {
-  // reduced motion lazy initializer（与 GlobeDistanceScene 同款，避首帧 always-loop）
-  const [reducedMotion, setReducedMotion] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
+  // Motion tier lazy initializer：reduced-motion / WebGL failure 直接 static；
+  // low-memory / save-data / small coarse mobile 走 lite，保留设计语义但降预算。
+  const [motionTier, setMotionTier] = useState<MotionTier>(() =>
+    detectMotionTier(),
+  );
+  const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setHasMounted(true);
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    const onChange = () => setMotionTier(detectMotionTier());
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
@@ -1338,7 +1394,7 @@ export function StarCarouselFinale(): React.ReactElement {
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (reducedMotion) {
+    if (motionTier === "static") {
       setProgress(1); // 终态定格
       return;
     }
@@ -1420,13 +1476,32 @@ export function StarCarouselFinale(): React.ReactElement {
       window.removeEventListener("resize", schedule);
       if (raf !== 0) window.cancelAnimationFrame(raf);
     };
-  }, [reducedMotion]);
+  }, [motionTier]);
+
+  const displayProgress = staticProgressForTier(motionTier, progress);
+  if (motionTier === "static") {
+    return (
+      <div
+        ref={containerRef}
+        className="finale-canvas-root"
+        data-progress="1.000"
+        data-current-index={FINALE_PHOTO_SEQUENCE.length - 1}
+        data-motion-tier="static"
+        data-fallback="static"
+      />
+    );
+  }
 
   return (
     <div
       ref={containerRef}
       className="finale-canvas-root"
-      data-progress={progress.toFixed(3)}
+      data-progress={displayProgress.toFixed(3)}
+      data-current-index={Math.min(
+        FINALE_PHOTO_SEQUENCE.length - 1,
+        Math.max(0, Math.floor(displayProgress * FINALE_PHOTO_SEQUENCE.length)),
+      )}
+      data-motion-tier={hasMounted ? motionTier : "full"}
     >
       <Canvas
         camera={{ position: [0, 0, 3.4], fov: CAMERA_FOV }}
@@ -1444,11 +1519,25 @@ export function StarCarouselFinale(): React.ReactElement {
           // SRGB textures render at their native brightness.
           gl.toneMapping = THREE.NoToneMapping;
           gl.setClearColor("#06091a", 1);
+          gl.domElement.addEventListener(
+            "webglcontextlost",
+            (event) => {
+              event.preventDefault();
+              console.warn(
+                "[StarCarouselFinale] WebGL context lost; falling back to static finale poster",
+              );
+              setMotionTier("static");
+            },
+            { once: true },
+          );
         }}
-        dpr={[1, 2]}
+        dpr={[1, motionTier === "lite" ? 1.5 : 2]}
       >
         <Suspense fallback={null}>
-          <SceneInner globalProgress={progress} reducedMotion={reducedMotion} />
+          <SceneInner
+            globalProgress={displayProgress}
+            motionTier={motionTier}
+          />
         </Suspense>
       </Canvas>
     </div>
