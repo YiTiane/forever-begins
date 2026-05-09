@@ -557,20 +557,12 @@ const anchorDate = main.data.anchor_date;
         return;
       }
 
-      // v1.93（修 v1.92 audit P2-1）：finale hash 硬同步。
-      // v1.92 把 target 从 0.07 改 0.04 + lazy useState init 期望读对的 scroll，
-      // 但部署后实测 #beat-12-heading 仍显 data-progress=0.000。根因可能是：
-      //   (a) island hydrate 与 alignHash 的相对时序不稳定；
-      //   (b) scrollTo 在某些浏览器下不一定立即 fire scroll 事件。
-      // v1.93 用三件套硬同步：
-      //   ① 写 data-initial-progress="0.04" 到 .finale-beat（dataset 形式）
-      //   ② scrollTo（保留 0.04 视觉目标：photo 0 lifecycle ≈ 0.43，HOLD 中段）
-      //   ③ dispatchEvent('scroll') 显式叫醒 island 的 listener
-      // StarCarouselFinale lazy useState 现在 **优先读 dataset.initialProgress**，
-      // 没有 attribute 时才 fall through 到 scroll-derived。
+      // v1.100：finale hash landing 不再进入 photo 0 hold 区。用户实测认为
+      // "首帧先露第一张照片，滚动后才从旁边入场" 也是泄露。现在深链落点
+      // 明确为 progress=0：只见星空；第一张照片必须由后续滚动带入。
       const finaleBeat = anchor.closest<HTMLElement>(".finale-beat");
       if (finaleBeat) {
-        const targetProgress = 0.04;
+        const targetProgress = 0;
         finaleBeat.dataset.initialProgress = String(targetProgress);
         const rect = finaleBeat.getBoundingClientRect();
         const absoluteTop = window.scrollY + rect.top;

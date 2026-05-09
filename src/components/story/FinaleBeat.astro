@@ -6,8 +6,8 @@
  * 数据流（DESIGN §15.1 单一源）：
  *   - finale.lines 来自 main.json beat 12 (kind="finale")
  *   - 15 张照片序列 + CDN URL 来自 src/lib/story/finalePhotos.ts
- *   - Pearl_04 主海报作为 JS-on/WebGL/texture failure fallback + <noscript>
- *     fallback：R3F 首张 texture 首帧 ready 后才淡出，避免空星空
+ *   - JS-on normal 初始帧只显示星空，不放任何照片 fallback；Pearl_04 主海报只用于
+ *     reduced/static、首张 texture 双 CDN 全败、以及 <noscript> fallback
  *
  * 渲染机制（v0.2 起）：
  *   - 外层 .finale-beat 给 hash 锚 #beat-12-heading（与 PoemBeat / GlobeBeat 同款契约）
@@ -16,16 +16,16 @@
  *   - 内层 .finale-stage 100vh sticky + 深邃午夜蓝 #06091a 背景（与 R3F clearColor +
  *     NightSkyBackground 一致）—— finale 使用独立的满天星辰夜空，不承接 §2.B
  *     GlobeDistanceScene 的视觉场
- *   - <StarCarouselFinale client:visible /> 仅视口内 hydrate；Canvas alpha=false 不透明，
- *     但 HTML poster fallback 会覆盖在 canvas 上，直到收到 finale:first-frame-ready
+ *   - <StarCarouselFinale client:visible /> 仅视口内 hydrate；Canvas alpha=false 不透明。
+ *     正常刷新首帧必须是纯星空，照片只能由 scroll-driven R3F timeline 带入
  *   - v1.95：显式给 .finale-canvas 内的 astro-island wrapper 100% 尺寸，避免
  *     client:visible 的 IntersectionObserver 看见 0 尺寸 custom element 而不 hydrate
  *   - <noscript> 内置同款 Pearl_04 + lines；JS fallback 仅在 html.js 时显示，
  *     避免 no-JS 下重复两张海报
  *   - motion tier 由 React 岛内部处理：full/lite 保留同一动画语义；static
  *     用于 reduced-motion / WebGL failure，保留 HTML fallback poster + 静态星空
- *   - FinaleLightbox 是 finale-only optional overlay，只读 finalePhotos 单一序列，
- *     不改变主滚动叙事 progress
+ *   - v1.100 暂撤 FinaleLightbox 入口：右上角 overlay button 在实测中可能卡死，
+ *     且设计价值待复审；主滚动叙事不再挂载该入口
  *   - v1.98 曾在 React timeline 后追加 aria-hidden 静态 end frame；v0.8 移除。
  *     最终 Pearl_04 现在只有 R3F final PhotoPlane 一个来源，避免继续滚动时
  *     主海报重复显示。
@@ -33,8 +33,8 @@
  *     sticky handoff 前提前穿透到上一个 Story/Globe 视口，导致 finale 星空遮挡
  *     beat 10/11；深色铺底改由 `.finale-beat` 自身背景和 R3F canvas 承担。
  *
- * v1.99 hardening：恢复 JS-on fallback poster，但放在 canvas 上方；不是漏底层。
- *   首帧 ready 后淡出；chunk/WebGL/texture 失败时保持可见。
+ * v1.100 correction：撤销正常 JS-on fallback poster。初始首帧为纯星空；只有
+ *   static/reduced 或首张 texture 双 CDN 全败才显 Pearl_04 fallback。
  *
  * a11y：
  *   - section aria-labelledby 指向 sr-only h3（与 PoemBeat / GlobeBeat 同款契约）
@@ -48,9 +48,7 @@
  */
 import { getCollection } from "astro:content";
 import CdnImage from "@/components/CdnImage.astro";
-import FinaleLightbox from "@/components/story/FinaleLightbox.astro";
 import { StarCarouselFinale } from "@/components/story/StarCarouselFinale";
-import { FINALE_PHOTO_SEQUENCE } from "@/lib/story/finalePhotos";
 
 interface Props {
   /** main.json beat 12 的 lines（"还好我们有牢牢抱紧。" "幸好最终是你。"） */
@@ -78,10 +76,6 @@ const headingId = "beat-12-heading";
 const ariaHeadingId = "beat-12-aria-heading";
 
 const ariaLabel = `走过的回忆 · 最终定格主海报：${(lines[0] ?? "还好我们有牢牢抱紧。").replace(/[，。]$/, "")}`;
-const firstFinalePhoto = FINALE_PHOTO_SEQUENCE[0];
-if (!firstFinalePhoto) {
-  throw new Error("FinaleBeat.astro: FINALE_PHOTO_SEQUENCE must not be empty");
-}
 ---
 
 <section
@@ -98,29 +92,12 @@ if (!firstFinalePhoto) {
 
     <div class="finale-canvas" role="img" aria-label={ariaLabel}>
       {
-        /* Phase 4：JS-enabled normal fallback 用第一张 finale 照片，避免刷新时
-           提前泄露最终 Pearl_04 海报。Pearl_04 只用于 static/reduced 或首张
-           R3F texture 双 CDN 全败的故障兜底。 */
+        /* Phase 4 v1.100：JS-enabled normal 首帧只给星空，不放照片 fallback。
+           Pearl_04 仅在 static/reduced 或首张 R3F texture 双 CDN 全败时出现。 */
       }
       <script is:inline>
         document.documentElement.classList.add("js");
       </script>
-      <figure
-        class="finale-fallback-photo finale-js-fallback"
-        data-finale-fallback
-        aria-hidden="true"
-      >
-        <CdnImage
-          cdnTarget={firstFinalePhoto.cdnTarget}
-          stem={firstFinalePhoto.stem}
-          alt=""
-          priority="high"
-          widths={[320, 640, 1024, 1600, 2400]}
-          sizes="(min-width: 960px) 520px, (min-width: 540px) 60vw, 84vw"
-          width={2000}
-          height={3000}
-        />
-      </figure>
       <figure
         class="finale-fallback-photo finale-js-fallback finale-static-fallback"
         data-finale-static-fallback
@@ -139,13 +116,14 @@ if (!firstFinalePhoto) {
       </figure>
       <script is:inline>
         (() => {
-          const targetProgress = 0.04;
+          const targetProgress = 0;
           const canvasShell = document.querySelector(".finale-canvas");
           let firstFrameReady = Boolean(window.__finaleFirstFrameReady);
-          function hideFallback() {
-            const fallback = document.querySelector("[data-finale-fallback]");
+          let forcedStaticFallback = false;
+          function handleFirstFrameReady() {
             firstFrameReady = true;
-            if (fallback) fallback.classList.add("is-hidden");
+            forcedStaticFallback = false;
+            syncFallbackMode();
           }
           function syncFallbackMode() {
             const root = document.querySelector(".finale-canvas-root");
@@ -153,19 +131,22 @@ if (!firstFinalePhoto) {
               root?.getAttribute("data-motion-tier") === "static";
             canvasShell?.classList.toggle(
               "is-static-fallback",
-              Boolean(isStatic),
+              Boolean(isStatic || forcedStaticFallback),
             );
           }
-          window.addEventListener("finale:first-frame-ready", hideFallback, {
-            once: true,
-          });
+          window.addEventListener(
+            "finale:first-frame-ready",
+            handleFirstFrameReady,
+            { once: true },
+          );
           window.addEventListener("finale:texture-failed", (event) => {
             const detail = event.detail || {};
             if (!firstFrameReady && detail.stem === "Grassland_01") {
-              canvasShell?.classList.add("is-static-fallback");
+              forcedStaticFallback = true;
+              syncFallbackMode();
             }
           });
-          if (window.__finaleFirstFrameReady) hideFallback();
+          if (window.__finaleFirstFrameReady) handleFirstFrameReady();
           const fallbackObserver = new MutationObserver(syncFallbackMode);
           fallbackObserver.observe(document.documentElement, {
             childList: true,
@@ -219,7 +200,6 @@ if (!firstFinalePhoto) {
         })();
       </script>
       <StarCarouselFinale client:visible />
-      <FinaleLightbox />
     </div>
 
     <div class="finale-text">
@@ -364,15 +344,12 @@ if (!firstFinalePhoto) {
   .finale-canvas .finale-static-fallback {
     display: none;
   }
-  .finale-canvas.is-static-fallback
-    .finale-js-fallback:not(.finale-static-fallback) {
-    display: none;
-  }
   :global(html.js) .finale-canvas.is-static-fallback .finale-static-fallback {
     display: flex;
   }
 
-  /* React 岛根：真实 R3F canvas；JS fallback 暂时在其上方，首帧 ready 后淡出 */
+  /* React 岛根：真实 R3F canvas；正常首帧只显示星空。Pearl_04 fallback
+     仅在 static/reduced 或首张 texture 双 CDN 全败时由 is-static-fallback 打开。 */
   .finale-canvas :global(.finale-canvas-root) {
     position: absolute;
     inset: 0;

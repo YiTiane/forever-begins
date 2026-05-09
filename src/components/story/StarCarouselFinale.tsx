@@ -318,13 +318,8 @@ class DualHostTextureLoader extends THREE.Loader {
 }
 
 const CAMERA_FOV = 38;
-const HASH_LANDING_PROGRESS = 0.04;
+const HASH_LANDING_PROGRESS = 0;
 const TIMELINE_SCROLL_FRACTION = 0.96;
-// Hydration note: SSR renders data-progress="0.000". If client initial state is
-// also exactly 0.04 and the first effect writes 0.04 again, React may not patch
-// the mismatched SSR attribute. Add an invisible epsilon so the first client
-// effect always commits while data-progress.toFixed(3) still reports 0.040.
-const HASH_LANDING_COMMIT_PROGRESS = HASH_LANDING_PROGRESS + 0.0001;
 /** 照片在 canvas 上沿约束维度填充的比例（与 GlobeDistanceScene 同款理念） */
 const PHOTO_FILL_FRACTION = 0.84;
 /** 每张照片 lifecycle 阶段切分（fraction of own lifecycle） */
@@ -1347,9 +1342,10 @@ export function StarCarouselFinale(): React.ReactElement {
    *
    * 改动动机：v1.92 单纯靠 lazy init 读 scroll position 在部署上仍出现
    * progress=0 现象（hash align 与 island hydrate 时序竞争）。v1.93 用
-   * "意图直接传递" 替代 "推断"——alignHash 已经决定了目标 progress（0.04），
+   * "意图直接传递" 替代 "推断"——alignHash 直接把目标 progress 写到 dataset，
    * 直接把这个意图写到 dataset 上让 island 读，不再让 island 自己从 scroll
-   * 反推。
+   * 反推。v1.100 起 hash landing 回到 0：初始画面必须是纯星空，第一张照片
+   * 只能在用户继续滚动后入场。
    *
    * 注意：这里不能用 containerRef.current（mount 阶段还是 null），改用
    * `document.querySelector('.finale-beat')` 直接定位 spacer。reduced-motion
@@ -1412,11 +1408,7 @@ export function StarCarouselFinale(): React.ReactElement {
         .__finaleInitialProgress;
       if (typeof initialFromInline === "number") {
         const normalized = Math.min(1, Math.max(0, initialFromInline));
-        setProgress(
-          normalized === HASH_LANDING_PROGRESS
-            ? HASH_LANDING_COMMIT_PROGRESS
-            : normalized,
-        );
+        setProgress(normalized);
         delete (window as FinaleWindow).__finaleInitialProgress;
         return;
       }
@@ -1432,7 +1424,7 @@ export function StarCarouselFinale(): React.ReactElement {
             ? absoluteTop + timelineScrollable * HASH_LANDING_PROGRESS
             : absoluteTop;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
-        setProgress(HASH_LANDING_COMMIT_PROGRESS);
+        setProgress(HASH_LANDING_PROGRESS);
         return;
       }
       const initial = root.dataset["initialProgress"];
