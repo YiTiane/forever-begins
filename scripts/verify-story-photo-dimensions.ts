@@ -29,7 +29,9 @@
  *      attempt 立即 resolve；返回前调 ctrls.forEach(c => c.abort()) 取消
  *      所有未完结的输者 fetch（不再挂到自己的 5s timeout）；全失败 →
  *      AggregateError，attempts 收集的细节拼综合错误抛出。
- *   5. 全部 12 张通过 → "✓ 12 张 Story photo 与 CDN 1600px 派生品 aspect 一致"
+ *   5. aspect mismatch / JPEG parse / 确定 403/404 仍 fail closed；纯 timeout /
+ *      abort / fetch failed / 5xx 这类网络不可判定事件记 warning，不阻塞本地 build。
+ *   6. 全部可判定照片通过 → "✓ N 张 Story photo 与 CDN 1600px 派生品 aspect 一致"
  *
  * 设计为什么 dual-CDN：v1.66 audit 发现 jsDelivr 偶发缓存 stale 派生品，单 CDN
  * gate 会让 build 误 fail；备 CDN (Statically) 给区域性 / 缓存抖动留兜底。
@@ -290,7 +292,18 @@ async function main() {
   const main: MainJson = JSON.parse(readFileSync(mainPath, "utf-8"));
 
   const errors: string[] = [];
+  const warnings: string[] = [];
   const checked: string[] = [];
+
+  const isNetworkInconclusive = (err: unknown): boolean => {
+    const message = (err as Error).message;
+    if (/aspect mismatch|JPEG SOF parse failed|HTTP 40[34]/iu.test(message)) {
+      return false;
+    }
+    return /aborted|abort|fetch failed|network|timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|HTTP 429|HTTP 5\d\d/iu.test(
+      message,
+    );
+  };
 
   for (const beat of main.beats) {
     if (beat.kind !== "photo-poem") continue;
@@ -316,9 +329,9 @@ async function main() {
           `${beat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
         );
       } catch (err) {
-        errors.push(
-          `Beat ${beat.id} / ${photo.stem} (main.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`,
-        );
+        const line = `Beat ${beat.id} / ${photo.stem} (main.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`;
+        if (isNetworkInconclusive(err)) warnings.push(line);
+        else errors.push(line);
       }
     }
   }
@@ -339,10 +352,17 @@ async function main() {
         `finale/${photo.stem}: aspect ${expectedAspect.toFixed(3)} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
       );
     } catch (err) {
-      errors.push(
-        `finale ${photo.stem} (finalePhotos.ts aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`,
-      );
+      const line = `finale ${photo.stem} (finalePhotos.ts aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`;
+      if (isNetworkInconclusive(err)) warnings.push(line);
+      else errors.push(line);
     }
+  }
+
+  if (warnings.length > 0) {
+    console.warn(
+      "\n[verify-story-photo-dimensions] ⚠️ CDN 网络不可判定 warning（不阻塞 build；aspect 错误仍会 fail）：",
+    );
+    for (const w of warnings) console.warn("  ⚠", w);
   }
 
   if (errors.length > 0) {
@@ -361,7 +381,10 @@ async function main() {
   }
 
   console.log(
-    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story photo (含 finale ${FINALE_PHOTO_SEQUENCE.length}) 与 CDN ${PROBE_W}px 派生品 aspect 一致`,
+    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story photo (含 finale ${FINALE_PHOTO_SEQUENCE.length}) 与 CDN ${PROBE_W}px 派生品 aspect 一致` +
+      (warnings.length > 0
+        ? `（${warnings.length} 项网络 warning 已记录）`
+        : ""),
   );
   // 把通过列表也打到 stdout（CI log 可读 + 本地 quick visual confirm）
   for (const c of checked) console.log("  -", c);

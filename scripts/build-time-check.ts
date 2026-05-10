@@ -6,9 +6,10 @@
  * 而不是上线后客户看到 404。
  *
  * 决策（v1.8 双 CDN 检测）：
- *   - 主 (jsDelivr) 与 备 (Statically) 同时 fail → ❌ 中止 build（运行时 fallback 也救不回来）
- *   - 单边 fail（另一边健康）            → ⚠️ warn（运行时 cdn-fallback.ts 仍能选健康那侧）
- *   - 双边都 ok                          → ✅ 通过
+ *   - 主 (jsDelivr) 与 备 (Statically) 同时明确 404/403 → ❌ 中止 build（tag / 权限错）
+ *   - 网络 timeout / abort / 5xx 等不可判定故障         → ⚠️ warn（不中止本地 build）
+ *   - 单边 fail（另一边健康）                          → ⚠️ warn（运行时 fallback 可选健康侧）
+ *   - 双边都 ok                                        → ✅ 通过
  *
  * 跳过开关：本地紧急可 `SKIP_BUILD_CHECK=1 pnpm build`；CI 永不传该 env。
  *
@@ -31,6 +32,8 @@ const targets = Object.keys(ASSET_VERSIONS) as CdnTarget[];
 interface ProbeResult {
   ok: boolean;
   msg: string;
+  kind: "ok" | "http" | "timeout" | "network";
+  status?: number;
 }
 
 async function probe(
@@ -38,21 +41,45 @@ async function probe(
   target: CdnTarget,
 ): Promise<ProbeResult> {
   const url = cdnUrl(host, target, "probe.png");
+  let timedOut = false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, 8000);
   try {
     // AbortController 而非 AbortSignal.timeout —— 后者 Node 22 支持但仍是较新 API；
     // 自己拼 controller + setTimeout 兼容性更稳。
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
     const r = await fetch(url, { method: "HEAD", signal: ctrl.signal });
-    clearTimeout(timer);
-    return { ok: r.ok, msg: `${url} → HTTP ${r.status}` };
+    return {
+      ok: r.ok,
+      msg: `${url} → HTTP ${r.status}`,
+      kind: r.ok ? "ok" : "http",
+      status: r.status,
+    };
   } catch (e) {
-    return { ok: false, msg: `${url} → ${(e as Error).message}` };
+    const err = e as Error;
+    return {
+      ok: false,
+      msg: `${url} → ${err.message}`,
+      kind:
+        timedOut || err.name === "AbortError" || err.message.includes("aborted")
+          ? "timeout"
+          : "network",
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 const failures: string[] = [];
 const warnings: string[] = [];
+
+function isDefinitiveMissing(result: ProbeResult): boolean {
+  return (
+    result.kind === "http" && (result.status === 403 || result.status === 404)
+  );
+}
 
 await Promise.all(
   targets.map(async (target) => {
@@ -60,9 +87,13 @@ await Promise.all(
       probe("primary", target),
       probe("backup", target),
     ]);
-    if (!p.ok && !b.ok) {
+    if (!p.ok && !b.ok && isDefinitiveMissing(p) && isDefinitiveMissing(b)) {
       failures.push(
         `${target}: 双 CDN 均失败\n        primary: ${p.msg}\n        backup:  ${b.msg}`,
+      );
+    } else if (!p.ok && !b.ok) {
+      warnings.push(
+        `${target}: 双 CDN 当前均不可用但未得到确定 404/403，按网络不可判定处理 (${p.msg}; ${b.msg})`,
       );
     } else if (!p.ok) {
       warnings.push(`${target}: primary 失败但 backup 正常 (${p.msg})`);

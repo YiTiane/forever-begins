@@ -83,6 +83,9 @@
  *   - final Pearl_04：lifecycle 停在 hold 阶段，**永不 dissolve**，定格成主海报
  *   - motion tier：full/lite 都保留"方位入场 → 点阵星尘 → 持久星群"语义；
  *     static 仅用于 reduced-motion / WebGL failure，直接显示 HTML poster + 静态星空
+ *   - v1.101：首个 React render 在 SSR 与客户端都输出 inert root，mount 后再检测
+ *     motion tier。避免 reduced-motion 客户端首帧渲染 static div、SSR 却渲染 Canvas
+ *     造成 React hydration #418。
  *
  * 星尘 dissolve 实现：
  *   - PhotoPlane：只做整体 alpha 淡出；不再做噪声破洞，避免"烧穿"语义。
@@ -1320,12 +1323,11 @@ function SceneInner({
 export function StarCarouselFinale(): React.ReactElement {
   // Motion tier lazy initializer：reduced-motion / WebGL failure 直接 static；
   // low-memory / save-data / small coarse mobile 走 lite，保留设计语义但降预算。
-  const [motionTier, setMotionTier] = useState<MotionTier>(() =>
-    detectMotionTier(),
-  );
+  const [motionTier, setMotionTier] = useState<MotionTier>("full");
   const [hasMounted, setHasMounted] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setMotionTier(detectMotionTier());
     setHasMounted(true);
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const onChange = () => setMotionTier(detectMotionTier());
@@ -1471,6 +1473,19 @@ export function StarCarouselFinale(): React.ReactElement {
   }, [motionTier]);
 
   const displayProgress = staticProgressForTier(motionTier, progress);
+  if (!hasMounted) {
+    return (
+      <div
+        ref={containerRef}
+        className="finale-canvas-root"
+        data-progress="0.000"
+        data-current-index="0"
+        data-motion-tier="pending"
+        data-fallback="pending"
+      />
+    );
+  }
+
   if (motionTier === "static") {
     return (
       <div
