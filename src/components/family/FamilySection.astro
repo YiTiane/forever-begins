@@ -60,10 +60,11 @@ const photoWidths = [320, 640, 1024, 1600];
             </div>
 
             <div class="cat-story-flow" aria-label={`${cat.name} 的家庭相册`}>
-              {cat.moments.map((moment) => (
+              {cat.moments.map((moment, momentIndex) => (
                 <section
                   class="cat-moment"
                   data-has-text={moment.text ? "true" : "false"}
+                  style={`--moment-index: ${momentIndex}`}
                 >
                   {moment.text && (
                     <p class="cat-moment-text cn-kaishu">{moment.text}</p>
@@ -297,20 +298,32 @@ const photoWidths = [320, 640, 1024, 1600];
   @media (prefers-reduced-motion: no-preference) {
     .family-section[data-anim-ready="true"] .cat-album {
       opacity: 0;
-      transform: translateY(1.35rem);
+    }
+
+    .family-section[data-anim-ready="true"] .cat-album .cat-moment {
+      opacity: 0;
+      transform: translateY(0.85rem);
     }
 
     .family-section[data-anim-ready="true"] .cat-album .cat-photo :global(img) {
-      transform: scale(0.96);
+      transform: scale(0.975);
     }
 
     .family-section[data-anim-ready="true"] .cat-album.is-visible {
       opacity: 1;
+      transition: opacity 760ms var(--ease-paper);
+      transition-delay: calc(var(--album-index) * 90ms);
+    }
+
+    .family-section[data-anim-ready="true"] .cat-album.is-visible .cat-moment {
+      opacity: 1;
       transform: translateY(0);
       transition:
-        opacity 720ms var(--ease-paper),
-        transform 720ms var(--ease-paper);
-      transition-delay: calc(var(--album-index) * 90ms);
+        opacity 620ms var(--ease-paper),
+        transform 620ms var(--ease-paper);
+      transition-delay: calc(
+        var(--album-index) * 90ms + var(--moment-index) * 70ms + 120ms
+      );
     }
 
     .family-section[data-anim-ready="true"]
@@ -360,18 +373,28 @@ const photoWidths = [320, 640, 1024, 1600];
       margin-bottom: 4.5rem;
     }
 
+    .family-albums {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: auto auto;
+      gap: clamp(1.2rem, 1.7vw, 1.5rem);
+      align-items: start;
+    }
+
     .cat-album[data-cat-id="berry"] {
-      grid-column: 1 / span 5;
+      grid-column: 1;
+      grid-row: 1 / span 2;
     }
 
     .cat-album[data-cat-id="lizhi"] {
-      grid-column: 7 / span 5;
-      margin-top: 4.25rem;
+      grid-column: 2;
+      grid-row: 1;
+      margin-top: 0;
     }
 
     .cat-album[data-cat-id="xiaobao"] {
-      grid-column: 4 / span 6;
-      margin-top: -0.25rem;
+      grid-column: 2;
+      grid-row: 2;
+      margin-top: 0;
     }
   }
 
@@ -399,6 +422,7 @@ const photoWidths = [320, 640, 1024, 1600];
 
   @media (prefers-reduced-motion: reduce) {
     .cat-album,
+    .cat-moment,
     .cat-photo :global(img) {
       transition: none !important;
       transform: none !important;
