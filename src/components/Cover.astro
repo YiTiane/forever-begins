@@ -111,8 +111,6 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     <p class="when">二〇二六年六月十四日 · 晚七点</p>
     <p class="where">新疆乌鲁木齐 · 二道桥大剧院</p>
   </div>
-
-  <p class="poem cn-song">既见君子，云胡不喜。</p>
 </section>
 
 <style>
@@ -162,7 +160,7 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     }
   }
 
-  /* —— 排版：welcome / hero / meta / poem ——
+  /* —— 排版：welcome / hero / meta ——
      用 helper class（.latin-italic / .cn-song）替代 inline font-family；
      字号继续用静态 rem（不绑 vw，DESIGN §2.3.5 v2.21）。 */
   .welcome {
@@ -186,22 +184,12 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     margin: 0.5rem 0;
     line-height: 1.7;
   }
-  .poem {
-    font-size: 1.5rem;
-    font-weight: 300;
-    color: var(--c-sage-deep);
-    margin: 0;
-  }
-
   @media (max-width: 540px) {
     .hero {
       font-size: 3.5rem;
     }
     .meta p {
       font-size: 1rem;
-    }
-    .poem {
-      font-size: 1.25rem;
     }
   }
 </style>

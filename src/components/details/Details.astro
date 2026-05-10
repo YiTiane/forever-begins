@@ -1,6 +1,6 @@
 ---
 /**
- * Details.astro · Phase 6 第四章 · 这一天
+ * Details.astro · Phase 6 这一天
  *
  * Astro-only 婚礼详情区：日期 / 时间 / 地点、静态地图、日历入口、联系新人。
  * 地图导航采用 POI 优先：国内地图优先用场地名和地址搜索；坐标只作兜底。
@@ -85,9 +85,8 @@ const infoItems = [
   aria-labelledby="the-day-heading"
 >
   <div class="details-inner">
-    <p class="section-kicker latin-ui details-reveal">IV. THE DAY</p>
     <h2 id="the-day-heading" class="details-title cn-kaishu details-reveal">
-      第四章 · 这一天
+      这一天
     </h2>
     <p class="details-quote cn-song details-reveal">
       花径不曾缘客扫，蓬门今始为君开。
@@ -213,14 +212,6 @@ const infoItems = [
   .details-inner {
     width: min(100%, 1120px);
     margin: 0 auto;
-  }
-
-  .section-kicker {
-    margin: 0 0 0.65rem;
-    color: var(--c-sage);
-    font-size: var(--text-meta);
-    letter-spacing: 0;
-    text-transform: uppercase;
   }
 
   .details-title {

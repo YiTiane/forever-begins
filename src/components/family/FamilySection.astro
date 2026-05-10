@@ -1,6 +1,6 @@
 ---
 /**
- * FamilySection.astro · Phase 5 第三章 · 我们的家（v0.3 / PLAN v2.06）
+ * FamilySection.astro · Phase 5 我们的家（v0.4 / PLAN v2.06+）
  *
  * 轻量 Astro-only 家庭相册章节：不新增 WebGL / React island / Lightbox。
  * 数据来自 src/content/cats/family.json；所有图片经 <CdnImage> 走 misc/cat/*
@@ -35,12 +35,7 @@ const photoWidths = [320, 640, 1024, 1600];
 >
   <div class="family-inner">
     <header class="family-header">
-      <p class="family-kicker latin-label" aria-hidden="true">
-        III. OUR FAMILY
-      </p>
-      <h2 id="family-heading" class="family-title cn-kaishu">
-        第三章 · 我们的家
-      </h2>
+      <h2 id="family-heading" class="family-title cn-kaishu">我们的家</h2>
       <p class="family-intro cn-song">
         和我们一起欢迎你们的，<br />
         还有它们。
@@ -159,7 +154,6 @@ const photoWidths = [320, 640, 1024, 1600];
     text-align: center;
   }
 
-  .family-kicker,
   .cat-number {
     margin: 0;
     color: var(--c-sage);
@@ -270,6 +264,7 @@ const photoWidths = [320, 640, 1024, 1600];
     color: var(--c-olive-ink);
     font-size: var(--text-body-lg);
     line-height: var(--leading-quote);
+    white-space: pre-line;
   }
 
   .cat-photo {

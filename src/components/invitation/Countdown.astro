@@ -119,7 +119,25 @@ const { targetDate } = Astro.props;
 
   .countdown .digits {
     /* latin-mono 全局类已设 tabular-nums + tnum；这里仅给数字略大权重的视感 */
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.08em;
     color: var(--c-olive-ink);
+  }
+
+  .countdown .digits :is(.d, .h, .m, .s) {
+    color: var(--c-sage-deep);
+    font-size: 1.55rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .countdown .digits .unit {
+    color: color-mix(in oklch, var(--c-olive-ink) 88%, var(--c-sage));
+    font-size: 1rem;
+    line-height: 1;
   }
 
   /* —— arrived（v0.2 P2 #2 修复）：整段一句 cn-kaishu 抒情体替代倒计时 —— */
@@ -145,6 +163,24 @@ const { targetDate } = Astro.props;
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+
+  @media (min-width: 720px) {
+    .countdown .digits :is(.d, .h, .m, .s) {
+      font-size: 1.9rem;
+    }
+    .countdown .digits .unit {
+      font-size: 1.16rem;
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .countdown .digits :is(.d, .h, .m, .s) {
+      font-size: 2.25rem;
+    }
+    .countdown .digits .unit {
+      font-size: 1.28rem;
+    }
   }
 
   /* 移动端字号微缩 */

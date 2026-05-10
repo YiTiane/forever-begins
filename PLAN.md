@@ -2,10 +2,23 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.09
-last_updated: 2026-05-10
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`，待本轮提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
+version: 2.10
+last_updated: 2026-05-11
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮按用户反馈完成邀请页诗句移除、倒计时突出、Family/The Day 标题收口与猫咪文案补齐，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.10 — Phase 6 copy and typography cleanup（邀请 / 家庭 / 这一天 文案收口）：
+        ① **修用户反馈（邀请页文案）**：
+           - Cover 生产页面去除旧邀请诗句
+           - OG image alt 同步去除该句，避免分享预览继续携带旧文案
+        ② **修用户反馈（倒计时视觉权重）**：
+           - 倒计时数字与单位放大突出；实现改为 rem + breakpoint 档位，避免 `vw` 连续缩放违反项目排版约束
+        ③ **修用户反馈（Family / The Day 标题）**：
+           - Family 去除英文 kicker 与章节前缀，只保留「我们的家」
+           - Details 去除英文 kicker 与章节前缀，只保留「这一天」
+        ④ **修用户反馈（猫咪卡片文案）**：
+           - Berry「玩具很多，/ 但最爱玩塑料袋。」分两行
+           - 荔枝补齐「把自己照顾得超级好。/ 如果她主动蹭你，/ 就是想要被摸。」
+           - 小宝补齐「我们救助的流浪猫，/ 现在是家里最粘人的小毛球。」
   v2.09 — Phase 6 venue coordinate calibration（地图位置校准）：
         ① **修用户反馈（Details map pin 位置偏移）**：
            - 以用户确认坐标 `43.781356422003576, 87.61508943244256` 为 WGS84 真值
@@ -32,9 +45,9 @@ changelog: |
         ⑤ **纳入 P3 待办（THREE.Clock 上游 warning）**：
            - 本地业务代码已不读 `state.clock`；浏览器仍可能由 three / R3F / drei 内部 `new THREE.Clock()` 打出 deprecation warning
            - 明确加入 Phase 7 性能/依赖待办：评估升级 R3F/drei/three 或上游 Timer 迁移；继续禁止全局 `console.warn` monkey-patch
-  v2.07 — Phase 6 Details / Closing / global nav implementation（第四章 · 这一天 + 收束落款）：
+  v2.07 — Phase 6 Details / Closing / global nav implementation（这一天 + 收束落款）：
         ① **新增 Details 章节**：
-           - 首页 Family 之后追加 `#the-day`，渲染 `IV. THE DAY` / `第四章 · 这一天`
+           - 首页 Family 之后追加 `#the-day`，渲染「这一天」（v2.10 去除英文 kicker 与章节前缀）
            - 三栏信息：日期 `二〇二六年六月十四日`、时间 `晚七点 / 19:00–23:00`、地点 `二道桥大剧院`
            - 保留用户指定主句 `花径不曾缘客扫，蓬门今始为君开。`
         ② **新增 DetailsMap / 地图导航**：
@@ -3171,7 +3184,7 @@ changelog: |
         ② 主仓新增 `@react-three/postprocessing` / `postprocessing` / `maath`，用于 Bloom/halo/阻尼动画；
         ③ GlobeDistanceScene 明确用水彩贴图地球 + `client:visible client:only="react"`，并新增最小 R3F smoke gate；
         ④ StarCarouselFinale 明确默认 Shader Dissolve，低端/低电量降级 crossfade；
-        ⑤ 新增 Phase 1 OG 重做任务：邀请函 part_1 + "既见君子，云胡不喜" + 烫金日期。
+        ⑤ 新增 Phase 1 OG 重做任务：邀请函 part_1 + 新人名字 + 烫金日期。
   v1.22 — v2.16 新叙事后的施工契约收口：
         ① `china-cities.json` 不再同步进主仓；旧中国 5 城地图/JSON 仅保留为归档资产；
         ② Phase 1 §1.1.21a-c 从"必须 sync 主仓 JSON"改为"归档资产只读验收"，Phase 1 验收删除主仓 `china-cities.json`；
@@ -3382,8 +3395,8 @@ changelog: |
 - [6. Phase 2 — 序幕与请柬 Cover & Invitation](#6-phase-2--序幕与请柬)
 - [7. Phase 3 — 第一章 · 我们的故事 Our Story](#7-phase-3--第一章我们的故事)
 - [8. Phase 4 — 影像星河验收与降级策略](#8-phase-4--影像星河验收与降级策略)
-- [9. Phase 5 — 第三章 · 我们的家 Our Family](#9-phase-5--第三章我们的家)
-- [10. Phase 6 — 第四章 + 尾声 The Day & Closing](#10-phase-6--第四章--尾声)
+- [9. Phase 5 — 我们的家 Our Family](#9-phase-5--我们的家)
+- [10. Phase 6 — 这一天 + 收束 The Day & Closing](#10-phase-6--这一天--收束)
 - [11. Phase 7 — 打磨与测试 Polish & QA](#11-phase-7--打磨与测试)
 - [12. Phase 8 — 上线与监护 Launch & Stewardship](#12-phase-8--上线与监护)
 - [13. 完成标准 Definition of Done](#13-完成标准-definition-of-done)
@@ -4642,7 +4655,7 @@ done
 - [ ] 🟢 **1.1.13a** 重做正式 OG 分享图（45 min）⭐ v1.23 新增
   - 用 Sharp + SVG 合成 `dist/misc/og/og-cover-1200x630.jpg`
   - 左侧：邀请函 part_1 缩略，保持原始像素密度
-  - 右侧主句：**既见君子，云胡不喜。**
+  - 右侧主句：**杨倚天 & 希尔娜依**
   - 副文案：**诚邀构成我们生命不同经纬的你，共同见证这份回忆的开始。**
   - 下方：新人名字 + 二〇二六年六月十四日 · 晚七点
   - 合成后走 `VERSION=1.1.1 pnpm push:cdn` 仅更新 misc/OG（patch 在当前 misc v1.1.0 之上 · v1.43 修订：之前写 v1.0.1 是基于 v1.42 之前 misc 还在 v1.0.0 的旧基线；v1.42 后 misc 已经 v1.1.0，再发 v1.0.1 反而 < 当前版本，会让回滚定位混乱）；主仓 `asset-versions.ts` 中 `misc` tag 同步改到 `v1.1.1`
@@ -5481,7 +5494,7 @@ done
 
 ---
 
-## 9. Phase 5 — 第三章 · 我们的家
+## 9. Phase 5 — 我们的家
 
 > 🔗 [DESIGN.md §4 §4 (Cats)](DESIGN.md)
 >
@@ -5501,7 +5514,7 @@ done
 
 - [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.06 已改为文图交替满宽 + 720px 以上 balanced spread）
   - Astro-only；不新增 React island / WebGL / Lightbox
-  - `III. OUR FAMILY` + `第三章 · 我们的家` + 引言
+  - 「我们的家」+ 引言（v2.10 去除英文 kicker 与章节前缀）
   - Berry / 荔枝 / 小宝 三段家庭相册，按 `moments[]` 顺序渲染
   - 姓名下不再显示重复小字；文案段落后紧跟对应照片
   - 每行单张照片，宽度占满卡片内容区
@@ -5535,7 +5548,7 @@ done
 
 ---
 
-## 10. Phase 6 — 第四章 + 尾声
+## 10. Phase 6 — 这一天 + 收束
 
 > 🔗 [DESIGN.md §4 §5/§6 + §8](DESIGN.md)
 >
@@ -6131,4 +6144,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.09 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`，待本轮提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
+> **— Forever Begins · 实施计划 v2.10 · 2026-05-11 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮完成邀请 / Family / The Day 文案与标题收口，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
