@@ -2,10 +2,18 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.05
+version: 2.06
 last_updated: 2026-05-10
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · 当前代码保护点：主仓 `e3f083e` 后续 Family moment-flow refinement 本轮提交 · GitHub Pages CI 待本轮提交后验证 · 路线图保护点：主仓根目录 `PLAN.md` 所在提交 · dimension gate 覆盖 34 张 story+finale+cats visible photos；发布级 34/34 clean pass 需在稳定网络复验 · Lightbox 已撤回并转入 redesign-deferred**
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · 当前代码保护点：主仓本轮提交（基于 `01ca2b2` 修 Family balanced layout 720+ 断点与文档漂移）· GitHub Pages CI 待本轮提交后验证 · 路线图保护点：主仓根目录 `PLAN.md` 所在提交 · dimension gate 覆盖 34 张 story+finale+cats visible photos；发布级 34/34 clean pass 需在稳定网络复验 · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.06 — Phase 5 Family balanced layout audit fix（720+ 统一相册 spread + 文档保护点同步）：
+        ① **修 P2（720–1099px 仍保留旧的三猫错位布局）**：
+           - FamilySection 的新版 spread 从 `min-width: 1100px` 下放到 `min-width: 720px`
+           - 720px 以上统一为 Berry 左列跨两行，荔枝/小宝右列上下堆叠
+           - Berry-荔枝水平 gap 与荔枝-小宝垂直 gap 使用同一 `clamp(1.2rem, 1.7vw, 1.5rem)`，不再保留旧 `margin-top: 5rem` 错位
+        ② **修 P3（PLAN 保护点与 FamilySection 头注释漂移）**：
+           - PLAN 版本推到 v2.06，记录 `01ca2b2` 之后的 balanced layout 审计修复
+           - FamilySection docblock 同步到当前 moment-flow / 满宽图片 / 720+ balanced spread / reduced-motion 契约
   v2.05 — Phase 5 Family card narrative refinement（去重短描述 + 文图交替满宽）：
         ① **修用户反馈 #1（姓名下重复小字）**：
            - Family card 删除 name 下方 role / subtitle 行
@@ -5399,12 +5407,13 @@ done
   - `verify-story-photo-dimensions.ts` 覆盖 cats，dimension gate 覆盖范围为 **34 张**（12 story + 15 finale + 7 cats）
   - 当前本地网络下若存在 CDN warning，只能记录为网络不可判定；发布级验收需在稳定网络下取得 **34/34 clean pass**
 
-- [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.05 已改为文图交替满宽）
+- [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.06 已改为文图交替满宽 + 720px 以上 balanced spread）
   - Astro-only；不新增 React island / WebGL / Lightbox
   - `III. OUR FAMILY` + `第三章 · 我们的家` + 引言
   - Berry / 荔枝 / 小宝 三段家庭相册，按 `moments[]` 顺序渲染
   - 姓名下不再显示重复小字；文案段落后紧跟对应照片
   - 每行单张照片，宽度占满卡片内容区
+  - 720px 以上统一使用 Berry 左列、荔枝/小宝右列堆叠；左右/上下 gap 相同
   - 图片全部 `object-fit: contain`，保留真实 aspect ratio，不裁脸、不裁耳朵、不裁蓝眼睛
   - 文案从 `family.json` 的 `moments[].text` 单一来源渲染，组件不再硬编码三只猫的 caption lines
 
@@ -6025,4 +6034,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.05 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · 当前代码保护点 `e3f083e` 后续 Family moment-flow refinement 本轮提交 · Phase 5 Family Astro album 已提交部署并完成文图交替满宽优化 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，发布级 34/34 clean pass 需稳定网络复验**
+> **— Forever Begins · 实施计划 v2.06 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · 当前代码保护点为主仓本轮提交（基于 `01ca2b2` 修 Family balanced layout 720+ 断点与文档漂移）· Phase 5 Family Astro album 已提交部署并完成文图交替满宽 + 720px 以上 balanced spread 优化 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，发布级 34/34 clean pass 需稳定网络复验**

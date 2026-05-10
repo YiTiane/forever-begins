@@ -1,10 +1,16 @@
 ---
 /**
- * FamilySection.astro · Phase 5 第三章 · 我们的家（v0.1）
+ * FamilySection.astro · Phase 5 第三章 · 我们的家（v0.3 / PLAN v2.06）
  *
  * 轻量 Astro-only 家庭相册章节：不新增 WebGL / React island / Lightbox。
  * 数据来自 src/content/cats/family.json；所有图片经 <CdnImage> 走 misc/cat/*
  * 派生品和现有 primary/backup CDN fallback。
+ *
+ * 当前交互/布局契约：
+ * - family.json 的 cats[].moments[] 是文图顺序单一源；姓名后不再显示 role / subtitle。
+ * - 每个 moment 独占一张满宽照片，避免 gallery 裁切或主图切换带来的叙事跳动。
+ * - >=720px 使用平衡 spread：Berry 左列跨两行，荔枝/小宝在右列上下堆叠，左右/上下 gap 相同。
+ * - <720px 保持单列；prefers-reduced-motion 下所有入场动效直接终态。
  */
 import { getCollection } from "astro:content";
 import CdnImage from "@/components/CdnImage.astro";
@@ -340,44 +346,14 @@ const photoWidths = [320, 640, 1024, 1600];
     }
 
     .family-albums {
-      grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 2rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: auto auto;
+      gap: clamp(1.2rem, 1.7vw, 1.5rem);
       align-items: start;
     }
 
     .cat-album {
       padding: 1.25rem;
-    }
-
-    .cat-album[data-cat-id="berry"] {
-      grid-column: 1 / span 6;
-    }
-
-    .cat-album[data-cat-id="lizhi"] {
-      grid-column: 7 / span 6;
-      margin-top: 5rem;
-    }
-
-    .cat-album[data-cat-id="xiaobao"] {
-      grid-column: 3 / span 8;
-      margin-top: 0.25rem;
-    }
-  }
-
-  @media (min-width: 1100px) {
-    .family-section {
-      padding-block: 7rem 8rem;
-    }
-
-    .family-header {
-      margin-bottom: 4.5rem;
-    }
-
-    .family-albums {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-rows: auto auto;
-      gap: clamp(1.2rem, 1.7vw, 1.5rem);
-      align-items: start;
     }
 
     .cat-album[data-cat-id="berry"] {
@@ -395,6 +371,16 @@ const photoWidths = [320, 640, 1024, 1600];
       grid-column: 2;
       grid-row: 2;
       margin-top: 0;
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .family-section {
+      padding-block: 7rem 8rem;
+    }
+
+    .family-header {
+      margin-bottom: 4.5rem;
     }
   }
 
