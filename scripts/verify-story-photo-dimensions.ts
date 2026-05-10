@@ -1,6 +1,10 @@
 /**
  * verify-story-photo-dimensions.ts · Story / Finale / Cats photo 尺寸合约 build-time gate
- *   v0.6（Phase 5 · 第三章"我们的家"：覆盖 8 张 cat photos）
+ *   v0.7（Phase 5 · 第三章"我们的家"：覆盖 7 张 cat moment photos）
+ *
+ * v0.7：Family section 改为 moments[] 叙事流；cat photos 从旧 portrait/gallery
+ * 结构改为 7 张 moment photo。gate 直接遍历 src/content/cats/family.json 的
+ * cats[].moments[].photo，保证可见家庭相册序列的 width/height 与 CDN 派生一致。
  *
  * v0.6：extends gate 到 §4 Cats / Phase 5 序列。除原 §2 photo-poem 12 张
  * 和 §2.C StarCarouselFinale 15 张外，本批次把 src/content/cats/family.json
@@ -87,10 +91,14 @@ interface CatPhoto {
   height: number;
 }
 
+interface CatMoment {
+  text?: string;
+  photo: CatPhoto;
+}
+
 interface Cat {
   id: string;
-  portrait: CatPhoto;
-  gallery?: CatPhoto[];
+  moments: CatMoment[];
 }
 
 interface CatsJson {
@@ -382,12 +390,12 @@ async function main() {
     }
   }
 
-  // v0.6：Phase 5 cats family album uses misc/cat/* derivatives through <CdnImage>.
+  // v0.7：Phase 5 cats family album uses misc/cat/* moment photos through <CdnImage>.
   // 它们同样需要 width/height 几何预留；用 CDN aspect gate 防止 cat content
   // metadata 漂移导致裁脸 / CLS / 404 隐性上线。
   for (const cat of cats.cats) {
-    const photos = [cat.portrait, ...(cat.gallery ?? [])];
-    for (const photo of photos) {
+    for (const [momentIndex, moment] of cat.moments.entries()) {
+      const photo = moment.photo;
       const expectedAspect = photo.width / photo.height;
       try {
         const { dim: cdnDim, sourceCdn } = await probeOne(
@@ -397,10 +405,10 @@ async function main() {
           ASPECT_TOLERANCE,
         );
         checked.push(
-          `cats/${cat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
+          `cats/${cat.id}/moment-${momentIndex + 1}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
         );
       } catch (err) {
-        const line = `cats ${cat.id}/${photo.stem} (family.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`;
+        const line = `cats ${cat.id}/moment-${momentIndex + 1}/${photo.stem} (family.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`;
         if (isNetworkInconclusive(err)) warnings.push(line);
         else errors.push(line);
       }
@@ -430,7 +438,7 @@ async function main() {
   }
 
   console.log(
-    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story/Finale/Cats photo (含 finale ${FINALE_PHOTO_SEQUENCE.length} + cats ${cats.cats.reduce((n, c) => n + 1 + (c.gallery?.length ?? 0), 0)}) 与 CDN ${PROBE_W}px 派生品 aspect 一致` +
+    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story/Finale/Cats photo (含 finale ${FINALE_PHOTO_SEQUENCE.length} + cats ${cats.cats.reduce((n, c) => n + c.moments.length, 0)}) 与 CDN ${PROBE_W}px 派生品 aspect 一致` +
       (warnings.length > 0
         ? `（${warnings.length} 项网络 warning 已记录）`
         : ""),

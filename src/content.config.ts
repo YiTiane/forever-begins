@@ -205,10 +205,15 @@ const photoRef = z.object({
   /** 派生品 stem，例：'cat/berry-portrait'。禁止扩展名 / 尺寸后缀（见 stemSchema 注释）。 */
   stem: stemSchema,
   alt: z.string().min(1),
-  caption: z.string().optional(),
   /** 源图真实像素，用于 <CdnImage> width/height 几何预留与 build-time CDN aspect gate。 */
   width: z.number().int().positive(),
   height: z.number().int().positive(),
+});
+
+const catMoment = z.object({
+  /** moment 文案为空时表示猫咪姓名后的第一张出场照。 */
+  text: z.string().min(1).optional(),
+  photo: photoRef,
 });
 
 const cats = defineCollection({
@@ -219,11 +224,8 @@ const cats = defineCollection({
         z.object({
           id: z.string().min(1),
           name: z.string().min(1),
-          /** 短描述：'爱翻肚皮的老大' / '把自己照顾得超级好' / '家里最粘人的小毛球' */
-          role: z.string().optional(),
-          caption: z.string().min(1),
-          portrait: photoRef,
-          gallery: z.array(photoRef).optional(),
+          /** Phase 5 family album：姓名后按 moments 顺序交替渲染文字与满宽照片。 */
+          moments: z.array(catMoment).min(1),
         }),
       )
       .min(1)

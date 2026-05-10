@@ -2,10 +2,25 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.04
+version: 2.05
 last_updated: 2026-05-10
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · 当前代码保护点：主仓 `e3f083e` / GitHub Pages CI success / Phase 5 Family Astro album 已提交部署 · 路线图保护点：主仓根目录 `PLAN.md` 所在提交 · dimension gate 覆盖 35 张 story+finale+cats photos；发布级 35/35 clean pass 需在稳定网络复验 · Lightbox 已撤回并转入 redesign-deferred**
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · 当前代码保护点：主仓 `e3f083e` 后续 Family moment-flow refinement 本轮提交 · GitHub Pages CI 待本轮提交后验证 · 路线图保护点：主仓根目录 `PLAN.md` 所在提交 · dimension gate 覆盖 34 张 story+finale+cats visible photos；发布级 34/34 clean pass 需在稳定网络复验 · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.05 — Phase 5 Family card narrative refinement（去重短描述 + 文图交替满宽）：
+        ① **修用户反馈 #1（姓名下重复小字）**：
+           - Family card 删除 name 下方 role / subtitle 行
+           - 不再显示 "爱翻肚皮的老大 / 把自己照顾得超级好 / 家里最粘人的小毛球" 这类与正文重复的小字
+        ② **修用户反馈 #2（文案与图片顺序配合）**：
+           - `family.json` 从 portrait/gallery 改为 `moments[]` 叙事流
+           - Berry：姓名 → berry-portrait；"爱翻肚皮的老大" → berry-belly；"玩具很多，但最爱玩塑料袋。" → berry-bag
+           - 荔枝：姓名 → lizhi-portrait；"就是想要被摸。" → lizhi-petting
+           - 小宝：姓名 → xiaobao-blue-eyes；"现在是家里最粘人的小毛球。" → xiaobao-portrait
+        ③ **修用户反馈 #3（每行单图满宽）**：
+           - FamilySection 改为每个 moment 一张照片，`picture/img` 宽度 100%
+           - 删除两列 gallery / only-child 58% 宽度等旧规则
+        ④ **schema / gate 同步**：
+           - cats schema 改为 `cats[].moments[].photo`
+           - dimension gate 遍历 visible cat moment photos；当前覆盖 12 story + 15 finale + 7 cats = **34 张**
   v2.04 — 修复 PLAN 非版本化 P3（路线图纳入主仓保护）：
         ① **修 P3（PLAN.md 仅在本地非 git 目录，无法作为正式保护点）**：
            - 自 v2.04 起，将本文档同步到主仓根目录 `PLAN.md`
@@ -3326,23 +3341,25 @@ changelog: |
 ## 0. 使用说明 How To Use
 
 ### 0.1 阅读顺序
+
 1. 第一次阅读：从 §1 开始，建立对总体节奏的概念。
 2. 实施时：定位到当前 Phase，逐条勾选。每个勾选项都对应一个**可独立验证**的小操作（10–60 分钟）。
 3. 任何一个勾选项需要决策时：先翻 [DESIGN.md](DESIGN.md) 对应章节（已交叉引用）；找不到答案时，在 §17 留下决策记录后再继续。
 
 ### 0.2 标记体系
 
-| 符号  | 含义 |
-| ----- | ---- |
-| `[ ]` | 待办                                             |
-| `[x]` | 已完成（请保留勾选状态作为审计） |
-| 🔵    | 由 **新人（你）** 操作的步骤                     |
-| 🟢    | 由 **AI（我）** 完成代码或文档                   |
-| ⚙️    | 由 **CI（GitHub Actions）** 自动完成             |
-| ⚠️    | 风险点 / 需小心                                  |
-| 🔗    | 链接到 DESIGN.md 对应章节                        |
+| 符号  | 含义                                 |
+| ----- | ------------------------------------ |
+| `[ ]` | 待办                                 |
+| `[x]` | 已完成（请保留勾选状态作为审计）     |
+| 🔵    | 由 **新人（你）** 操作的步骤         |
+| 🟢    | 由 **AI（我）** 完成代码或文档       |
+| ⚙️    | 由 **CI（GitHub Actions）** 自动完成 |
+| ⚠️    | 风险点 / 需小心                      |
+| 🔗    | 链接到 DESIGN.md 对应章节            |
 
 ### 0.3 工时估算约定
+
 - **1 工日** = 6 个**有效工作小时**（不含会议、喝水、撸猫）
 - **粗粒度估时**：每个 Phase 顶部给出
 - **细粒度估时**：每个子任务括号中给出（min = 分钟）
@@ -3408,11 +3425,11 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 
 ### 1.3 推荐排期（示例：每天 4 小时碎片时间）
 
-| 周次      | 周一  | 周二  | 周三  | 周四  | 周五  | 周末   |
-| --------- | ----- | ----- | ----- | ----- | ----- | ------ |
-| **第 1 周** | P0 上 | P0 下 | P1    | P2    | P3 上 | P3 下  |
-| **第 2 周** | P4 上 | P4 中 | P4 下 | P5    | P6 上 | P6 下  |
-| **第 3 周** | P7 上 | P7 下 | P8    | 缓冲  |       |        |
+| 周次        | 周一  | 周二  | 周三  | 周四 | 周五  | 周末  |
+| ----------- | ----- | ----- | ----- | ---- | ----- | ----- |
+| **第 1 周** | P0 上 | P0 下 | P1    | P2   | P3 上 | P3 下 |
+| **第 2 周** | P4 上 | P4 中 | P4 下 | P5   | P6 上 | P6 下 |
+| **第 3 周** | P7 上 | P7 下 | P8    | 缓冲 |       |       |
 
 灵活原则：每个 Phase 内部可拆开多天分散做，跨 Phase 不要并行（除非明确允许）。
 
@@ -3420,16 +3437,17 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 
 ## 2. 角色与责任 Roles & Responsibilities
 
-| 角色        | 谁         | 主要职责                                                                |
-| ----------- | ---------- | ----------------------------------------------------------------------- |
-| **设计/产品** | 你（杨倚天） | 内容定稿、审美决策、文案校对、最终上线确认                                 |
-| **工程/AI**   | 我          | 代码、配置、脚本、测试、文档维护                                         |
-| **资产**     | 你 + 我     | 你提供原图与文案，我处理为派生品 + 集成                                   |
-| **网络运维**  | 你         | GitHub 账号、Mapbox 账号、（可选）域名注册                                |
-| **CI**       | 自动        | 派生品生成 + 跨仓推送 + GitHub Pages 部署                                |
+| 角色          | 谁              | 主要职责                                                             |
+| ------------- | --------------- | -------------------------------------------------------------------- |
+| **设计/产品** | 你（杨倚天）    | 内容定稿、审美决策、文案校对、最终上线确认                           |
+| **工程/AI**   | 我              | 代码、配置、脚本、测试、文档维护                                     |
+| **资产**      | 你 + 我         | 你提供原图与文案，我处理为派生品 + 集成                              |
+| **网络运维**  | 你              | GitHub 账号、Mapbox 账号、（可选）域名注册                           |
+| **CI**        | 自动            | 派生品生成 + 跨仓推送 + GitHub Pages 部署                            |
 | **客人测试**  | 你的朋友 3–5 人 | Phase 7 末期 / Phase 8 灰度时帮忙真实测试（境内 + 境外 各至少 1 人） |
 
 ⚠️ **关键约定**：
+
 - 凡是涉及 **GitHub 账号操作 / Mapbox / 域名解析** 的步骤，标 🔵，**必须本人操作**——我无法代登录账号
 - 凡是 **仓库内的代码、脚本、配置** —— 我可以全程代写代写代修
 - 文案 / 图片**最终选择权在你**
@@ -3491,15 +3509,18 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 #### 4.1.1 GitHub 仓库矩阵
 
 - [ ] 🔵 **0.1.1** 创建主代码仓 `forever-begins`（30 min）
+
   ```bash
   gh repo create YiTiane/forever-begins --public \
     --description "杨倚天 & 希尔娜依 婚礼网站 · forever-begins.dev"
   cd ~/projects   # 你常用的工作目录
   gh repo clone YiTiane/forever-begins
   ```
+
   **验收**：`https://github.com/YiTiane/forever-begins` 可访问，仓库为空。
 
 - [ ] 🔵 **0.1.2** 批量创建 7 个 Tier B CDN 仓 + 1 个 Tier C 私有归档仓（20 min）
+
   ```bash
   CDN_REPOS=(fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-pearl fb-cdn-retro fb-cdn-misc)
   for r in "${CDN_REPOS[@]}"; do
@@ -3509,13 +3530,16 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   gh repo create YiTiane/forever-begins-archive --private \
     --description "Forever Begins · 私有归档 · 5K 原图与脚本"
   ```
+
   **验收**：`gh repo list YiTiane | grep -E '(fb-cdn|forever-begins)'` 输出 9 行。
 
 - [ ] 🔵 **0.1.3** 给所有 Tier B 仓加版权声明 README（15 min）
   - 进入每个 Tier B 仓 → Settings → Topics → 添加 `forever-begins-private-asset`
   - 在每个 Tier B 仓的 README 写明：
+
     ```md
     # Forever Begins · 派生品仓
+
     本仓库内容由 CI 自动生成，仅服务于个人婚礼网站。
     未经新人书面同意，禁止任何形式的转载、商业使用、AI 训练。
     Photos © 2026 杨倚天 & 希尔娜依. All Rights Reserved.
@@ -3523,11 +3547,13 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 
   > ⚠️ **v2.3 修正**：v2.2 曾计划在仓库根放 `robots.txt` 来"阻止搜索引擎索引"。
   > **这是无效的**——`robots.txt` 仅在请求该 origin 根路径时生效。
+  >
   > - 本仓的 origin 是 `github.com/YiTiane/...`，由 GitHub 全局 robots 控制（已默认 noindex 大部分文件）
   > - jsDelivr / Statically 用各自的 origin（`cdn.jsdelivr.net` 等），它们各自有 robots，与你写的无关
   > - **README 的版权声明只是道德约束，不构成访问控制**
 
   > **如果你的真实需求是"图片不被公开访问"** —— 那 jsDelivr / public 仓本身就不可接受，需要切换架构：
+  >
   > - 选项 A：所有 Tier B 仓改为 **private**，自托管 GitHub Pages 或 Cloudflare Pages（失去 jsDelivr 边缘缓存）
   > - 选项 B：原图全部上 **Cloudflare R2** + 签名 URL（短期 token），需自定义域名 + Workers
   > - 选项 C：放弃跨境同步，只在腾讯云 COS 用防盗链 + 时效 URL（境外慢但安全）
@@ -3537,6 +3563,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 #### 4.1.2 deploy keys（每仓一把）
 
 - [ ] 🔵 **0.1.4** 生成 7 把 deploy key（10 min）
+
   ```bash
   mkdir -p ~/.ssh/forever-begins-keys
   cd ~/.ssh/forever-begins-keys
@@ -3548,12 +3575,14 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   ```
 
 - [ ] 🔵 **0.1.5** 把 7 把公钥分别上传到对应 Tier B 仓的 Deploy Keys（20 min）
+
   ```bash
   for r in fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-pearl fb-cdn-retro fb-cdn-misc; do
     gh repo deploy-key add ~/.ssh/forever-begins-keys/$r.pub \
       --repo YiTiane/$r --title "ci-push" --allow-write
   done
   ```
+
   **验收**：每个 Tier B 仓 Settings → Deploy keys 列表中各有 1 条 "ci-push (Read/write)"
 
 - [ ] 🔵 **0.1.6** 把 7 把私钥作为 GitHub Secrets 配到归档仓（15 min）
@@ -3612,6 +3641,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 #### 4.1.5 归档仓初始化
 
 - [ ] 🟢 **0.1.13** 在归档仓搭骨架（15 min）⭐ v1.3 写明依赖清单
+
   ```
   forever-begins-archive/
   ├── .gitignore               (含 dist/ node_modules/ tmp/)
@@ -3640,48 +3670,47 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
     "type": "module",
     "scripts": {
       // ── 原子步骤（私有，前缀 _）──────────────────────────
-      "_maps:venue":         "tsx scripts/generate-venue-map.ts",
-      "_maps:china":         "tsx scripts/generate-china-journey-map.ts",
-      "_sync:main":          "tsx scripts/sync-to-main-repo.ts",
+      "_maps:venue": "tsx scripts/generate-venue-map.ts",
+      "_maps:china": "tsx scripts/generate-china-journey-map.ts",
+      "_sync:main": "tsx scripts/sync-to-main-repo.ts",
 
       // ── 公开复合步骤 ────────────────────────────────────
       // build:derivatives 不依赖主仓；v1.15 起默认脚本内部也是单并发热安全参数
-      "build:derivatives":   "tsx scripts/generate-derivatives.ts",
-      "build:derivatives:safe":
-                              "DERIVATIVE_CONCURRENCY=1 DERIVATIVE_AVIF_EFFORT=6 DERIVATIVE_COOLDOWN_MS=5000 tsx scripts/generate-derivatives.ts",
+      "build:derivatives": "tsx scripts/generate-derivatives.ts",
+      "build:derivatives:safe": "DERIVATIVE_CONCURRENCY=1 DERIVATIVE_AVIF_EFFORT=6 DERIVATIVE_COOLDOWN_MS=5000 tsx scripts/generate-derivatives.ts",
 
       // build:maps:cdn —— 仅生成静态图，不 sync 主仓（用于 Phase 0 / CI）
-      "build:maps:cdn":      "pnpm _maps:venue && pnpm _maps:china",
+      "build:maps:cdn": "pnpm _maps:venue && pnpm _maps:china",
 
       // build:maps —— v1.22 起仅生成归档/CDN 地图；旧 5 城 JSON 不再 sync 主仓
-      "build:maps":          "pnpm build:maps:cdn",
+      "build:maps": "pnpm build:maps:cdn",
 
-      "build:og":            "tsx scripts/generate-og.ts",
+      "build:og": "tsx scripts/generate-og.ts",
 
       // ⭐ build:cdn —— Phase 0 与 CI 用（不依赖主仓 src/content/ 的存在）
-      "build:cdn":           "pnpm build:derivatives:safe && pnpm build:maps:cdn && pnpm build:og",
+      "build:cdn": "pnpm build:derivatives:safe && pnpm build:maps:cdn && pnpm build:og",
 
       // ⭐ build:all —— v1.22 起不含 sync；主站不再消费 china-cities.json
-      "build:all":           "pnpm build:cdn",
+      "build:all": "pnpm build:cdn",
 
       // 推 CDN（在 build:cdn 或 build:all 之后）
-      "push:cdn":            "tsx scripts/push-to-cdn-repos.ts",
+      "push:cdn": "tsx scripts/push-to-cdn-repos.ts",
 
       // Phase 6 工具：从 wgs84 扩到 gcj02 + bd09
-      "expand:coords":       "tsx scripts/expand-coords.ts"
+      "expand:coords": "tsx scripts/expand-coords.ts"
     },
     "dependencies": {
-      "sharp":            "^0.33",   // 派生品 + OG 合成
-      "coordtransform":   "^2",      // §6 wgs84↔gcj02↔bd09
-      "heic-convert":     "^2",      // 注：v2.2 已弃用 CI 自动转，此处仅做兜底；HEIC 仍走手动 Preview
-      "p-limit":          "^6"       // 并发控制（35 张图同时跑会爆内存）
+      "sharp": "^0.33", // 派生品 + OG 合成
+      "coordtransform": "^2", // §6 wgs84↔gcj02↔bd09
+      "heic-convert": "^2", // 注：v2.2 已弃用 CI 自动转，此处仅做兜底；HEIC 仍走手动 Preview
+      "p-limit": "^6" // 并发控制（35 张图同时跑会爆内存）
     },
     "devDependencies": {
-      "tsx":              "^4",
-      "typescript":       "^5",
-      "@types/node":      "^22",
-      "dotenv":           "^16",
-      "vitest":           "^2"       // 单元测试 mercator.ts、coords.ts
+      "tsx": "^4",
+      "typescript": "^5",
+      "@types/node": "^22",
+      "dotenv": "^16",
+      "vitest": "^2" // 单元测试 mercator.ts、coords.ts
     }
   }
   ```
@@ -3690,6 +3719,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   > **mapbox-static**：v2.2 曾提到，实际不需要——直接 `fetch()` Mapbox API URL 即可，少一层依赖。
 
 - [ ] 🔵 **0.1.14** 把所有原图复制到归档仓（30 min · I/O 主导）
+
   ```bash
   ARCHIVE=~/projects/forever-begins-archive
   SRC=~/Documents/倚天的资料/个人资料/forever-begins
@@ -3718,7 +3748,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
       - `陪你睡午觉.jpg` → `xiaobao-naptime.jpg`
     - 邀请函：`invitation_part_1.JPG` → `invitation/part_1.jpg`
   - 我会写一个 `scripts/normalize-filenames.sh` 跑一次完成所有改名
-  > ⚠️ HEIC 原件保留**原汉字名**——它们不进派生品流水线
+    > ⚠️ HEIC 原件保留**原汉字名**——它们不进派生品流水线
 
 #### 4.1.6 派生品 / 地图脚本（详见 §4.5、§4.6）
 
@@ -3731,23 +3761,45 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   - 参数：AVIF q=90 effort=9 4:4:4 / WebP q=92 / JPG q=95 mozjpeg
   - 尺寸：[320, 640, 1024, 1600, 2400, 3840]（JPG fallback 仅到 1600w）
   - 映射规则：
+
     ```ts
-    type CdnTarget = 'snow-a' | 'snow-b' | 'grassland' | 'wooden-door' | 'pearl' | 'retro' | 'misc';
+    type CdnTarget =
+      | "snow-a"
+      | "snow-b"
+      | "grassland"
+      | "wooden-door"
+      | "pearl"
+      | "retro"
+      | "misc";
 
     /** 从 (series, fileIndex) 决定 (cdnTarget, stem) */
-    function resolveTarget(series: string, fileIndex: number, basename: string):
-      { cdnTarget: CdnTarget; stem: string } {
+    function resolveTarget(
+      series: string,
+      fileIndex: number,
+      basename: string,
+    ): { cdnTarget: CdnTarget; stem: string } {
       switch (series) {
-        case 'snow':         return { cdnTarget: fileIndex <= 8 ? 'snow-a' : 'snow-b', stem: basename };
-        case 'grassland':    return { cdnTarget: 'grassland',    stem: basename };
-        case 'wooden_door':  return { cdnTarget: 'wooden-door',  stem: basename };
-        case 'pearl':        return { cdnTarget: 'pearl',        stem: basename };
-        case 'retro':        return { cdnTarget: 'retro',        stem: basename };
-        case 'cat':          return { cdnTarget: 'misc',         stem: `cat/${basename}` };
-        case 'invitation':   return { cdnTarget: 'misc',         stem: `invitation/${basename}` };
+        case "snow":
+          return {
+            cdnTarget: fileIndex <= 8 ? "snow-a" : "snow-b",
+            stem: basename,
+          };
+        case "grassland":
+          return { cdnTarget: "grassland", stem: basename };
+        case "wooden_door":
+          return { cdnTarget: "wooden-door", stem: basename };
+        case "pearl":
+          return { cdnTarget: "pearl", stem: basename };
+        case "retro":
+          return { cdnTarget: "retro", stem: basename };
+        case "cat":
+          return { cdnTarget: "misc", stem: `cat/${basename}` };
+        case "invitation":
+          return { cdnTarget: "misc", stem: `invitation/${basename}` };
       }
     }
     ```
+
   - **写入路径**：`dist/{target}/{fmt}/{stem}-{w}.{ext}`
     - 例 1（雪山）：`dist/snow-a/avif/Snow_01-640.avif`
     - 例 2（猫）：`dist/misc/avif/cat/berry-portrait-640.avif` ← 含子路径
@@ -3770,61 +3822,67 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   - v1.22 起默认不运行；保留脚本只为历史排查，避免未来误删 Phase 0 已生成的归档能力
   - 若手动运行，它会把 `dist/main-content/` rsync 到主仓 `src/content/`；当前新设计**禁止**这样做
   - **可直接复制使用**（不要省略任何 import / 检查）：
+
     ```ts
     // scripts/sync-to-main-repo.ts
-    import 'dotenv/config';                              // ⭐ 必须，否则 process.env 里看不到 .env
-    import { existsSync } from 'node:fs';                // ⭐ 必须，校验目标路径
-    import { homedir } from 'node:os';
-    import path from 'node:path';
-    import { spawnSync } from 'node:child_process';
+    import "dotenv/config"; // ⭐ 必须，否则 process.env 里看不到 .env
+    import { existsSync } from "node:fs"; // ⭐ 必须，校验目标路径
+    import { homedir } from "node:os";
+    import path from "node:path";
+    import { spawnSync } from "node:child_process";
 
     function expandTilde(p: string): string {
-      if (p === '~')          return homedir();
-      if (p.startsWith('~/')) return path.join(homedir(), p.slice(2));
+      if (p === "~") return homedir();
+      if (p.startsWith("~/")) return path.join(homedir(), p.slice(2));
       return p;
     }
 
-    const raw  = process.env.MAIN_REPO_PATH ?? '';
-    const isCI = process.env.CI === 'true';   // GitHub Actions 默认设置
+    const raw = process.env.MAIN_REPO_PATH ?? "";
+    const isCI = process.env.CI === "true"; // GitHub Actions 默认设置
 
     // ⭐ v1.6 严格模式：本地 .env 写错 / 路径不存在时必须 exit 1，不要静默成功
     //   只有"明确在 CI 环境且未设置 MAIN_REPO_PATH"才 exit 0（CI 不负责同步主仓）
     if (!raw.trim()) {
       if (isCI) {
-        console.log('[sync] CI 环境且未设 MAIN_REPO_PATH，跳过主仓同步');
+        console.log("[sync] CI 环境且未设 MAIN_REPO_PATH，跳过主仓同步");
         process.exit(0);
       }
-      console.error('[sync] ❌ 本地 MAIN_REPO_PATH 未设置；请检查 .env');
-      console.error('       期望：MAIN_REPO_PATH=/abs/path/to/forever-begins');
-      console.error('       （CI 环境用 CI=true 才会优雅跳过）');
+      console.error("[sync] ❌ 本地 MAIN_REPO_PATH 未设置；请检查 .env");
+      console.error("       期望：MAIN_REPO_PATH=/abs/path/to/forever-begins");
+      console.error("       （CI 环境用 CI=true 才会优雅跳过）");
       process.exit(1);
     }
 
     const mainRepo = expandTilde(raw);
-    const target   = path.join(mainRepo, 'src', 'content');
+    const target = path.join(mainRepo, "src", "content");
 
     if (!existsSync(mainRepo)) {
       // 本地路径错时必须报错；CI 路径错时也报错（CI 不应该设了又指向不存在的位置）
       console.error(`[sync] ❌ MAIN_REPO_PATH 指向的目录不存在: ${mainRepo}`);
-      console.error('       检查 .env 里 MAIN_REPO_PATH 是否拼对、绝对路径');
+      console.error("       检查 .env 里 MAIN_REPO_PATH 是否拼对、绝对路径");
       process.exit(1);
     }
 
     // 二次校验：目标 src/ 必须已存在（说明 astro init 已跑完）
-    if (!existsSync(path.join(mainRepo, 'src'))) {
+    if (!existsSync(path.join(mainRepo, "src"))) {
       console.error(`[sync] ❌ ${mainRepo}/src 不存在`);
-      console.error('       这表示主仓还没跑 pnpm create astro。');
-      console.error('       正确顺序：Phase 0 跑 build:cdn（不含 sync）→ Phase 1 §1.1.1 astro init → §1.1.21b 才跑 sync。');
+      console.error("       这表示主仓还没跑 pnpm create astro。");
+      console.error(
+        "       正确顺序：Phase 0 跑 build:cdn（不含 sync）→ Phase 1 §1.1.1 astro init → §1.1.21b 才跑 sync。",
+      );
       process.exit(1);
     }
 
     // 真正执行 rsync
-    const r = spawnSync('rsync', ['-a', '--checksum', 'dist/main-content/', target + '/'],
-                        { stdio: 'inherit' });
+    const r = spawnSync(
+      "rsync",
+      ["-a", "--checksum", "dist/main-content/", target + "/"],
+      { stdio: "inherit" },
+    );
 
     // ⭐ 必须检查 spawnSync 返回值——它默认不会让 Node 进程跟着失败退出
     if (r.error) {
-      console.error('[sync] spawn rsync 失败：', r.error);
+      console.error("[sync] spawn rsync 失败：", r.error);
       process.exit(1);
     }
     if (r.status !== 0) {
@@ -3833,13 +3891,16 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
     }
 
     // 验收 token：检查关键文件确实出现
-    const expected = path.join(target, 'journey', 'china-cities.json');
+    const expected = path.join(target, "journey", "china-cities.json");
     if (!existsSync(expected)) {
-      console.error(`[sync] rsync 完成但 ${expected} 不存在，请检查 dist/main-content/ 内容`);
+      console.error(
+        `[sync] rsync 完成但 ${expected} 不存在，请检查 dist/main-content/ 内容`,
+      );
       process.exit(1);
     }
     console.log(`[sync] OK → ${expected}`);
     ```
+
   - 在归档仓 `.env`（**不入仓**，gitignore 过）写：
     ```
     # 推荐填绝对路径；若用 ~ 开头，脚本会自动展开
@@ -3855,7 +3916,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
     - `pnpm build:all` 跑全套 CDN 资产，不再触碰主仓
     - **CI 跑 `build:all` 不依赖 MAIN_REPO_PATH**
   - **验收**：跑 `pnpm build:maps` 后，只检查 `dist/misc/map/` 与 `dist/main-content/journey/china-cities.json` 归档副本存在；不要把它同步进主仓
-  > v1.4 PLAN 的反例：参考实现没写 `import 'dotenv/config'` 和 `import { existsSync }`，照抄会让 process.env 空 / TypeError；spawnSync 没检查返回值，rsync 失败时仍 exit 0 让 build:maps 假装成功。v1.5 全部修掉。
+    > v1.4 PLAN 的反例：参考实现没写 `import 'dotenv/config'` 和 `import { existsSync }`，照抄会让 process.env 空 / TypeError；spawnSync 没检查返回值，rsync 失败时仍 exit 0 让 build:maps 假装成功。v1.5 全部修掉。
 
 - [ ] 🟢 **0.1.19** 写 `scripts/generate-og.ts`（45 min · §0/§1 wireframe 备注）
   - Sharp + SVG composite
@@ -3880,6 +3941,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 #### 4.1.7 首次本地跑通
 
 - [ ] 🔵 **0.1.22** 安装依赖 + 跑 normalize-filenames（10 min）
+
   ```bash
   cd $ARCHIVE
   pnpm install
@@ -3891,6 +3953,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   > `.env` 设置移到 Phase 1 §1.1.21c，详见 P1-1 修订说明。
 
 - [x] 🔵 **0.1.23** 跑派生品生成（热安全续跑完成 · 主要 CPU 等待）
+
   ```bash
   pnpm build:derivatives:safe                  # v1.15：单并发 + AVIF effort 6 + 每张图冷却 5s
   du -sh dist/*
@@ -3898,6 +3961,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   ```
 
 - [x] 🔵 **0.1.24** 跑地图 + OG（不 sync 主仓）（10 min）⭐ v1.16 低负载分步完成
+
   ```bash
   export MAPBOX_TOKEN=<你的 token>          # 或加到 shell rc
 
@@ -3915,6 +3979,7 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   ```
 
   **验收（Phase 0 仅校验 dist/，不查主仓）**：
+
   ```bash
   ls dist/misc/map/                                                # venue-*.png + china-journey-*.png
   test -f dist/main-content/journey/china-cities.json              # JSON 已生成（归档备用，不 sync 主仓）
@@ -3923,9 +3988,11 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
       dist/main-content/journey/china-cities.json                   # 应是 2560 / 1800 / 2
   ls dist/misc/og/og-cover-1200x630.jpg
   ```
+
   > v1.22 起不再做主仓 JSON 检查；`china-cities.json` 只保留为归档备用。前端地理高潮由 `GlobeDistanceScene` 实现。
 
 - [x] 🔵 **0.1.25** 把 7 个 deploy key 私钥放到本地环境变量（10 min）
+
   ```bash
   for r in fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-pearl fb-cdn-retro fb-cdn-misc; do
     NAME="DEPLOY_KEY_$(echo $r | tr '[:lower:]-' '[:upper:]_')"
@@ -3934,12 +4001,14 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
   ```
 
 - [x] 🔵 **0.1.26** 跑 push-to-cdn-repos，把 7 个仓首次填充（30 min）⭐ v1.8 显式 VERSION
+
   ```bash
   VERSION=1.0.0 pnpm push:cdn                # ⭐ VERSION 必传，semver 形如 X.Y.Z
   # 观察 7 仓依次 push 成功；最后会输出"全部 7 仓已 push @ v1.0.0"
   ```
 
   > 后续每次推 CDN 都需要 bump VERSION：
+  >
   > - 加照片 / 改文案：`VERSION=1.1.0 pnpm push:cdn`
   > - 仅元数据：`VERSION=1.0.1 pnpm push:cdn`
   >
@@ -3948,12 +4017,14 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 #### 4.1.8 验证
 
 - [x] 🔵 **0.1.27** 验证每个 Tier B 仓体积 ≤ 90MB（5 min）
+
   ```bash
   for r in fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-pearl fb-cdn-retro fb-cdn-misc; do
     SIZE=$(gh api repos/YiTiane/$r --jq '.size')   # KB
     echo "$r: $((SIZE/1024)) MB"
   done
   ```
+
   ⚠️ 任何一个 > 100MB 都应停下排查（可能是派生品参数问题）
 
 - [x] 🔵 **0.1.28** 浏览器验证 jsDelivr 与 Statically 都能拿到资源（15 min）
@@ -3980,13 +4051,13 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 
 ### 4.3 Phase 0 风险与备案
 
-| 风险                             | 概率 | 影响 | 备案                                          |
-| -------------------------------- | ---- | ---- | --------------------------------------------- |
-| Mapbox Studio 自定义样式做不出   | 中   | 中   | 用默认 light-v11 样式临时替代                |
-| Sharp AVIF 编码本机失败          | 低   | 高   | 用 Docker `ghcr.io/lovell/sharp` 镜像跑        |
-| HEIC 转出后还是有问题            | 低   | 中   | 退而求其次：用 Photos.app 导出，或用对应 jpg 替代图 |
-| jsDelivr 抽风                    | 低   | 高   | 立即 fallback Statically；同时检查仓 size      |
-| 任一 Tier B 仓 size > 150MB     | 低   | 高   | 调小派生品最大尺寸（3840w → 2400w）            |
+| 风险                           | 概率 | 影响 | 备案                                                |
+| ------------------------------ | ---- | ---- | --------------------------------------------------- |
+| Mapbox Studio 自定义样式做不出 | 中   | 中   | 用默认 light-v11 样式临时替代                       |
+| Sharp AVIF 编码本机失败        | 低   | 高   | 用 Docker `ghcr.io/lovell/sharp` 镜像跑             |
+| HEIC 转出后还是有问题          | 低   | 中   | 退而求其次：用 Photos.app 导出，或用对应 jpg 替代图 |
+| jsDelivr 抽风                  | 低   | 高   | 立即 fallback Statically；同时检查仓 size           |
+| 任一 Tier B 仓 size > 150MB    | 低   | 高   | 调小派生品最大尺寸（3840w → 2400w）                 |
 
 ### 4.4 派生品脚本细节（参考实现）
 
@@ -3994,61 +4065,108 @@ Phase 8 (Launch) ────────────► 必须 Phase 7 全绿
 
 ```ts
 // scripts/generate-derivatives.ts
-import sharp from 'sharp';
-import { readdir, mkdir, writeFile } from 'node:fs/promises';
-import { join, basename, dirname, extname } from 'node:path';
+import sharp from "sharp";
+import { readdir, mkdir, writeFile } from "node:fs/promises";
+import { join, basename, dirname, extname } from "node:path";
 
 const SIZES = [320, 640, 1024, 1600, 2400, 3840];
-const SIZES_JPG = [320, 640, 1024, 1600];  // JPG 不出 4K
+const SIZES_JPG = [320, 640, 1024, 1600]; // JPG 不出 4K
 
-type CdnTarget = 'snow-a' | 'snow-b' | 'grassland' | 'wooden-door' | 'pearl' | 'retro' | 'misc';
+type CdnTarget =
+  | "snow-a"
+  | "snow-b"
+  | "grassland"
+  | "wooden-door"
+  | "pearl"
+  | "retro"
+  | "misc";
 
 /** v1.4: (series, fileIndex, basename) → (cdnTarget, stem)
  *  stem 含子路径（仅 misc 仓的项需要）。 */
-function resolveTarget(series: string, i: number, base: string):
-  { cdnTarget: CdnTarget; stem: string } {
+function resolveTarget(
+  series: string,
+  i: number,
+  base: string,
+): { cdnTarget: CdnTarget; stem: string } {
   switch (series) {
-    case 'snow':         return { cdnTarget: i <= 8 ? 'snow-a' : 'snow-b', stem: base };
-    case 'grassland':    return { cdnTarget: 'grassland',    stem: base };
-    case 'wooden_door':  return { cdnTarget: 'wooden-door',  stem: base };
-    case 'pearl':        return { cdnTarget: 'pearl',        stem: base };
-    case 'retro':        return { cdnTarget: 'retro',        stem: base };
-    case 'cat':          return { cdnTarget: 'misc',         stem: `cat/${base}` };
-    case 'invitation':   return { cdnTarget: 'misc',         stem: `invitation/${base}` };
-    default:             throw new Error(`unknown series: ${series}`);
+    case "snow":
+      return { cdnTarget: i <= 8 ? "snow-a" : "snow-b", stem: base };
+    case "grassland":
+      return { cdnTarget: "grassland", stem: base };
+    case "wooden_door":
+      return { cdnTarget: "wooden-door", stem: base };
+    case "pearl":
+      return { cdnTarget: "pearl", stem: base };
+    case "retro":
+      return { cdnTarget: "retro", stem: base };
+    case "cat":
+      return { cdnTarget: "misc", stem: `cat/${base}` };
+    case "invitation":
+      return { cdnTarget: "misc", stem: `invitation/${base}` };
+    default:
+      throw new Error(`unknown series: ${series}`);
   }
 }
 
-const ALL_SERIES = ['snow','grassland','wooden_door','pearl','retro','cat','invitation'];
+const ALL_SERIES = [
+  "snow",
+  "grassland",
+  "wooden_door",
+  "pearl",
+  "retro",
+  "cat",
+  "invitation",
+];
 
 for (const series of ALL_SERIES) {
   const files = await readdir(`original/${series}`);
-  for (const f of files.filter(x => /\.(jpg|jpeg)$/i.test(x))) {
-    const i = parseInt(basename(f).match(/_(\d+)/)?.[1] ?? '0');
+  for (const f of files.filter((x) => /\.(jpg|jpeg)$/i.test(x))) {
+    const i = parseInt(basename(f).match(/_(\d+)/)?.[1] ?? "0");
     const stemBase = basename(f, extname(f));
     const { cdnTarget, stem } = resolveTarget(series, i, stemBase);
 
     // ⭐ stem 含 / 时（misc 子目录），需要先创建目录
-    const writeAt = async (fmt: string, w: number, ext: string, buf: Buffer) => {
+    const writeAt = async (
+      fmt: string,
+      w: number,
+      ext: string,
+      buf: Buffer,
+    ) => {
       const path = `dist/${cdnTarget}/${fmt}/${stem}-${w}.${ext}`;
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, buf);
     };
 
     for (const w of SIZES) {
-      const baseImg = sharp(`original/${series}/${f}`)
-        .resize({ width: w, withoutEnlargement: true });
-      await writeAt('avif', w, 'avif',
-        await baseImg.clone().avif({ quality: 90, effort: 9, chromaSubsampling: '4:4:4' }).toBuffer());
-      await writeAt('webp', w, 'webp',
-        await baseImg.clone().webp({ quality: 92, effort: 6, smartSubsample: true }).toBuffer());
+      const baseImg = sharp(`original/${series}/${f}`).resize({
+        width: w,
+        withoutEnlargement: true,
+      });
+      await writeAt(
+        "avif",
+        w,
+        "avif",
+        await baseImg
+          .clone()
+          .avif({ quality: 90, effort: 9, chromaSubsampling: "4:4:4" })
+          .toBuffer(),
+      );
+      await writeAt(
+        "webp",
+        w,
+        "webp",
+        await baseImg
+          .clone()
+          .webp({ quality: 92, effort: 6, smartSubsample: true })
+          .toBuffer(),
+      );
     }
     for (const w of SIZES_JPG) {
       const buf = await sharp(`original/${series}/${f}`)
         .resize({ width: w, withoutEnlargement: true })
-        .jpeg({ quality: 95, mozjpeg: true, chromaSubsampling: '4:4:4' })
+        .jpeg({ quality: 95, mozjpeg: true, chromaSubsampling: "4:4:4" })
         .toBuffer();
-      await writeAt('jpg', w, 'jpg', buf);
+      await writeAt("jpg", w, "jpg", buf);
     }
     // LQIP (24w base64) —— 写入按 cdnTarget 分桶的 lqip.json
     const lqip = await sharp(`original/${series}/${f}`)
@@ -4219,6 +4337,7 @@ console.log(`下一步：在主仓 src/lib/images/asset-versions.ts 把对应 ta
 > **永远不存在"部分仓 v1.0.0、部分仓 v1.0.1"的线上观测**——partial tag 仅在远端存在，前端因 asset-versions.ts 未切而不引用。
 
 **调用方式（v1.8）**：
+
 ```bash
 # 首次（Phase 0 §0.1.26）
 VERSION=1.0.0 pnpm push:cdn
@@ -4231,6 +4350,7 @@ VERSION=1.0.1 pnpm push:cdn       # 仅 README/LICENSE 变更走 patch
 ⚠️ **`VERSION` 必传**——脚本会在 semver 校验失败时立即 exit 1，不会留下半成品 tag。
 
 **首次 push 后立即验证 probe.png 全仓在线**（v1.12：双 CDN 检测，与 build-time-check 同款语义）：
+
 ```bash
 TAG="v1.0.0"   # 与刚才 push 的 VERSION 一致
 for r in fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-pearl fb-cdn-retro fb-cdn-misc; do
@@ -4245,6 +4365,7 @@ for r in fb-cdn-snow-a fb-cdn-snow-b fb-cdn-grassland fb-cdn-wooden-door fb-cdn-
   fi
 done
 ```
+
 - **双 200**：完美。
 - **单 200 + 单非 200**：CDN 边缘缓存传播延迟，`pnpm prebuild` 时仅 warn 不阻塞；5–15 min 后复跑应转为双 200。
 - **双双失败**：push-to-cdn-repos.ts 在该仓上没写到 probe.png，回查脚本（特别检查 §4.6 Phase B 第 4 步是否被跳过）。
@@ -4266,6 +4387,7 @@ done
 #### 5.1.1 Astro 项目初始化
 
 - [x] 🟢 **1.1.1** `pnpm create astro` 初始化（10 min）
+
   ```bash
   cd ~/projects/forever-begins
   pnpm create astro@latest .  # 在当前目录
@@ -4273,6 +4395,7 @@ done
   ```
 
 - [x] 🟢 **1.1.2** 安装核心依赖（10 min）
+
   ```bash
   pnpm add @astrojs/react @astrojs/sitemap astro-icon
   pnpm add react react-dom @types/react @types/react-dom
@@ -4282,6 +4405,7 @@ done
   ```
 
 - [x] 🟢 **1.1.3** 安装动效与可视化依赖（10 min）⭐ v1.3 补齐
+
   ```bash
   # 动效
   pnpm add lenis gsap motion embla-carousel-react scrollama
@@ -4371,7 +4495,7 @@ done
     - 7 个语义角色 token：`--bg --fg --muted --accent --link --link-hover --rule`
     - 5 个 z-index：`--z-base/-rail/-nav/-lightbox/-toast`
   - **@media (min-width: 540px) :root**：覆写 10 个字号 token（tablet 档全列）
-  - **@media (min-width: 960px) :root**：覆写 7 个字号 token（desktop 档 display-* / title-* / body-lg；body / caption / meta 与 tablet 同档不再放大）
+  - **@media (min-width: 960px) :root**：覆写 7 个字号 token（desktop 档 display-_ / title-_ / body-lg；body / caption / meta 与 tablet 同档不再放大）
   - **@media (prefers-color-scheme: dark) :root**：仅切语义角色 token + 阴影；**0 处** `--text-*` / `--leading-*` / `--spacing-*` 出现（验收回归点）
   - **硬约束验证**（grep 通过 · build 通过 · prettier 通过）：
     - 0 处 `vw` / `vh` / `vmin` / `vmax` 在 `--text-*` token
@@ -4410,14 +4534,17 @@ done
 - [x] 🟢 **1.1.12** 写 `src/styles/global.css`（15 min）⭐ v1.30 完成
   - **落地文件**：`src/styles/global.css`（prettier --check 过）+ `src/layouts/Base.astro` 新增 `import '@/styles/global.css'`（prettier-plugin-astro 顺手统一为双引号风格）
   - **3 行严格 import 顺序**（v1.28 收紧 → v1.30 落地）：
+
     ```css
-    @import "tailwindcss";   /* 0：Tailwind v4 base + utilities · 必须最先（@theme 解析依赖） */
-    @import "./reset.css";   /* 1：清地基（DESIGN §2.3.6 中文排版三件套挂在 body） */
-    @import "./tokens.css";  /* 2：注入 CSS variables（含 :root 别名 + @theme 映射） */
+    @import "tailwindcss"; /* 0：Tailwind v4 base + utilities · 必须最先（@theme 解析依赖） */
+    @import "./reset.css"; /* 1：清地基（DESIGN §2.3.6 中文排版三件套挂在 body） */
+    @import "./tokens.css"; /* 2：注入 CSS variables（含 :root 别名 + @theme 映射） */
     ```
+
     - 缺 0 → tokens.css 的 @theme 块不被 Tailwind 解析；utility 与 :root 自动注入都不会发生
     - 缺 1 → modern reset / hanging-punctuation / font-feature-settings 不生效
-    - 缺 2 → reset.css / helper 引用的 var(--bg) / var(--font-*) 全部 invalid
+    - 缺 2 → reset.css / helper 引用的 var(--bg) / var(--font-\*) 全部 invalid
+
   - **7 个 helper class（DESIGN §2.3.8）**，每个**显式** `letter-spacing: 0`：
     | helper | font-family | extras |
     |---|---|---|
@@ -4464,31 +4591,37 @@ done
   - 合成后走 `VERSION=1.1.1 pnpm push:cdn` 仅更新 misc/OG（patch 在当前 misc v1.1.0 之上 · v1.43 修订：之前写 v1.0.1 是基于 v1.42 之前 misc 还在 v1.0.0 的旧基线；v1.42 后 misc 已经 v1.1.0，再发 v1.0.1 反而 < 当前版本，会让回滚定位混乱）；主仓 `asset-versions.ts` 中 `misc` tag 同步改到 `v1.1.1`
 
 - [x] 🟢 **1.1.13b** 写 `src/lib/images/asset-versions.ts`（15 min）⭐ v1.31 完成（v1.5 集中接缝契约落地）
+
   ```ts
   // src/lib/images/asset-versions.ts
   // 资产仓 tag 集中维护——这是 §15.1 回滚的唯一接缝。
   // 紧急回滚时只需把出问题的那一行改回旧 tag，git push 即可。
   export const ASSET_VERSIONS = {
-    'snow-a':       'v1.0.0',
-    'snow-b':       'v1.0.0',
-    'grassland':    'v1.0.0',
-    'wooden-door':  'v1.0.0',
-    'pearl':        'v1.0.0',
-    'retro':        'v1.0.0',
-    'misc':         'v1.0.0',
+    "snow-a": "v1.0.0",
+    "snow-b": "v1.0.0",
+    grassland: "v1.0.0",
+    "wooden-door": "v1.0.0",
+    pearl: "v1.0.0",
+    retro: "v1.0.0",
+    misc: "v1.0.0",
   } as const;
 
   export type CdnTarget = keyof typeof ASSET_VERSIONS;
 
   /** 构建 jsDelivr 或 Statically 的资产 URL。
    *  所有 <CdnImage>、<CdnEarlyProbe> 都必须经由此 helper，禁止硬编码 @vX.X.X。 */
-  export function cdnUrl(host: 'primary' | 'backup', target: CdnTarget, path: string): string {
+  export function cdnUrl(
+    host: "primary" | "backup",
+    target: CdnTarget,
+    path: string,
+  ): string {
     const version = ASSET_VERSIONS[target];
-    const owner = 'YiTiane';
+    const owner = "YiTiane";
     const repo = `fb-cdn-${target}`;
-    const base = host === 'primary'
-      ? `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${version}`
-      : `https://cdn.statically.io/gh/${owner}/${repo}@${version}`;
+    const base =
+      host === "primary"
+        ? `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${version}`
+        : `https://cdn.statically.io/gh/${owner}/${repo}@${version}`;
     return `${base}/${path}`;
   }
   ```
@@ -4497,23 +4630,29 @@ done
   - **目的**：每次主仓 `pnpm build` 前，遍历 `ASSET_VERSIONS` 校验每个 target 的 `probe.png` 真的 200。
     任何资产 tag 写错 / 仓未发 tag → build 立即失败，而不是上线后客户看到 404。
   - 完整可执行实现（v1.8：双 CDN 检测，仅当 primary+backup 都失败才 fail，单边失败仅 warn）：
+
     ```ts
     // scripts/build-time-check.ts
-    import { ASSET_VERSIONS, cdnUrl } from '../src/lib/images/asset-versions';
+    import { ASSET_VERSIONS, cdnUrl } from "../src/lib/images/asset-versions";
 
-    if (process.env.SKIP_BUILD_CHECK === '1') {
-      console.log('[build-time-check] SKIP_BUILD_CHECK=1, 跳过');
+    if (process.env.SKIP_BUILD_CHECK === "1") {
+      console.log("[build-time-check] SKIP_BUILD_CHECK=1, 跳过");
       process.exit(0);
     }
 
-    const targets = Object.keys(ASSET_VERSIONS) as (keyof typeof ASSET_VERSIONS)[];
+    const targets = Object.keys(
+      ASSET_VERSIONS,
+    ) as (keyof typeof ASSET_VERSIONS)[];
 
-    async function probe(host: 'primary' | 'backup', target: string): Promise<{ ok: boolean; msg: string }> {
-      const url = cdnUrl(host, target as any, 'probe.png');
+    async function probe(
+      host: "primary" | "backup",
+      target: string,
+    ): Promise<{ ok: boolean; msg: string }> {
+      const url = cdnUrl(host, target as any, "probe.png");
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 5000);
-        const r = await fetch(url, { method: 'HEAD', signal: ctrl.signal });
+        const r = await fetch(url, { method: "HEAD", signal: ctrl.signal });
         clearTimeout(timer);
         return { ok: r.ok, msg: `${url} → HTTP ${r.status}` };
       } catch (e) {
@@ -4524,48 +4663,66 @@ done
     const failures: string[] = [];
     const warnings: string[] = [];
 
-    await Promise.all(targets.map(async (target) => {
-      const [p, b] = await Promise.all([probe('primary', target), probe('backup', target)]);
-      if (!p.ok && !b.ok) {
-        // 双 CDN 都挂——必须 fail，运行时 fallback 也救不回来
-        failures.push(`${target}: 双 CDN 均失败\n        primary: ${p.msg}\n        backup:  ${b.msg}`);
-      } else if (!p.ok) {
-        // 主 CDN 抖动但备 CDN 健康——前端运行时 fallback 仍能加载，build 不挂
-        warnings.push(`${target}: primary 失败但 backup 正常 (${p.msg})`);
-      } else if (!b.ok) {
-        warnings.push(`${target}: backup 失败但 primary 正常 (${b.msg})`);
-      }
-    }));
+    await Promise.all(
+      targets.map(async (target) => {
+        const [p, b] = await Promise.all([
+          probe("primary", target),
+          probe("backup", target),
+        ]);
+        if (!p.ok && !b.ok) {
+          // 双 CDN 都挂——必须 fail，运行时 fallback 也救不回来
+          failures.push(
+            `${target}: 双 CDN 均失败\n        primary: ${p.msg}\n        backup:  ${b.msg}`,
+          );
+        } else if (!p.ok) {
+          // 主 CDN 抖动但备 CDN 健康——前端运行时 fallback 仍能加载，build 不挂
+          warnings.push(`${target}: primary 失败但 backup 正常 (${p.msg})`);
+        } else if (!b.ok) {
+          warnings.push(`${target}: backup 失败但 primary 正常 (${b.msg})`);
+        }
+      }),
+    );
 
     if (warnings.length) {
-      console.warn('[build-time-check] ⚠️ 单边 CDN 失败（不阻塞 build，但建议 5–15 min 后复查）：');
-      warnings.forEach(w => console.warn('  ⚠', w));
+      console.warn(
+        "[build-time-check] ⚠️ 单边 CDN 失败（不阻塞 build，但建议 5–15 min 后复查）：",
+      );
+      warnings.forEach((w) => console.warn("  ⚠", w));
     }
 
     if (failures.length) {
-      console.error('\n[build-time-check] ❌ 双 CDN 均失败，build 中止：');
-      failures.forEach(f => console.error('  ✗', f));
-      console.error('\n常见原因：');
-      console.error('  1. 改了 ASSET_VERSIONS 但没在对应 fb-cdn-* 仓发 tag');
-      console.error('  2. 该 Tier B 仓没写 probe.png（push-to-cdn-repos.ts 应给所有 7 仓写）');
-      console.error('  3. jsDelivr 与 Statically 同时抖动（罕见；可 SKIP_BUILD_CHECK=1 强制 build）');
+      console.error("\n[build-time-check] ❌ 双 CDN 均失败，build 中止：");
+      failures.forEach((f) => console.error("  ✗", f));
+      console.error("\n常见原因：");
+      console.error("  1. 改了 ASSET_VERSIONS 但没在对应 fb-cdn-* 仓发 tag");
+      console.error(
+        "  2. 该 Tier B 仓没写 probe.png（push-to-cdn-repos.ts 应给所有 7 仓写）",
+      );
+      console.error(
+        "  3. jsDelivr 与 Statically 同时抖动（罕见；可 SKIP_BUILD_CHECK=1 强制 build）",
+      );
       process.exit(1);
     }
 
     // v1.12：成功文案根据 warnings 是否存在条件化输出
     if (warnings.length === 0) {
-      console.log(`[build-time-check] ✅ 全部 ${targets.length} 个资产仓双 CDN 健康`);
+      console.log(
+        `[build-time-check] ✅ 全部 ${targets.length} 个资产仓双 CDN 健康`,
+      );
     } else {
-      console.log(`[build-time-check] ✅ 全部 ${targets.length} 个 target 至少一侧 CDN 可用` +
-                  `（${warnings.length} 项单边 warning，已记录上方）`);
+      console.log(
+        `[build-time-check] ✅ 全部 ${targets.length} 个 target 至少一侧 CDN 可用` +
+          `（${warnings.length} 项单边 warning，已记录上方）`,
+      );
     }
     ```
+
   - 接到主仓 `package.json` 的 `prebuild` hook：
     ```json
     {
       "scripts": {
         "prebuild": "tsx scripts/build-time-check.ts",
-        "build":    "astro build"
+        "build": "astro build"
       }
     }
     ```
@@ -4752,20 +4909,24 @@ done
 
   **调用方约定**：
   - 系列照（snow / garden / wooden-door / pearl / retro）：
+
     ```astro
     <CdnImage cdnTarget={series.cdnTarget} stem={photo.stem} ... />
     ```
+
     `series.cdnTarget` 来自 `src/content/series/{garden,...}.json` 中显式声明的字段（不是 `series.id`）。
 
   - 邀请函：`<CdnImage cdnTarget="misc" stem="invitation/part_1" ... />`
   - 三只猫：`<CdnImage cdnTarget="misc" stem="cat/berry-portrait" ... />`
 
   **此契约要求 generate-derivatives.ts 输出 format-first 树**，并在 misc 仓里保留 stem 的子路径——见下文 dist 树修订。
+
   ```
 
   > **v1.2 取舍说明**：原 v1.0/v1.1 想用"hydrated React 组件"，但需要全站岛屿化所有图片，构建产物 +50KB JS、首屏受影响。
   > 当前方案在主路径零 JS、failover 路径仅 ≤ 1KB 内联 script，工程权衡更优。
   > 备 CDN（Statically）已被 cdn-fallback.ts 单元测试验证可用（详见 DESIGN.md §7.5）。
+  ```
 
 #### 5.1.5 内容 schema
 
@@ -4782,6 +4943,7 @@ done
   - 验证：astro `[types] Generated 271ms` · tsc 通过 · 类型 `.astro/types.d.ts` 已自动注入
 
 - [x] 🟢 **1.1.17** 填入 `src/content/meta/wedding.json`（10 min · v1.2 三坐标系结构）⭐ v1.34 完成
+
   ```json
   {
     "groom": "杨倚天",
@@ -4794,18 +4956,20 @@ done
       "address_en": "Erdaoqiao Grand Theater, Tianshan District, Urumqi, Xinjiang, China",
       "coords": {
         "wgs84": { "lng": 87.6283, "lat": 43.7689 },
-        "gcj02": { "lng": null,    "lat": null    },
-        "bd09":  { "lng": null,    "lat": null    }
+        "gcj02": { "lng": null, "lat": null },
+        "bd09": { "lng": null, "lat": null }
       }
     },
     "poem": "我们无法判断一个瞬间的价值，直至它变成回忆。\n愿有岁月可回首，且以深情共白头。\n诚邀构成我们生命不同经纬的你，共同见证这份回忆的开始。"
   }
   ```
+
   > ⚠️ **gcj02 / bd09 在 1.1.17 阶段保持 `null`**——会在 Phase 6 经纬度真实校准后由 `scripts/expand-coords.ts` 一次性算出并写入。
   > 在此之前，地图深链按钮**只渲染 Apple/Google**，等 Phase 6 完成才显示高德/百度。
   > 这条规则强制在 `src/components/DetailsMap.tsx` 中：`if (!coords.gcj02.lng) hide(amapButton)`。
 
 - [x] 🟢 **1.1.18** 填入 `src/content/story/anchor.json`（5 min）⭐ v1.34 完成
+
   ```json
   {
     "date": "2019-01-27",
@@ -4840,6 +5004,7 @@ done
 - [x] 🟢 **1.1.21a** 确认旧 5 城地图仅留在归档仓（3 min）⭐ v1.35 完成
   - `~/projects/forever-begins-archive/dist/misc/map/china-journey-2560x1800.png` ✓ 存在
   - `~/projects/forever-begins-archive/dist/main-content/journey/china-cities.json` ✓ 存在
+
   ```bash
   cd ~/projects/forever-begins-archive
   test -f dist/misc/map/china-journey-2560x1800.png
@@ -4850,11 +5015,13 @@ done
   - `src/content/journey/china-cities.json` ✓ 不存在
   - 全 src/ 无 JourneyMap 组件 / 5 城列表代码依赖
   - `china-cities` 字面仅出现在 src/content.config.ts 注释（line 32）作为 v1.22 收敛说明，无 import / load / 文件依赖
+
   ```bash
   cd ~/projects/forever-begins
   test ! -f src/content/journey/china-cities.json
   rg -n "JourneyMap|走过的城市|重庆|杭州|北京|上海|威海" src || true
   ```
+
   期望：没有 `JourneyMap` 组件、没有 5 城列表。若后续需要展示地理高潮，只实现 §7.1.3 的
   `GlobeDistanceScene`。
 
@@ -4882,6 +5049,7 @@ done
   - **决策**：保留 v0.2 占位 Cover 不动；§1.1.23 spec 的最小 h1 示例属"v1.0 时代示例"，已被实际 Cover 占位**自然超越**
   - Phase 2 §0 Cover 实装时会把这一占位整体重写为带邀请函水彩 + parallax 的真 Cover；在那之前 v0.2 占位是上线 ready 的状态
   - 审计可校验：`curl https://yitiane.github.io/forever-begins/` 看到的 HTML 正是 v0.2 占位 Cover 的渲染输出
+
   ```astro
   <!-- 原 spec 提供的示例（v1.0 时代冒烟）—— 不实施，仅作为 PLAN 历史归档 -->
   ---
@@ -4973,19 +5141,19 @@ done
 
 **完成的 26 项子任务**（Phase 1 §1.1 全部）：
 
-| 范围 | 任务 | 完成轮次 |
-|---|---|---|
-| 基建 | §1.1.1–§1.1.5 Astro/React/Tailwind v4 初始化 + 字体源就位 | v1.19 |
-| 文案 / 字体 | §1.1.6–§1.1.8 extract-text + seed-text + subset 8 字体 → 818 KB | v1.20 |
-| 字体管线 | §1.1.9 FontFaces.astro base-aware + 路由拆分 / dev-fonts 双重防护 / Ma Shan Zheng prewarm | v1.24 |
-| 设计令牌 | §1.1.10–§1.1.12 tokens.css (OKLCH × 三档 rem 字号 × @theme) + reset.css (中文排版三件套) + global.css (3 行严格 import + 7 helper) | v1.30 |
-| SEO + 资产 | §1.1.13–§1.1.13c Base.astro v0.4 (canonical + 双态 theme-color + OG×10 + Twitter×4 + JSON-LD SocialEvent) + asset-versions.ts (集中接缝) + build-time-check.ts (双 CDN sanity) | v1.31 |
-| CDN gate | §1.1.14–§1.1.15 cdn-fallback.ts (诊断 helper) + CdnImage + CdnEarlyProbe (Base head 接入) + suppressSocialMeta Prop | v1.32 |
-| Schema 收紧 | §1.1.16 Content Collections 5 schemas (Astro v6 路径修正) + stemSchema 禁扩展名/禁尺寸后缀 + JPG fallback `Math.max(...JPG_WIDTHS)` + fail-fast | v1.33 |
-| 内容数据 | §1.1.17–§1.1.21 9 个 JSON 落地 (35 系列 + 8 猫 + 2 邀请函 stems · 全经 GitHub API 真实清单交叉验证) + schema photo 级 cdnTarget override 服务 snow 双仓拆分 | v1.34 |
-| 归档验收 | §1.1.21a-c 三项 bash 验证 (5 城地图归档仓 / 主仓未回退 / sync:main 历史工具) | v1.35 |
-| CI 部署 | §1.1.22 deploy.yml + §1.1.24 Pages 启用 (gh API) + §1.1.25 首次部署成功 + §1.1.26 线上 URL HTTP 200 验收 | v1.36 |
-| 文档收口 | §1.1.23 现状保留 (v0.2 Cover 占位已上线) | v1.37 |
+| 范围        | 任务                                                                                                                                                                           | 完成轮次 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| 基建        | §1.1.1–§1.1.5 Astro/React/Tailwind v4 初始化 + 字体源就位                                                                                                                      | v1.19    |
+| 文案 / 字体 | §1.1.6–§1.1.8 extract-text + seed-text + subset 8 字体 → 818 KB                                                                                                                | v1.20    |
+| 字体管线    | §1.1.9 FontFaces.astro base-aware + 路由拆分 / dev-fonts 双重防护 / Ma Shan Zheng prewarm                                                                                      | v1.24    |
+| 设计令牌    | §1.1.10–§1.1.12 tokens.css (OKLCH × 三档 rem 字号 × @theme) + reset.css (中文排版三件套) + global.css (3 行严格 import + 7 helper)                                             | v1.30    |
+| SEO + 资产  | §1.1.13–§1.1.13c Base.astro v0.4 (canonical + 双态 theme-color + OG×10 + Twitter×4 + JSON-LD SocialEvent) + asset-versions.ts (集中接缝) + build-time-check.ts (双 CDN sanity) | v1.31    |
+| CDN gate    | §1.1.14–§1.1.15 cdn-fallback.ts (诊断 helper) + CdnImage + CdnEarlyProbe (Base head 接入) + suppressSocialMeta Prop                                                            | v1.32    |
+| Schema 收紧 | §1.1.16 Content Collections 5 schemas (Astro v6 路径修正) + stemSchema 禁扩展名/禁尺寸后缀 + JPG fallback `Math.max(...JPG_WIDTHS)` + fail-fast                                | v1.33    |
+| 内容数据    | §1.1.17–§1.1.21 9 个 JSON 落地 (35 系列 + 8 猫 + 2 邀请函 stems · 全经 GitHub API 真实清单交叉验证) + schema photo 级 cdnTarget override 服务 snow 双仓拆分                    | v1.34    |
+| 归档验收    | §1.1.21a-c 三项 bash 验证 (5 城地图归档仓 / 主仓未回退 / sync:main 历史工具)                                                                                                   | v1.35    |
+| CI 部署     | §1.1.22 deploy.yml + §1.1.24 Pages 启用 (gh API) + §1.1.25 首次部署成功 + §1.1.26 线上 URL HTTP 200 验收                                                                       | v1.36    |
+| 文档收口    | §1.1.23 现状保留 (v0.2 Cover 占位已上线)                                                                                                                                       | v1.37    |
 
 **deferred（自愿）：§1.1.13a OG 图重做** —— 邀请函 part_1 + Sharp + SVG 合成专属 1200×630 OG 图；当前 misc@v1.1.0/og/og-cover-1200x630.jpg 已存在 HTTP 200，社交分享 today 即可工作；待源素材整合稳定后单独一轮 push misc → **v1.1.1**（patch on top of v1.1.0；v1.43 修订：之前写 v1.0.1 是 v1.42 之前 misc 还在 v1.0.0 的旧基线，misc 升到 v1.1.0 后再发 v1.0.1 会语义降级），bump asset-versions.ts 一行。
 
@@ -5004,12 +5172,12 @@ done
 
 ### 5.4 Phase 1 风险与备案
 
-| 风险                            | 备案                                              |
-| ------------------------------- | ------------------------------------------------- |
-| Tailwind v4 不稳/插件不全       | 退到 v3.4 + `@tailwindcss/postcss`                |
-| pyftsubset 跑不通               | 用 `npm: glyphhanger` 替代                        |
-| Astro Content Collections 卡   | 退化为单一 JSON import                            |
-| GitHub Pages base path 问题    | 临时 `base: '/'`，自定义域名时再切                 |
+| 风险                         | 备案                               |
+| ---------------------------- | ---------------------------------- |
+| Tailwind v4 不稳/插件不全    | 退到 v3.4 + `@tailwindcss/postcss` |
+| pyftsubset 跑不通            | 用 `npm: glyphhanger` 替代         |
+| Astro Content Collections 卡 | 退化为单一 JSON import             |
+| GitHub Pages base path 问题  | 临时 `base: '/'`，自定义域名时再切 |
 
 ---
 
@@ -5120,6 +5288,7 @@ done
 #### 7.1.3 GlobeDistanceScene（3D 地球）
 
 - [x] 🟢 **3.1.6** 安装 3D 依赖（Phase 1 完成）
+
   ```bash
   pnpm add three @react-three/fiber @react-three/drei
   pnpm add @react-three/postprocessing postprocessing maath
@@ -5224,18 +5393,20 @@ done
 
 ### 9.1 子任务清单
 
-- [x] 🟢 **5.1.1** Cats content schema + metadata hardening（v2.03 已提交部署）
+- [x] 🟢 **5.1.1** Cats content schema + metadata hardening（v2.05 已重构为 moments[]）
   - `photoRef.width` / `photoRef.height` 改为必填
-  - 8 张 cat photo 写入真实尺寸
-  - `verify-story-photo-dimensions.ts` 覆盖 cats，dimension gate 覆盖范围提升到 **35 张**
-  - 当前本地网络下存在 CDN warning；发布级验收需在稳定网络下取得 **35/35 clean pass**
+  - 7 张 visible cat moment photo 写入真实尺寸
+  - `verify-story-photo-dimensions.ts` 覆盖 cats，dimension gate 覆盖范围为 **34 张**（12 story + 15 finale + 7 cats）
+  - 当前本地网络下若存在 CDN warning，只能记录为网络不可判定；发布级验收需在稳定网络下取得 **34/34 clean pass**
 
-- [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.03 已提交部署）
+- [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.05 已改为文图交替满宽）
   - Astro-only；不新增 React island / WebGL / Lightbox
   - `III. OUR FAMILY` + `第三章 · 我们的家` + 引言
-  - Berry / 荔枝 / 小宝 三段家庭相册，主图 + 辅图全部直接可见
+  - Berry / 荔枝 / 小宝 三段家庭相册，按 `moments[]` 顺序渲染
+  - 姓名下不再显示重复小字；文案段落后紧跟对应照片
+  - 每行单张照片，宽度占满卡片内容区
   - 图片全部 `object-fit: contain`，保留真实 aspect ratio，不裁脸、不裁耳朵、不裁蓝眼睛
-  - 文案从 `family.json` 的 `cat.caption` 单一来源渲染，组件不再硬编码三只猫的 caption lines
+  - 文案从 `family.json` 的 `moments[].text` 单一来源渲染，组件不再硬编码三只猫的 caption lines
 
 - [x] 🟢 **5.1.3** 三只猫个性化主题色（v2.03 已提交部署）
   - Berry: warm cream / honey
@@ -5250,7 +5421,7 @@ done
   - `<FamilySection />` 接在 `<StoryPoemScroller />` 之后
   - Family 自己建立浅纸面背景 + `isolation:isolate`，不继承 Finale starfield
 
-- [ ] 🔵 **5.1.6** 文案最终校对（15 min · 三段文字）
+- [ ] 🔵 **5.1.6** 文案最终校对（15 min · 7 个 moment）
   - 当前文案采用 seed-text / 已批准措辞；上线前仍建议人工读一遍语气
 
 ### 9.2 Phase 5 验收清单
@@ -5258,7 +5429,7 @@ done
 - [x] 三只猫的肖像清晰可识别（不被裁切到只剩耳朵）
 - [x] 文案排版与 §2 Finale / Globe 有视觉区分，回到浅纸面家庭相册语境
 - [x] 移动端三卡纵向堆叠不挤压，竖图辅图不被横向裁切
-- [x] primary CDN blocked 时 8 张 cat images 可切到 Statically backup
+- [x] primary CDN blocked 时 visible cat images 可切到 Statically backup
 - [x] 页面中 Lightbox 入口仍为 0；Phase 5 不恢复 Lightbox
 
 ---
@@ -5501,17 +5672,17 @@ done
 
 每个 Phase 必须**全部满足**才能进入下一 Phase：
 
-| Phase | DoD                                                                                       |
-| ----- | ----------------------------------------------------------------------------------------- |
-| 0     | 9 仓就位 / HEIC 转换完毕 / 派生品在 jsDelivr 可访问 / 每仓 ≤ 90MB                          |
-| 1     | Astro 部署链路绿 / 字体 subset 完成 / tokens.css 完整 / CdnImage 可工作                    |
-| 2     | Cover + Invitation 在桌面/iPhone 视觉过审 / 倒计时不抖                                   |
-| 3     | StoryPoemScroller / PhotoBeatLayer / GlobeDistanceScene 上线，3D 地球验证通过             |
-| 4     | StarCarouselFinale + Lightbox 可用 / 微信内置浏览器主流程通过                             |
-| 5     | 三只猫卡片完成 / 文案最终定稿                                                              |
-| 6     | Details / Map / RSVP / Closing / Nav 完整                                                 |
-| 7     | Lighthouse ≥ 95 / 验证矩阵全绿 / 跨境实测通过                                              |
-| 8     | URL 可分享 / 婚礼日运行平稳                                                                |
+| Phase | DoD                                                                           |
+| ----- | ----------------------------------------------------------------------------- |
+| 0     | 9 仓就位 / HEIC 转换完毕 / 派生品在 jsDelivr 可访问 / 每仓 ≤ 90MB             |
+| 1     | Astro 部署链路绿 / 字体 subset 完成 / tokens.css 完整 / CdnImage 可工作       |
+| 2     | Cover + Invitation 在桌面/iPhone 视觉过审 / 倒计时不抖                        |
+| 3     | StoryPoemScroller / PhotoBeatLayer / GlobeDistanceScene 上线，3D 地球验证通过 |
+| 4     | StarCarouselFinale + Lightbox 可用 / 微信内置浏览器主流程通过                 |
+| 5     | 三只猫卡片完成 / 文案最终定稿                                                 |
+| 6     | Details / Map / RSVP / Closing / Nav 完整                                     |
+| 7     | Lighthouse ≥ 95 / 验证矩阵全绿 / 跨境实测通过                                 |
+| 8     | URL 可分享 / 婚礼日运行平稳                                                   |
 
 ---
 
@@ -5539,24 +5710,24 @@ done
 
 ### 14.2 网络 × 地理矩阵
 
-|                       | Wi-Fi 100M | 4G | 3G slow | China 4G | 海外 4G |
-| --------------------- | ---------- | -- | ------- | -------- | ------- |
-| 首屏 LCP < 2.5s       |            |    |         |          |         |
-| 全图加载完 < 30s       |            |    |         |          |         |
-| Lightbox 大图 < 3s    |            |    |         |          |         |
-| §2 Globe 3D 动画流畅  |            |    |         |          |         |
+|                      | Wi-Fi 100M | 4G  | 3G slow | China 4G | 海外 4G |
+| -------------------- | ---------- | --- | ------- | -------- | ------- |
+| 首屏 LCP < 2.5s      |            |     |         |          |         |
+| 全图加载完 < 30s     |            |     |         |          |         |
+| Lightbox 大图 < 3s   |            |     |         |          |         |
+| §2 Globe 3D 动画流畅 |            |     |         |          |         |
 
 ### 14.3 偏好与无障碍
 
-| 测试项                              | 通过？ |
-| ----------------------------------- | ------ |
-| `prefers-reduced-motion: reduce`    |        |
-| `prefers-reduced-transparency`      |        |
-| `prefers-color-scheme: dark`        |        |
-| 仅键盘可访问 RSVP / Lightbox        |        |
-| VoiceOver 朗读首屏完整              |        |
-| axe-core 0 critical                 |        |
-| 颜色对比 WCAG AA 通过               |        |
+| 测试项                           | 通过？ |
+| -------------------------------- | ------ |
+| `prefers-reduced-motion: reduce` |        |
+| `prefers-reduced-transparency`   |        |
+| `prefers-color-scheme: dark`     |        |
+| 仅键盘可访问 RSVP / Lightbox     |        |
+| VoiceOver 朗读首屏完整           |        |
+| axe-core 0 critical              |        |
+| 颜色对比 WCAG AA 通过            |        |
 
 ---
 
@@ -5588,6 +5759,7 @@ git push --force-with-lease
 ```
 
 **长期保险**：在每次"上线节点"打 tag。
+
 ```bash
 git tag -a release/2026-06-13 -m "婚礼前 1 天稳定版"
 git push --tags
@@ -5617,6 +5789,7 @@ export const ASSET_VERSIONS = {
 没有任何文件硬编码 `@v1.0.0`，所以改这一处 = 改全局。
 
 回滚步骤：
+
 ```bash
 # 1. 编辑 src/lib/images/asset-versions.ts，把出问题的那一行改回旧 tag
 #    例：'snow-a': 'v1.1.0' → 'v1.0.0'
@@ -5632,6 +5805,7 @@ git push
 
 `scripts/build-time-check.ts` 已在 **§1.1.13c** 完整定义并接到 `prebuild` hook。
 当前脚本（v1.8 起）的关键特性：
+
 - **双 CDN 检测**：primary（jsDelivr）+ backup（Statically）同时探。**仅当双 CDN 均失败才 fail build**；单边失败仅 `console.warn` 不阻塞。
 - 对所有 7 个 Tier B 仓的 `probe.png` 校验（push-to-cdn-repos.ts 给每仓都写）
 - 支持 `SKIP_BUILD_CHECK=1` 本地紧急绕过；CI 永不传
@@ -5649,24 +5823,24 @@ git push
 
 #### D. 婚礼前 24h 紧急情景手册
 
-| 情景                              | 第一动作                                              |
-| --------------------------------- | ----------------------------------------------------- |
-| 站点白屏 / 报错                   | `git revert HEAD && git push`，3 分钟止血             |
-| 某张照片加载失败                  | 临时把那张图从 `series JSON` 里删除，push             |
-| Mapbox 静态图打不开                | 临时把 `<DetailsMap>` 隐藏，只保留四个深链按钮         |
-| jsDelivr 整体不稳                 | cdn-fallback 本就有 Statically 兜底，无需手动操作      |
-| 文案错字                          | 直接改 JSON 内容，push（5 分钟）                       |
+| 情景                | 第一动作                                          |
+| ------------------- | ------------------------------------------------- |
+| 站点白屏 / 报错     | `git revert HEAD && git push`，3 分钟止血         |
+| 某张照片加载失败    | 临时把那张图从 `series JSON` 里删除，push         |
+| Mapbox 静态图打不开 | 临时把 `<DetailsMap>` 隐藏，只保留四个深链按钮    |
+| jsDelivr 整体不稳   | cdn-fallback 本就有 Statically 兜底，无需手动操作 |
+| 文案错字            | 直接改 JSON 内容，push（5 分钟）                  |
 
 ### 15.2 部分功能降级触发条件
 
-| 触发                                | 降级行为                                       |
-| ----------------------------------- | ---------------------------------------------- |
-| jsDelivr 探测 timeout               | 自动切到 Statically                             |
-| 两个 CDN 都失败                     | 显示 LQIP + "图片加载失败，刷新重试" 提示       |
-| Mapbox Static 请求 4xx              | 切到预渲染的 OSM 静态图（CI 同时生成备份）      |
-| `prefers-reduced-motion`            | 所有动效改 fade，大圆弧直接显示完整              |
-| `navigator.connection.effectiveType === 'slow-2g'` | 关闭粒子、关闭 horizontal pin |
-| `navigator.deviceMemory < 4`        | Lightbox 直接 1600w 而非 3840w                  |
+| 触发                                               | 降级行为                                   |
+| -------------------------------------------------- | ------------------------------------------ |
+| jsDelivr 探测 timeout                              | 自动切到 Statically                        |
+| 两个 CDN 都失败                                    | 显示 LQIP + "图片加载失败，刷新重试" 提示  |
+| Mapbox Static 请求 4xx                             | 切到预渲染的 OSM 静态图（CI 同时生成备份） |
+| `prefers-reduced-motion`                           | 所有动效改 fade，大圆弧直接显示完整        |
+| `navigator.connection.effectiveType === 'slow-2g'` | 关闭粒子、关闭 horizontal pin              |
+| `navigator.deviceMemory < 4`                       | Lightbox 直接 1600w 而非 3840w             |
 
 ### 15.3 婚礼前 24h 紧急修补
 
@@ -5722,34 +5896,34 @@ git push
 
 > 任何脱离 PLAN.md / DESIGN.md 的临场决策必须在此留痕。格式：日期 · 决策 · 原因 · 影响。
 
-| 日期       | 决策                                | 原因                                | 影响                          |
-| ---------- | ----------------------------------- | ----------------------------------- | ----------------------------- |
-| 2026-05-04 | PLAN.md v1.0 初稿                   | 启动施工前需要施工蓝图              | —                            |
-| 2026-05-05 | v1.1：同步 DESIGN.md v2.3 八项修订   | 二轮代码审阅 P1/P2 全部命中要害      | 解除 8 项上线静默失败风险      |
-| 2026-05-05 | v1.2：三轮收口 5 项 PLAN/DESIGN 残留 | PLAN 中残留 v2.2 旧指令会拉回错误路径 | 解除 JourneyMap 投影回归 / 单坐标系 / @2x 错位 / Astro 构建时 await / robots.txt 误用 |
-| 2026-05-05 | v1.3：四轮收口 5 项 implementation-time 断点 | china-cities.json 链路断 / fallback DOM 时序 / 漏装 d3-shape / AbortSignal.timeout 兼容性 / world-atlas 阈值 | 解除会让 build 失败、运行时静默失败的 5 处真实风险 |
-| 2026-05-05 | v1.4：五轮收口 3 项施工契约边角           | CdnImage prop 与 series.id 冲突 / build:maps 不含 sync / ~/ 字面量不展开 | 解除施工时会误操作 / 路径错位的 3 处真实风险 |
-| 2026-05-05 | v1.5：六轮收口 4 项执行级断点             | sync 脚本不可执行 / Phase 0 绕过 build:all / 资产版本未接入 CdnImage / DESIGN CI 绕过 v1.4 契约 | 解除"照 PLAN 跑会断链"的 4 处真实风险 |
-| 2026-05-05 | v1.6：七轮收口 5 项 phase 顺序+守卫       | Phase 0 sync 主仓不存在 / sync 静默 exit 0 / probe.png 不全 / §18 绕过契约 / 旧浏览器无守卫 | 解除 Phase 顺序锁与 runbook 残留 |
-| 2026-05-05 | v1.7：八轮收口 4 项执行入口落地           | build-time-check 仅文档化未排入 / probe.png 写盘缺步骤 / §0.1.26 残留 raw tsx / CI 走 build:all 与契约不符 | 让 v1.6 的"可照单施工"真正闭环 |
-| 2026-05-05 | v1.8：九轮收口 4 项 push/sanity 契约       | VERSION 未声明会运行时崩 / brace 展开依赖 shell 方言 / sanity 单 CDN 严格 fail / Tier B 树缺 probe.png | 让 push:cdn 在首次跑时不崩，sanity 不误伤 |
-| 2026-05-05 | v1.9：十轮收口 4 项 CI/原子性契约         | CI 没传 VERSION / push 中途断会半推半就 / §18.3 缺 VERSION / §15.1 旧 sanity 残留 | 让 CI/runbook/push 入口与 v1.8 命令契约对齐 |
-| 2026-05-05 | v1.10：十一轮收口 3 项重跑/维护边界       | tmp 残留致 clone 失败 / gh release list 查不到 git tag / Phase 1 验收过严 | 让重跑场景与 v1.8 双 CDN sanity 一致 |
-| 2026-05-05 | v1.11：十二轮收口 push 原子性措辞精度     | 注释承诺"不会半推半就"与 partial tag 处理段矛盾，造成执行者误判事务性 | 让原子性表述与实际行为一致，避免误读 |
-| 2026-05-05 | v1.12：十三轮收口 3 项文案/验收一致性     | 首次 probe 单 CDN / 成功文案误报"双健康" / §0.1.20 残留 v1.0.0 硬编码 | 与 v1.8 双 CDN sanity 全文一致 |
-| 2026-05-05 | v1.15：热安全模式 + §0.1.23 完成           | 原派生品生成导致 CPU 温度 >100°C 报警；后续必须保护硬件，降低并发与 AVIF effort，并加入冷却间隔 | build:cdn 改走 build:derivatives:safe；§0.1.23 安全续跑完成，dist 产物齐全 |
-| 2026-05-05 | v1.16：§0.1.24 低负载分步完成              | build:cdn 会再次遍历图片清单；派生品已完成，为保护硬件只需重跑 maps:cdn 与 og | Phase 0 推进到 §0.1.25，dist 保持 734 文件 / 409MB |
-| 2026-05-05 | v1.17：§0.1.25-§0.1.26 CDN 首次发布完成    | deploy key 环境变量必须与 push:cdn 同 shell 执行；首次 VERSION=1.0.0 发布 7 仓 | 7 个 Tier B 仓均已 push @ v1.0.0，进入 CDN 传播验证 |
-| 2026-05-05 | v1.18：Phase 0 本地/CDN 验收完成           | 双 CDN probe 与真实资产抽样全 200；体积全部低于 90MB；境外人工验证需另有网络条件 | Phase 1 可启动；§0.1.29 延后到 Phase 7 系统化测试 |
-| 2026-05-05 | v1.19：Phase 1 §1.1.1-§1.1.5 完成          | Astro 6 / Vite 7 下 @tailwindcss/vite@next 解析到旧 4.0.0，有 peer mismatch；私人项目应关闭 telemetry | 改用 Tailwind latest 4.2.4；基础 build 通过；进入字体子集任务 |
-| 2026-05-05 | v1.20：§1.1.6-§1.1.8 + 中文文案审计完成     | 用户要求审计所有当前中文语法用词；同时发现 extract-text 兜底字符与 TS6 baseUrl 问题 | seed 文案已润色；extract:text 统计 536 unique chars；subset 未跑，进入 fonts.css 前需先执行 subset |
-| 2026-05-06 | v1.21：最终文案驱动的 Phase 3/4 重排        | 用户取消独立婚纱照幕间和可见 5 城 JourneyMap，要求独白长卷、3D 地球与星尘走马灯融合 | Phase 3 改 StoryPoemScroller + GlobeDistanceScene；Phase 4 改 StarCarouselFinale；seed-text 替换最终文案 |
-| 2026-05-06 | v1.22：删除主仓 `china-cities` 同步契约       | v1.21 仍残留 Phase 1 sync 旧 5 城 JSON 的活跃步骤，会把废弃 JourneyMap 数据重新带进主仓 | `china-cities.json` 降为归档资产；主仓只实现 3D 地球距离场 |
-| 2026-05-06 | v1.23：3D/字体/OG 实施契约补强              | 审计指出地球陆地数据、halo 后期、hydration、星尘算法、字体 preload、OG 图仍需明确 | 选水彩贴图地球；加 postprocessing/maath；subset 完成；Phase 3 加 R3F smoke；OG 正式重做 |
-| 2026-05-09 | v2.00：主仓 v1.99 hardening 后文档状态收口 | PLAN 顶部/Phase 3/4 checklist 仍停在 v1.93，会把执行者带回已完成的 §2.C 实施任务 | 当前保护点改为 `0998b49`；Phase 3 标为 hardened baseline；Phase 4 剩余任务收敛为验收矩阵、finale reduced-motion/low-power polish、optional Lightbox |
-| 2026-05-09 | v2.01：主仓 v1.100 follow-up 后文档状态收口 | v2.00 后 Lightbox 已因实测卡死撤回，finale 首帧已改纯星空；旧 PLAN 仍会把执行者带回 optional Lightbox | 当前保护点改为 `e095491`；Lightbox 转入 redesign-deferred；下一步锁定 Phase 4 最终验收矩阵与 reduced-motion/low-power 复核 |
-| 2026-05-10 | v2.02：Phase 4 保护点 + Phase 5 Family 实施口径收口 | Phase 4 已验收并决定进入 Phase 5；旧 PLAN 仍会把实施者带回 CatCard.tsx / Lightbox / hover 切主图旧方案 | 当前保护点改为 `3d16da1`；Phase 5 改为 Astro-only FamilySection；cats 8 图加入 dimension gate（v2.03 纠正 clean-pass 口径） |
-| 2026-05-10 | v2.03：Phase 5 Family 审计修复收口 | 审计发现 Family 文案绕过 content 单一源、PLAN 误写 35/35 clean verified、实现未进版本保护 | 当前保护点改为 `e3f083e`；Family caption 改回 `family.json` 单一源；dimension gate 口径改为覆盖 35 张，clean pass 需稳定网络复验 |
+| 日期       | 决策                                                | 原因                                                                                                         | 影响                                                                                                                                                |
+| ---------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-04 | PLAN.md v1.0 初稿                                   | 启动施工前需要施工蓝图                                                                                       | —                                                                                                                                                   |
+| 2026-05-05 | v1.1：同步 DESIGN.md v2.3 八项修订                  | 二轮代码审阅 P1/P2 全部命中要害                                                                              | 解除 8 项上线静默失败风险                                                                                                                           |
+| 2026-05-05 | v1.2：三轮收口 5 项 PLAN/DESIGN 残留                | PLAN 中残留 v2.2 旧指令会拉回错误路径                                                                        | 解除 JourneyMap 投影回归 / 单坐标系 / @2x 错位 / Astro 构建时 await / robots.txt 误用                                                               |
+| 2026-05-05 | v1.3：四轮收口 5 项 implementation-time 断点        | china-cities.json 链路断 / fallback DOM 时序 / 漏装 d3-shape / AbortSignal.timeout 兼容性 / world-atlas 阈值 | 解除会让 build 失败、运行时静默失败的 5 处真实风险                                                                                                  |
+| 2026-05-05 | v1.4：五轮收口 3 项施工契约边角                     | CdnImage prop 与 series.id 冲突 / build:maps 不含 sync / ~/ 字面量不展开                                     | 解除施工时会误操作 / 路径错位的 3 处真实风险                                                                                                        |
+| 2026-05-05 | v1.5：六轮收口 4 项执行级断点                       | sync 脚本不可执行 / Phase 0 绕过 build:all / 资产版本未接入 CdnImage / DESIGN CI 绕过 v1.4 契约              | 解除"照 PLAN 跑会断链"的 4 处真实风险                                                                                                               |
+| 2026-05-05 | v1.6：七轮收口 5 项 phase 顺序+守卫                 | Phase 0 sync 主仓不存在 / sync 静默 exit 0 / probe.png 不全 / §18 绕过契约 / 旧浏览器无守卫                  | 解除 Phase 顺序锁与 runbook 残留                                                                                                                    |
+| 2026-05-05 | v1.7：八轮收口 4 项执行入口落地                     | build-time-check 仅文档化未排入 / probe.png 写盘缺步骤 / §0.1.26 残留 raw tsx / CI 走 build:all 与契约不符   | 让 v1.6 的"可照单施工"真正闭环                                                                                                                      |
+| 2026-05-05 | v1.8：九轮收口 4 项 push/sanity 契约                | VERSION 未声明会运行时崩 / brace 展开依赖 shell 方言 / sanity 单 CDN 严格 fail / Tier B 树缺 probe.png       | 让 push:cdn 在首次跑时不崩，sanity 不误伤                                                                                                           |
+| 2026-05-05 | v1.9：十轮收口 4 项 CI/原子性契约                   | CI 没传 VERSION / push 中途断会半推半就 / §18.3 缺 VERSION / §15.1 旧 sanity 残留                            | 让 CI/runbook/push 入口与 v1.8 命令契约对齐                                                                                                         |
+| 2026-05-05 | v1.10：十一轮收口 3 项重跑/维护边界                 | tmp 残留致 clone 失败 / gh release list 查不到 git tag / Phase 1 验收过严                                    | 让重跑场景与 v1.8 双 CDN sanity 一致                                                                                                                |
+| 2026-05-05 | v1.11：十二轮收口 push 原子性措辞精度               | 注释承诺"不会半推半就"与 partial tag 处理段矛盾，造成执行者误判事务性                                        | 让原子性表述与实际行为一致，避免误读                                                                                                                |
+| 2026-05-05 | v1.12：十三轮收口 3 项文案/验收一致性               | 首次 probe 单 CDN / 成功文案误报"双健康" / §0.1.20 残留 v1.0.0 硬编码                                        | 与 v1.8 双 CDN sanity 全文一致                                                                                                                      |
+| 2026-05-05 | v1.15：热安全模式 + §0.1.23 完成                    | 原派生品生成导致 CPU 温度 >100°C 报警；后续必须保护硬件，降低并发与 AVIF effort，并加入冷却间隔              | build:cdn 改走 build:derivatives:safe；§0.1.23 安全续跑完成，dist 产物齐全                                                                          |
+| 2026-05-05 | v1.16：§0.1.24 低负载分步完成                       | build:cdn 会再次遍历图片清单；派生品已完成，为保护硬件只需重跑 maps:cdn 与 og                                | Phase 0 推进到 §0.1.25，dist 保持 734 文件 / 409MB                                                                                                  |
+| 2026-05-05 | v1.17：§0.1.25-§0.1.26 CDN 首次发布完成             | deploy key 环境变量必须与 push:cdn 同 shell 执行；首次 VERSION=1.0.0 发布 7 仓                               | 7 个 Tier B 仓均已 push @ v1.0.0，进入 CDN 传播验证                                                                                                 |
+| 2026-05-05 | v1.18：Phase 0 本地/CDN 验收完成                    | 双 CDN probe 与真实资产抽样全 200；体积全部低于 90MB；境外人工验证需另有网络条件                             | Phase 1 可启动；§0.1.29 延后到 Phase 7 系统化测试                                                                                                   |
+| 2026-05-05 | v1.19：Phase 1 §1.1.1-§1.1.5 完成                   | Astro 6 / Vite 7 下 @tailwindcss/vite@next 解析到旧 4.0.0，有 peer mismatch；私人项目应关闭 telemetry        | 改用 Tailwind latest 4.2.4；基础 build 通过；进入字体子集任务                                                                                       |
+| 2026-05-05 | v1.20：§1.1.6-§1.1.8 + 中文文案审计完成             | 用户要求审计所有当前中文语法用词；同时发现 extract-text 兜底字符与 TS6 baseUrl 问题                          | seed 文案已润色；extract:text 统计 536 unique chars；subset 未跑，进入 fonts.css 前需先执行 subset                                                  |
+| 2026-05-06 | v1.21：最终文案驱动的 Phase 3/4 重排                | 用户取消独立婚纱照幕间和可见 5 城 JourneyMap，要求独白长卷、3D 地球与星尘走马灯融合                          | Phase 3 改 StoryPoemScroller + GlobeDistanceScene；Phase 4 改 StarCarouselFinale；seed-text 替换最终文案                                            |
+| 2026-05-06 | v1.22：删除主仓 `china-cities` 同步契约             | v1.21 仍残留 Phase 1 sync 旧 5 城 JSON 的活跃步骤，会把废弃 JourneyMap 数据重新带进主仓                      | `china-cities.json` 降为归档资产；主仓只实现 3D 地球距离场                                                                                          |
+| 2026-05-06 | v1.23：3D/字体/OG 实施契约补强                      | 审计指出地球陆地数据、halo 后期、hydration、星尘算法、字体 preload、OG 图仍需明确                            | 选水彩贴图地球；加 postprocessing/maath；subset 完成；Phase 3 加 R3F smoke；OG 正式重做                                                             |
+| 2026-05-09 | v2.00：主仓 v1.99 hardening 后文档状态收口          | PLAN 顶部/Phase 3/4 checklist 仍停在 v1.93，会把执行者带回已完成的 §2.C 实施任务                             | 当前保护点改为 `0998b49`；Phase 3 标为 hardened baseline；Phase 4 剩余任务收敛为验收矩阵、finale reduced-motion/low-power polish、optional Lightbox |
+| 2026-05-09 | v2.01：主仓 v1.100 follow-up 后文档状态收口         | v2.00 后 Lightbox 已因实测卡死撤回，finale 首帧已改纯星空；旧 PLAN 仍会把执行者带回 optional Lightbox        | 当前保护点改为 `e095491`；Lightbox 转入 redesign-deferred；下一步锁定 Phase 4 最终验收矩阵与 reduced-motion/low-power 复核                          |
+| 2026-05-10 | v2.02：Phase 4 保护点 + Phase 5 Family 实施口径收口 | Phase 4 已验收并决定进入 Phase 5；旧 PLAN 仍会把实施者带回 CatCard.tsx / Lightbox / hover 切主图旧方案       | 当前保护点改为 `3d16da1`；Phase 5 改为 Astro-only FamilySection；cats 8 图加入 dimension gate（v2.03 纠正 clean-pass 口径）                         |
+| 2026-05-10 | v2.03：Phase 5 Family 审计修复收口                  | 审计发现 Family 文案绕过 content 单一源、PLAN 误写 35/35 clean verified、实现未进版本保护                    | 当前保护点改为 `e3f083e`；Family caption 改回 `family.json` 单一源；dimension gate 口径改为覆盖 35 张，clean pass 需稳定网络复验                    |
 
 ---
 
@@ -5757,27 +5931,27 @@ git push
 
 ### 18.1 我什么时候做什么？
 
-| 我现在想…                         | 翻这里                                      |
-| --------------------------------- | ------------------------------------------- |
-| 看总进度 / 这周做什么              | [§1 总览](#1-总览-master-schedule)          |
-| 启动一个新 Phase                   | 直接定位 §4–§12 中对应 Phase                |
-| 设计上拿不准                       | [DESIGN.md](DESIGN.md)                       |
-| 出问题想回滚                       | [§15 回滚预案](#15-回滚与降级预案)            |
-| 婚礼前后运营                       | [§16 Runbook](#16-婚礼前中后运营手册)        |
+| 我现在想…             | 翻这里                                |
+| --------------------- | ------------------------------------- |
+| 看总进度 / 这周做什么 | [§1 总览](#1-总览-master-schedule)    |
+| 启动一个新 Phase      | 直接定位 §4–§12 中对应 Phase          |
+| 设计上拿不准          | [DESIGN.md](DESIGN.md)                |
+| 出问题想回滚          | [§15 回滚预案](#15-回滚与降级预案)    |
+| 婚礼前后运营          | [§16 Runbook](#16-婚礼前中后运营手册) |
 
 ### 18.2 关键文件路径快查
 
-| 内容                          | 路径                                                         |
-| ----------------------------- | ------------------------------------------------------------ |
-| 这份计划                      | `PLAN.md`                                                    |
-| 设计文档                      | `DESIGN.md`                                                  |
-| 主代码仓                      | `~/projects/forever-begins/`                                 |
-| 私有归档仓                    | `~/projects/forever-begins-archive/`                         |
-| Tier B 仓                     | GitHub `YiTiane/fb-cdn-*`                                 |
-| Mapbox 自定义样式             | Mapbox Studio · `wedding-watercolor`                         |
-| Deploy keys                   | `~/.ssh/forever-begins-keys/`                                |
-| 内容定义                      | `src/content/{meta,story,journey,cats,series}/`              |
-| 字体 subset                   | `public/fonts/*.woff2`                                       |
+| 内容              | 路径                                            |
+| ----------------- | ----------------------------------------------- |
+| 这份计划          | `PLAN.md`                                       |
+| 设计文档          | `DESIGN.md`                                     |
+| 主代码仓          | `~/projects/forever-begins/`                    |
+| 私有归档仓        | `~/projects/forever-begins-archive/`            |
+| Tier B 仓         | GitHub `YiTiane/fb-cdn-*`                       |
+| Mapbox 自定义样式 | Mapbox Studio · `wedding-watercolor`            |
+| Deploy keys       | `~/.ssh/forever-begins-keys/`                   |
+| 内容定义          | `src/content/{meta,story,journey,cats,series}/` |
+| 字体 subset       | `public/fonts/*.woff2`                          |
 
 ### 18.3 常用命令快查（v1.9：所有 push:cdn 必传 VERSION）
 
@@ -5820,6 +5994,7 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 ```
 
 > **VERSION 选择速查**：
+>
 > - 每次 push:cdn 都要新版本号；查上一次用过的 tag 走（v1.10 修正：push 脚本只发 git tag，不发 GitHub Release）：
 >   ```bash
 >   # 推荐：用 gh api（无 release 时也能列出 tag）
@@ -5836,18 +6011,18 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 
 ### 18.4 关键人物 / 服务
 
-| 服务            | 入口                                                 | 用途                        |
-| --------------- | ---------------------------------------------------- | --------------------------- |
-| GitHub          | [github.com/YiTiane](https://github.com/YiTiane) | 主仓 + 资产仓 + Pages       |
-| Mapbox          | [account.mapbox.com](https://account.mapbox.com)     | 静态地图 token + 自定义样式 |
-| jsDelivr        | [www.jsdelivr.com](https://www.jsdelivr.com)         | 主 CDN                      |
-| Statically      | [statically.io](https://statically.io)               | 备 CDN                      |
-| GitHub Status   | [www.githubstatus.com](https://www.githubstatus.com) | 婚礼当天看                  |
+| 服务          | 入口                                                 | 用途                        |
+| ------------- | ---------------------------------------------------- | --------------------------- |
+| GitHub        | [github.com/YiTiane](https://github.com/YiTiane)     | 主仓 + 资产仓 + Pages       |
+| Mapbox        | [account.mapbox.com](https://account.mapbox.com)     | 静态地图 token + 自定义样式 |
+| jsDelivr      | [www.jsdelivr.com](https://www.jsdelivr.com)         | 主 CDN                      |
+| Statically    | [statically.io](https://statically.io)               | 备 CDN                      |
+| GitHub Status | [www.githubstatus.com](https://www.githubstatus.com) | 婚礼当天看                  |
 
 ---
 
 > 这份计划在你勾选每一个方块的过程中，会逐渐从一份清单变成一段记忆——也是你们婚礼故事的一部分。
 >
-> *愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。*
+> _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.04 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · 当前代码保护点 `e3f083e` · Phase 5 Family Astro album 已提交部署 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 35 张，发布级 35/35 clean pass 需稳定网络复验**
+> **— Forever Begins · 实施计划 v2.05 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · 当前代码保护点 `e3f083e` 后续 Family moment-flow refinement 本轮提交 · Phase 5 Family Astro album 已提交部署并完成文图交替满宽优化 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，发布级 34/34 clean pass 需稳定网络复验**
