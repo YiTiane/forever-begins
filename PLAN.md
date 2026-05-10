@@ -2,10 +2,15 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.10
+version: 2.11
 last_updated: 2026-05-11
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮按用户反馈完成邀请页诗句移除、倒计时突出、Family/The Day 标题收口与猫咪文案补齐，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮按用户反馈完成邀请页诗句移除、倒计时突出、Family/The Day 标题收口、猫咪文案补齐，并将 Family 可见标题与导航从「我们的家」改为「彩蛋」，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.11 — Phase 5 visible label rename（Family → 彩蛋）：
+        ① **修用户反馈（章节命名）**：
+           - Family 可见标题从「我们的家」改为「彩蛋」
+           - 全局导航中 `family` 锚点 label 同步改为「彩蛋」
+           - 保留 `#family` 稳定锚点与 FamilySection 组件命名，避免破坏现有链接和实现边界
   v2.10 — Phase 6 copy and typography cleanup（邀请 / 家庭 / 这一天 文案收口）：
         ① **修用户反馈（邀请页文案）**：
            - Cover 生产页面去除旧邀请诗句
@@ -3395,7 +3400,7 @@ changelog: |
 - [6. Phase 2 — 序幕与请柬 Cover & Invitation](#6-phase-2--序幕与请柬)
 - [7. Phase 3 — 第一章 · 我们的故事 Our Story](#7-phase-3--第一章我们的故事)
 - [8. Phase 4 — 影像星河验收与降级策略](#8-phase-4--影像星河验收与降级策略)
-- [9. Phase 5 — 我们的家 Our Family](#9-phase-5--我们的家)
+- [9. Phase 5 — 彩蛋 Family Album](#9-phase-5--彩蛋)
 - [10. Phase 6 — 这一天 + 收束 The Day & Closing](#10-phase-6--这一天--收束)
 - [11. Phase 7 — 打磨与测试 Polish & QA](#11-phase-7--打磨与测试)
 - [12. Phase 8 — 上线与监护 Launch & Stewardship](#12-phase-8--上线与监护)
@@ -3455,7 +3460,7 @@ Phase 3  ─┤ 第一章 故事 (3d)           StoryPoemScroller + PhotoBeatLay
           │
 Phase 4  ─┤ 影像星河验收 (2d)          StarCarouselFinale hardening + matrix
           │
-Phase 5  ─┤ 第三章 我们的家 (1d)        三只猫卡片
+Phase 5  ─┤ 彩蛋 (1d)                  三只猫卡片
           │
 Phase 6  ─┤ 第四章 + 尾声 (1.5d)       Details + Map + SoftRSVP + Closing + Nav
           │
@@ -5494,11 +5499,11 @@ done
 
 ---
 
-## 9. Phase 5 — 我们的家
+## 9. Phase 5 — 彩蛋
 
 > 🔗 [DESIGN.md §4 §4 (Cats)](DESIGN.md)
 >
-> **目标**：在 Finale 星空之后追加温暖、轻量、可发布的“三只猫 / 我们的家”家庭相册章节。第一版不做 Lightbox、不新增 WebGL、不新增 React island。
+> **目标**：在 Finale 星空之后追加温暖、轻量、可发布的“三只猫 / 彩蛋”家庭相册章节。第一版不做 Lightbox、不新增 WebGL、不新增 React island。
 >
 > **工时**：1 工日
 >
@@ -5514,7 +5519,7 @@ done
 
 - [x] 🟢 **5.1.2** 写 `src/components/family/FamilySection.astro`（v2.06 已改为文图交替满宽 + 720px 以上 balanced spread）
   - Astro-only；不新增 React island / WebGL / Lightbox
-  - 「我们的家」+ 引言（v2.10 去除英文 kicker 与章节前缀）
+  - 「彩蛋」+ 引言（v2.11 将可见标题与导航 label 从「我们的家」改为「彩蛋」）
   - Berry / 荔枝 / 小宝 三段家庭相册，按 `moments[]` 顺序渲染
   - 姓名下不再显示重复小字；文案段落后紧跟对应照片
   - 每行单张照片，宽度占满卡片内容区
@@ -6144,4 +6149,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.10 · 2026-05-11 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮完成邀请 / Family / The Day 文案与标题收口，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
+> **— Forever Begins · 实施计划 v2.11 · 2026-05-11 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮完成邀请 / Family / The Day 文案与标题收口，并将 Family 可见标题与导航改为「彩蛋」，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
