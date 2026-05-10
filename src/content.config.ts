@@ -206,6 +206,9 @@ const photoRef = z.object({
   stem: stemSchema,
   alt: z.string().min(1),
   caption: z.string().optional(),
+  /** 源图真实像素，用于 <CdnImage> width/height 几何预留与 build-time CDN aspect gate。 */
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
 });
 
 const cats = defineCollection({
@@ -216,7 +219,7 @@ const cats = defineCollection({
         z.object({
           id: z.string().min(1),
           name: z.string().min(1),
-          /** 短描述：'爱翻肚皮的老大' / '小公主' / '害羞的弟弟' */
+          /** 短描述：'爱翻肚皮的老大' / '把自己照顾得超级好' / '家里最粘人的小毛球' */
           role: z.string().optional(),
           caption: z.string().min(1),
           portrait: photoRef,

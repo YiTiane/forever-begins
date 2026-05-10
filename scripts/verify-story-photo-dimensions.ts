@@ -1,6 +1,11 @@
 /**
- * verify-story-photo-dimensions.ts · § 2 Story photo 尺寸合约 build-time gate
- *   v0.5（Phase 2 §2 batch 8 · v1.91 修 v1.90 audit P2-4：覆盖 §2.C finale 15 张）
+ * verify-story-photo-dimensions.ts · Story / Finale / Cats photo 尺寸合约 build-time gate
+ *   v0.6（Phase 5 · 第三章"我们的家"：覆盖 8 张 cat photos）
+ *
+ * v0.6：extends gate 到 §4 Cats / Phase 5 序列。除原 §2 photo-poem 12 张
+ * 和 §2.C StarCarouselFinale 15 张外，本批次把 src/content/cats/family.json
+ * 的 8 张 misc/cat/* 照片 width/height 与 CDN 1600px 派生品 aspect 做相同
+ * 的 dual-CDN first-valid + abort losers 比对；猫图错标会直接 fail。
  *
  * v0.5：extends gate 到 §2.C StarCarouselFinale 序列。除原 §2 photo-poem 12 张
  * 外，本批次还把 src/lib/story/finalePhotos.ts 的 15 张照片 (grassland × 5 +
@@ -73,6 +78,23 @@ interface Beat {
 
 interface MainJson {
   beats: Beat[];
+}
+
+interface CatPhoto {
+  stem: string;
+  alt: string;
+  width: number;
+  height: number;
+}
+
+interface Cat {
+  id: string;
+  portrait: CatPhoto;
+  gallery?: CatPhoto[];
+}
+
+interface CatsJson {
+  cats: Cat[];
 }
 
 const PROBE_W = 1600; // probe at 1600 width derivative (覆盖了 widths={[..., 1600, ...]} 都有的尺寸)
@@ -289,7 +311,9 @@ async function probeOne(
 async function main() {
   const here = dirname(fileURLToPath(import.meta.url));
   const mainPath = resolve(here, "..", "src/content/story-poem/main.json");
+  const catsPath = resolve(here, "..", "src/content/cats/family.json");
   const main: MainJson = JSON.parse(readFileSync(mainPath, "utf-8"));
+  const cats: CatsJson = JSON.parse(readFileSync(catsPath, "utf-8"));
 
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -358,6 +382,31 @@ async function main() {
     }
   }
 
+  // v0.6：Phase 5 cats family album uses misc/cat/* derivatives through <CdnImage>.
+  // 它们同样需要 width/height 几何预留；用 CDN aspect gate 防止 cat content
+  // metadata 漂移导致裁脸 / CLS / 404 隐性上线。
+  for (const cat of cats.cats) {
+    const photos = [cat.portrait, ...(cat.gallery ?? [])];
+    for (const photo of photos) {
+      const expectedAspect = photo.width / photo.height;
+      try {
+        const { dim: cdnDim, sourceCdn } = await probeOne(
+          "misc",
+          photo.stem,
+          expectedAspect,
+          ASPECT_TOLERANCE,
+        );
+        checked.push(
+          `cats/${cat.id}/${photo.stem}: ${photo.width}×${photo.height} ↔ CDN(${sourceCdn}) ${cdnDim.width}×${cdnDim.height} ✓`,
+        );
+      } catch (err) {
+        const line = `cats ${cat.id}/${photo.stem} (family.json ${photo.width}×${photo.height} aspect ${expectedAspect.toFixed(4)}): ${(err as Error).message}`;
+        if (isNetworkInconclusive(err)) warnings.push(line);
+        else errors.push(line);
+      }
+    }
+  }
+
   if (warnings.length > 0) {
     console.warn(
       "\n[verify-story-photo-dimensions] ⚠️ CDN 网络不可判定 warning（不阻塞 build；aspect 错误仍会 fail）：",
@@ -381,7 +430,7 @@ async function main() {
   }
 
   console.log(
-    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story photo (含 finale ${FINALE_PHOTO_SEQUENCE.length}) 与 CDN ${PROBE_W}px 派生品 aspect 一致` +
+    `[verify-story-photo-dimensions] ✓ ${checked.length} 张 Story/Finale/Cats photo (含 finale ${FINALE_PHOTO_SEQUENCE.length} + cats ${cats.cats.reduce((n, c) => n + 1 + (c.gallery?.length ?? 0), 0)}) 与 CDN ${PROBE_W}px 派生品 aspect 一致` +
       (warnings.length > 0
         ? `（${warnings.length} 项网络 warning 已记录）`
         : ""),

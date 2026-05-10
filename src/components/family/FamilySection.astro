@@ -1,0 +1,459 @@
+---
+/**
+ * FamilySection.astro · Phase 5 第三章 · 我们的家（v0.1）
+ *
+ * 轻量 Astro-only 家庭相册章节：不新增 WebGL / React island / Lightbox。
+ * 数据来自 src/content/cats/family.json；所有图片经 <CdnImage> 走 misc/cat/*
+ * 派生品和现有 primary/backup CDN fallback。
+ */
+import { getCollection } from "astro:content";
+import CdnImage from "@/components/CdnImage.astro";
+
+const catsEntries = await getCollection("cats");
+const family = catsEntries.find((entry) => entry.id === "family");
+if (!family) {
+  throw new Error(
+    "FamilySection.astro: src/content/cats/family.json missing — check content collection state",
+  );
+}
+
+const photoWidths = [320, 640, 1024, 1600];
+
+const splitCaptionLines = (caption: string) =>
+  caption.match(/[^，。！？]+[，。！？]?/g)?.map((line) => line.trim()) ?? [
+    caption,
+  ];
+---
+
+<section
+  id="family"
+  class="family-section"
+  aria-labelledby="family-heading"
+  data-family-section
+>
+  <div class="family-inner">
+    <header class="family-header">
+      <p class="family-kicker latin-label" aria-hidden="true">
+        III. OUR FAMILY
+      </p>
+      <h2 id="family-heading" class="family-title cn-kaishu">
+        第三章 · 我们的家
+      </h2>
+      <p class="family-intro cn-song">
+        和我们一起欢迎你们的，<br />
+        还有它们。
+      </p>
+      <div class="family-rule" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </header>
+
+    <div class="family-albums">
+      {
+        family.data.cats.map((cat, index) => (
+          <article
+            class="cat-album"
+            data-cat-id={cat.id}
+            style={`--album-index: ${index}`}
+            aria-labelledby={`cat-${cat.id}-heading`}
+          >
+            <div class="cat-copy">
+              <p class="cat-number latin-label">0{index + 1}</p>
+              <h3 id={`cat-${cat.id}-heading`} class="cat-name">
+                {cat.name}
+              </h3>
+              {cat.role && <p class="cat-role cn-song">{cat.role}</p>}
+              <p class="cat-caption cn-kaishu">
+                {splitCaptionLines(cat.caption).map((line) => (
+                  <>
+                    <span>{line}</span>
+                    <br />
+                  </>
+                ))}
+              </p>
+            </div>
+
+            <figure class="cat-photo cat-photo--main">
+              <CdnImage
+                cdnTarget="misc"
+                stem={cat.portrait.stem}
+                alt={cat.portrait.alt}
+                sizes="(max-width: 720px) 92vw, (max-width: 1100px) 52vw, 460px"
+                widths={photoWidths}
+                width={cat.portrait.width}
+                height={cat.portrait.height}
+                priority="auto"
+              />
+            </figure>
+
+            {cat.gallery && cat.gallery.length > 0 && (
+              <div
+                class="cat-gallery"
+                aria-label={`${cat.name} 的家庭相册小图`}
+              >
+                {cat.gallery.map((photo) => (
+                  <figure class="cat-photo cat-photo--gallery">
+                    <CdnImage
+                      cdnTarget="misc"
+                      stem={photo.stem}
+                      alt={photo.alt}
+                      sizes="(max-width: 720px) 44vw, 220px"
+                      widths={photoWidths}
+                      width={photo.width}
+                      height={photo.height}
+                      priority="auto"
+                    />
+                  </figure>
+                ))}
+              </div>
+            )}
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  (() => {
+    const section = document.querySelector("[data-family-section]");
+    if (!(section instanceof HTMLElement)) return;
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (reduce) return;
+    const albums = Array.from(section.querySelectorAll(".cat-album"));
+    if (!("IntersectionObserver" in window)) {
+      albums.forEach((album) => album.classList.add("is-visible"));
+      return;
+    }
+    section.setAttribute("data-anim-ready", "true");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.22, rootMargin: "0px 0px -8% 0px" },
+    );
+    albums.forEach((album) => observer.observe(album));
+  })();
+</script>
+
+<style>
+  .family-section {
+    position: relative;
+    isolation: isolate;
+    z-index: 2;
+    overflow: hidden;
+    background:
+      radial-gradient(
+        circle at 18% 12%,
+        oklch(86.5% 0.04 60 / 0.42),
+        transparent 22rem
+      ),
+      radial-gradient(
+        circle at 86% 24%,
+        oklch(82% 0.13 90 / 0.2),
+        transparent 20rem
+      ),
+      var(--c-paper);
+    color: var(--c-olive-ink);
+    padding: 5rem 1rem 6rem;
+  }
+
+  .family-inner {
+    width: min(100%, var(--container-page));
+    margin: 0 auto;
+  }
+
+  .family-header {
+    max-width: var(--container-prose);
+    margin: 0 auto 3.5rem;
+    text-align: center;
+  }
+
+  .family-kicker,
+  .cat-number {
+    margin: 0;
+    color: var(--c-sage);
+    font-size: var(--text-meta);
+    letter-spacing: 0;
+  }
+
+  .family-title {
+    margin: 0.55rem 0 0;
+    color: var(--c-sage-deep);
+    font-size: var(--text-display-lg);
+    line-height: var(--leading-snug);
+    letter-spacing: 0;
+  }
+
+  .family-intro {
+    margin: 1.5rem 0 0;
+    font-size: var(--text-body-lg);
+    line-height: var(--leading-quote);
+  }
+
+  .family-rule {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 1.5rem;
+  }
+
+  .family-rule span {
+    display: block;
+    border-radius: var(--radius-pill);
+    background: var(--c-honey);
+  }
+
+  .family-rule span:nth-child(1),
+  .family-rule span:nth-child(3) {
+    width: 2.75rem;
+    height: 1px;
+    opacity: 0.55;
+  }
+
+  .family-rule span:nth-child(2) {
+    width: 0.42rem;
+    height: 0.42rem;
+    opacity: 0.8;
+  }
+
+  .family-albums {
+    display: grid;
+    gap: 2rem;
+  }
+
+  .cat-album {
+    --cat-accent: var(--c-honey);
+    --cat-surface: var(--c-ivory);
+    position: relative;
+    display: grid;
+    gap: 1.1rem;
+    padding: 1rem;
+    border: 1px solid oklch(78.5% 0.015 90 / 0.42);
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--cat-surface) 88%, white);
+    box-shadow: var(--shadow-card);
+  }
+
+  .cat-album[data-cat-id="berry"] {
+    --cat-accent: var(--c-honey);
+    --cat-surface: var(--c-ivory);
+  }
+
+  .cat-album[data-cat-id="lizhi"] {
+    --cat-accent: var(--c-mimosa);
+    --cat-surface: var(--c-petal);
+  }
+
+  .cat-album[data-cat-id="xiaobao"] {
+    --cat-accent: var(--c-lavender);
+    --cat-surface: var(--c-ivory);
+  }
+
+  .cat-copy {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .cat-name {
+    margin: 0;
+    color: var(--c-sage-deep);
+    font-family: var(--font-cormorant);
+    font-size: var(--text-title-lg);
+    font-weight: 400;
+    line-height: var(--leading-snug);
+    letter-spacing: 0;
+  }
+
+  .cat-role {
+    margin: 0;
+    color: var(--c-sage);
+    font-size: var(--text-caption);
+    line-height: var(--leading-cn);
+  }
+
+  .cat-caption {
+    margin: 0.65rem 0 0;
+    color: var(--c-olive-ink);
+    font-size: var(--text-body-lg);
+    line-height: var(--leading-quote);
+  }
+
+  .cat-photo {
+    margin: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background:
+      linear-gradient(135deg, oklch(97% 0.02 90 / 0.72), transparent),
+      color-mix(in oklch, var(--cat-surface) 76%, white);
+  }
+
+  .cat-photo :global(picture) {
+    display: grid;
+    place-items: center;
+    width: 100%;
+  }
+
+  .cat-photo :global(img) {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    transform-origin: 50% 55%;
+    transition: transform 520ms var(--ease-paper);
+  }
+
+  .cat-photo--main :global(img) {
+    max-height: 32rem;
+  }
+
+  .cat-photo--gallery :global(img) {
+    max-height: 18rem;
+  }
+
+  .cat-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .cat-gallery .cat-photo:only-child {
+    grid-column: 1 / -1;
+    max-width: 58%;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .cat-album:hover .cat-photo--main :global(img) {
+      transform: scale(1.012);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .family-section[data-anim-ready="true"] .cat-album {
+      opacity: 0;
+      transform: translateY(1.35rem);
+    }
+
+    .family-section[data-anim-ready="true"]
+      .cat-album
+      .cat-photo--main
+      :global(img) {
+      transform: scale(0.96);
+    }
+
+    .family-section[data-anim-ready="true"] .cat-album.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      transition:
+        opacity 720ms var(--ease-paper),
+        transform 720ms var(--ease-paper);
+      transition-delay: calc(var(--album-index) * 90ms);
+    }
+
+    .family-section[data-anim-ready="true"]
+      .cat-album.is-visible
+      .cat-photo--main
+      :global(img) {
+      transform: scale(1);
+    }
+  }
+
+  @media (min-width: 720px) {
+    .family-section {
+      padding: 6rem 2rem 7rem;
+    }
+
+    .family-albums {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .cat-album {
+      padding: 1.25rem;
+    }
+
+    .cat-album[data-cat-id="berry"] {
+      grid-column: 1 / span 6;
+    }
+
+    .cat-album[data-cat-id="lizhi"] {
+      grid-column: 7 / span 6;
+      margin-top: 5rem;
+    }
+
+    .cat-album[data-cat-id="xiaobao"] {
+      grid-column: 3 / span 8;
+      margin-top: 0.25rem;
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .family-section {
+      padding-block: 7rem 8rem;
+    }
+
+    .family-header {
+      margin-bottom: 4.5rem;
+    }
+
+    .cat-album[data-cat-id="berry"] {
+      grid-column: 1 / span 5;
+    }
+
+    .cat-album[data-cat-id="lizhi"] {
+      grid-column: 7 / span 5;
+      margin-top: 4.25rem;
+    }
+
+    .cat-album[data-cat-id="xiaobao"] {
+      grid-column: 4 / span 6;
+      margin-top: -0.25rem;
+    }
+  }
+
+  @media (max-width: 539px) {
+    .family-section {
+      padding: 4.5rem 0.75rem 5.25rem;
+    }
+
+    .family-header {
+      margin-bottom: 2.5rem;
+    }
+
+    .family-albums {
+      gap: 1.25rem;
+    }
+
+    .cat-album {
+      padding: 0.85rem;
+    }
+
+    .cat-gallery {
+      gap: 0.55rem;
+    }
+
+    .cat-gallery .cat-photo:only-child {
+      max-width: 68%;
+    }
+
+    .cat-photo--main :global(img) {
+      max-height: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cat-album,
+    .cat-photo :global(img) {
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+</style>

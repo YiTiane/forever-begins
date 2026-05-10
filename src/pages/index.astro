@@ -1,20 +1,21 @@
 ---
 /**
- * index.astro · 主页（v0.5 · Phase 2 §0 + §1 + §2 batch 1 接入）
+ * index.astro · 主页（v0.6 · Phase 5 Family 接入）
  *
  * 职责：从 Base 拉全站布局，按 DESIGN §3.1 站点地图顺序渲染章节。
  *
  * 当前章节顺序（自上而下，单页长卷）：
  *   §0  Cover         邀请函 part_1 + Forever Begins hero + 新人 / 时间 / 地点 / 诗句
  *   §1  Invitation    邀请函 part_2 + "我们无法判断..." 诗句 + 倒计时
- *   §2  Story         爱情独白长卷 batch 1（前 4 个 photo-poem beat + globe/finale 占位）
- *                     · DESIGN §4 §2.A StoryPoemScroller
- *                     · ⏳ batch 2: 后 6 个 photo-poem · ⏳ batch 3: §2.B Globe · ⏳ batch 4: §2.C Finale
+ *   §2  Story         爱情独白长卷 + GlobeDistanceScene + StarCarouselFinale hardened baseline
  *   §3  Galleries     （未实施 · 已并入 §2）
- *   §4  Cats          （未实施 · DESIGN §4 §4）
+ *   §4  Cats          第三章 · 我们的家（三只猫家庭相册）
  *   §5  Day           （未实施 · 婚礼详情 + 导航）
  *   §6  Closing       （未实施 · 落款）
  *
+ * v0.6 变化：
+ *   - 在 StoryPoemScroller 之后追加 <FamilySection />，进入 Phase 5 第三章。
+ *   - Family 是 Astro-only 浅纸面章节，不继承 Finale 深色星场，不恢复 Lightbox。
  * v0.5 变化：
  *   - v0.4 渲染 Cover + Invitation；v0.5 在 Invitation 之后追加 <StoryPoemScroller />
  *   - 三个章节都是独立 stacking context（each section: position: relative; isolation: isolate）
@@ -32,6 +33,7 @@
 import Base from "@/layouts/Base.astro";
 import Cover from "@/components/Cover.astro";
 import Invitation from "@/components/Invitation.astro";
+import FamilySection from "@/components/family/FamilySection.astro";
 import StoryPoemScroller from "@/components/story/StoryPoemScroller.astro";
 ---
 
@@ -39,4 +41,5 @@ import StoryPoemScroller from "@/components/story/StoryPoemScroller.astro";
   <Cover />
   <Invitation />
   <StoryPoemScroller />
+  <FamilySection />
 </Base>

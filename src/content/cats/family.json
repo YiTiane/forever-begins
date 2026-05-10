@@ -7,16 +7,22 @@
       "caption": "爱翻肚皮的老大，玩具很多，但最爱玩塑料袋。",
       "portrait": {
         "stem": "cat/berry-portrait",
-        "alt": "Berry 的肖像照"
+        "alt": "Berry 的肖像照",
+        "width": 3024,
+        "height": 4032
       },
       "gallery": [
         {
           "stem": "cat/berry-belly",
-          "alt": "Berry 翻肚皮"
+          "alt": "Berry 翻肚皮",
+          "width": 3024,
+          "height": 4032
         },
         {
           "stem": "cat/berry-bag",
-          "alt": "Berry 玩塑料袋"
+          "alt": "Berry 玩塑料袋",
+          "width": 4032,
+          "height": 3024
         }
       ]
     },
@@ -27,12 +33,16 @@
       "caption": "把自己照顾得超级好。如果她主动蹭你，就是想要被摸。",
       "portrait": {
         "stem": "cat/lizhi-portrait",
-        "alt": "荔枝的肖像照"
+        "alt": "荔枝的肖像照",
+        "width": 3840,
+        "height": 2560
       },
       "gallery": [
         {
           "stem": "cat/lizhi-petting",
-          "alt": "荔枝主动蹭着求被摸"
+          "alt": "荔枝主动蹭着求被摸",
+          "width": 3024,
+          "height": 4032
         }
       ]
     },
@@ -42,17 +52,23 @@
       "role": "家里最粘人的小毛球",
       "caption": "我们救助的流浪猫，现在是家里最粘人的小毛球。",
       "portrait": {
-        "stem": "cat/xiaobao-portrait",
-        "alt": "小宝的肖像照"
+        "stem": "cat/xiaobao-blue-eyes",
+        "alt": "小宝的蓝眼睛特写",
+        "width": 3840,
+        "height": 2560
       },
       "gallery": [
         {
-          "stem": "cat/xiaobao-naptime",
-          "alt": "小宝在小憩"
+          "stem": "cat/xiaobao-portrait",
+          "alt": "小宝的肖像照",
+          "width": 3840,
+          "height": 2560
         },
         {
-          "stem": "cat/xiaobao-blue-eyes",
-          "alt": "小宝的蓝眼睛特写"
+          "stem": "cat/xiaobao-naptime",
+          "alt": "小宝在小憩",
+          "width": 3024,
+          "height": 4032
         }
       ]
     }
