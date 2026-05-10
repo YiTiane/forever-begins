@@ -124,6 +124,11 @@ const meta = defineCollection({
         bd09: nullableCoord,
       }),
     }),
+    contact: z.object({
+      phoneDisplay: z.string().min(1),
+      phoneHref: z.string().min(1),
+      wechatQrPath: z.string().min(1),
+    }),
     poem: z.string().min(1),
   }),
 });

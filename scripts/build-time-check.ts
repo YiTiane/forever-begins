@@ -73,7 +73,10 @@ async function probe(
 }
 
 const failures: string[] = [];
-const warnings: string[] = [];
+const warnings: Array<{
+  kind: "single-side" | "indeterminate-both";
+  msg: string;
+}> = [];
 
 function isDefinitiveMissing(result: ProbeResult): boolean {
   return (
@@ -92,22 +95,34 @@ await Promise.all(
         `${target}: 双 CDN 均失败\n        primary: ${p.msg}\n        backup:  ${b.msg}`,
       );
     } else if (!p.ok && !b.ok) {
-      warnings.push(
-        `${target}: 双 CDN 当前均不可用但未得到确定 404/403，按网络不可判定处理 (${p.msg}; ${b.msg})`,
-      );
+      warnings.push({
+        kind: "indeterminate-both",
+        msg: `${target}: 双 CDN 当前均不可用但未得到确定 404/403，按网络不可判定处理 (${p.msg}; ${b.msg})`,
+      });
     } else if (!p.ok) {
-      warnings.push(`${target}: primary 失败但 backup 正常 (${p.msg})`);
+      warnings.push({
+        kind: "single-side",
+        msg: `${target}: primary 失败但 backup 正常 (${p.msg})`,
+      });
     } else if (!b.ok) {
-      warnings.push(`${target}: backup 失败但 primary 正常 (${b.msg})`);
+      warnings.push({
+        kind: "single-side",
+        msg: `${target}: backup 失败但 primary 正常 (${b.msg})`,
+      });
     }
   }),
 );
 
 if (warnings.length > 0) {
+  const indeterminateBoth = warnings.filter(
+    (warning) => warning.kind === "indeterminate-both",
+  ).length;
   console.warn(
-    "[build-time-check] ⚠️ 单边 CDN 失败（不阻塞 build，但建议 5–15 min 后复查）：",
+    indeterminateBoth > 0
+      ? "[build-time-check] ⚠️ CDN 探测存在网络不可判定项（不阻塞 build，但必须复查）："
+      : "[build-time-check] ⚠️ 单边 CDN 失败（不阻塞 build，但建议 5–15 min 后复查）：",
   );
-  for (const w of warnings) console.warn("  ⚠", w);
+  for (const w of warnings) console.warn("  ⚠", w.msg);
 }
 
 if (failures.length > 0) {
@@ -129,8 +144,15 @@ if (warnings.length === 0) {
     `[build-time-check] ✅ 全部 ${targets.length} 个资产仓双 CDN 健康`,
   );
 } else {
+  const singleSideWarnings = warnings.filter(
+    (warning) => warning.kind === "single-side",
+  ).length;
+  const indeterminateBothWarnings = warnings.length - singleSideWarnings;
   console.log(
-    `[build-time-check] ✅ 全部 ${targets.length} 个 target 至少一侧 CDN 可用` +
-      `（${warnings.length} 项单边 warning，已记录上方）`,
+    indeterminateBothWarnings > 0
+      ? `[build-time-check] ✅ 未发现确定性 403/404 配置错误；${targets.length} 个 target 已完成双 CDN 探测` +
+          `（${indeterminateBothWarnings} 项双边网络不可判定 warning，${singleSideWarnings} 项单边 warning，已记录上方）`
+      : `[build-time-check] ✅ 全部 ${targets.length} 个 target 至少一侧 CDN 可用` +
+          `（${singleSideWarnings} 项单边 warning，已记录上方）`,
   );
 }

@@ -1,0 +1,252 @@
+---
+/**
+ * DetailsMap.astro · Phase 6 婚礼地点静态地图
+ *
+ * Astro-only：使用 fb-cdn-misc 的 Mapbox 静态 PNG 派生图，不新增 WebGL。
+ * primary/backup URL 由 cdnUrl() 生成；若双 CDN 图片都失败，显示文字 fallback
+ * 与同一组导航按钮，确保地图资源故障时客人仍能拿到地点入口。
+ */
+import { cdnUrl } from "@/lib/images/asset-versions";
+
+interface MapLink {
+  provider: "amap" | "baidu" | "apple" | "google";
+  label: string;
+  href: string;
+}
+
+interface Venue {
+  cn: string;
+  cn_short: string;
+  address_cn: string;
+  address_en: string;
+}
+
+interface Props {
+  venue: Venue;
+  mapLinks: MapLink[];
+}
+
+const { venue, mapLinks } = Astro.props;
+
+const srcset = (host: "primary" | "backup") =>
+  [
+    `${cdnUrl(host, "misc", "map/venue-1280.png")} 1280w`,
+    `${cdnUrl(host, "misc", "map/venue-2048.png")} 2048w`,
+    `${cdnUrl(host, "misc", "map/venue-2560.png")} 2560w`,
+  ].join(", ");
+
+const primarySrc = cdnUrl("primary", "misc", "map/venue-1280.png");
+const backupSrc = cdnUrl("backup", "misc", "map/venue-1280.png");
+---
+
+<figure class="details-map" data-details-map>
+  <picture class="details-map-picture">
+    <source
+      type="image/png"
+      srcset={srcset("primary")}
+      data-srcset-alt={srcset("backup")}
+      sizes="(max-width: 720px) 92vw, 880px"
+    />
+    <img
+      src={primarySrc}
+      data-src-alt={backupSrc}
+      data-map-image
+      width="2560"
+      height="1680"
+      loading="lazy"
+      decoding="async"
+      fetchpriority="auto"
+      alt={`${venue.cn_short} 地图位置`}
+    />
+  </picture>
+
+  <figcaption class="details-map-caption cn-song">
+    <span>{venue.cn}</span>
+    <span>{venue.address_cn}</span>
+  </figcaption>
+
+  <div class="details-map-fallback" aria-hidden="true">
+    <p class="cn-kaishu">{venue.cn_short}</p>
+    <p class="cn-song">{venue.address_cn}</p>
+    <div class="details-map-fallback-links">
+      {
+        mapLinks.map((link) => (
+          <a href={link.href} target="_blank" rel="noreferrer">
+            {link.label}
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</figure>
+
+<script>
+  (() => {
+    const maps = document.querySelectorAll("[data-details-map]");
+    maps.forEach((root) => {
+      const img = root.querySelector("[data-map-image]");
+      if (!(img instanceof HTMLImageElement)) return;
+      let errorCount = 0;
+      let active = false;
+      let fallbackTimer = 0;
+      const markFailed = () => {
+        root.classList.add("is-map-failed");
+        root
+          .querySelector(".details-map-fallback")
+          ?.setAttribute("aria-hidden", "false");
+      };
+      const markLoaded = () => {
+        root.classList.remove("is-map-failed");
+        root
+          .querySelector(".details-map-fallback")
+          ?.setAttribute("aria-hidden", "true");
+      };
+      const activate = () => {
+        if (active) return;
+        active = true;
+        img.loading = "eager";
+        img.setAttribute("fetchpriority", "high");
+        if (img.complete && img.naturalWidth > 0) {
+          markLoaded();
+          return;
+        }
+        fallbackTimer = window.setTimeout(() => {
+          if (img.naturalWidth === 0) markFailed();
+        }, 4500);
+      };
+      img.addEventListener("error", () => {
+        errorCount += 1;
+        window.setTimeout(() => {
+          if (errorCount > 1) markFailed();
+        }, 650);
+      });
+      img.addEventListener("load", () => {
+        if (fallbackTimer) window.clearTimeout(fallbackTimer);
+        if (img.naturalWidth > 0) {
+          markLoaded();
+        }
+      });
+
+      if (window.location.hash === "#the-day") {
+        activate();
+      } else if ("IntersectionObserver" in window) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+              activate();
+              io.disconnect();
+            }
+          },
+          { rootMargin: "640px 0px" },
+        );
+        io.observe(root);
+      } else {
+        activate();
+      }
+
+      window.addEventListener("hashchange", () => {
+        if (window.location.hash === "#the-day") activate();
+      });
+    });
+  })();
+</script>
+
+<style>
+  .details-map {
+    position: relative;
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid color-mix(in oklch, var(--c-honey) 26%, transparent);
+    border-radius: var(--radius-md);
+    background: var(--c-ivory);
+    box-shadow: var(--shadow-paper);
+    isolation: isolate;
+  }
+
+  .details-map-picture,
+  .details-map :global(img) {
+    display: block;
+    width: 100%;
+  }
+
+  .details-map :global(img) {
+    height: auto;
+    aspect-ratio: 2560 / 1680;
+    object-fit: cover;
+  }
+
+  .details-map-caption {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.8rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem;
+    color: var(--c-olive-ink);
+    font-size: var(--text-caption);
+    line-height: var(--leading-cn);
+    background: color-mix(in oklch, var(--c-paper) 82%, white);
+  }
+
+  .details-map-fallback {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    text-align: center;
+    background:
+      radial-gradient(
+        circle at 50% 36%,
+        rgba(230, 199, 107, 0.14),
+        transparent 42%
+      ),
+      var(--c-ivory);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .details-map-fallback p {
+    margin: 0;
+  }
+
+  .details-map-fallback .cn-kaishu {
+    color: var(--c-sage-deep);
+    font-size: var(--text-title-md);
+  }
+
+  .details-map-fallback .cn-song {
+    color: var(--c-olive-ink);
+    font-size: var(--text-body);
+  }
+
+  .details-map-fallback-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+
+  .details-map-fallback-links a {
+    border: 1px solid color-mix(in oklch, var(--c-sage) 34%, transparent);
+    border-radius: var(--radius-pill);
+    padding: 0.45rem 0.7rem;
+    color: var(--c-sage-deep);
+    font-family: var(--font-cn-sans);
+    font-size: var(--text-caption);
+    text-decoration: none;
+  }
+
+  .details-map.is-map-failed .details-map-fallback {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (max-width: 539px) {
+    .details-map-caption {
+      padding: 0.75rem 0.85rem;
+    }
+  }
+</style>

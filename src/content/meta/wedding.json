@@ -13,5 +13,10 @@
       "bd09": { "lng": null, "lat": null }
     }
   },
+  "contact": {
+    "phoneDisplay": "+86 17775081976",
+    "phoneHref": "+8617775081976",
+    "wechatQrPath": "/wechat-qr/WeChat.JPG"
+  },
   "poem": "我们无法判断一个瞬间的价值，直至它变成回忆。\n愿有岁月可回首，且以深情共白头。\n诚邀构成我们生命不同经纬的你，共同见证这份回忆的开始。"
 }

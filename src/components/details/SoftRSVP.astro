@@ -1,0 +1,253 @@
+---
+/**
+ * SoftRSVP.astro · Phase 6 联系新人
+ *
+ * 不展示微信号，不加入额外 RSVP 引导句。只提供电话、复制手机号、微信二维码
+ * 三个直接入口；二维码用原生 dialog，失败时仍保留电话入口。
+ */
+
+interface Contact {
+  phoneDisplay: string;
+  phoneHref: string;
+  wechatQrPath: string;
+}
+
+interface Props {
+  contact: Contact;
+}
+
+const { contact } = Astro.props;
+const qrSrc = contact.wechatQrPath.startsWith("http")
+  ? contact.wechatQrPath
+  : `${import.meta.env.BASE_URL.replace(/\/$/, "")}/${contact.wechatQrPath.replace(/^\//, "")}`;
+---
+
+<div class="soft-rsvp" data-soft-rsvp>
+  <a class="contact-action" href={`tel:${contact.phoneHref}`}>
+    <span aria-hidden="true">☎</span>
+    <span>拨打电话</span>
+  </a>
+
+  <button
+    class="contact-action"
+    type="button"
+    data-copy-phone
+    data-phone={contact.phoneDisplay}
+  >
+    <span aria-hidden="true">⧉</span>
+    <span data-copy-label>复制手机号</span>
+  </button>
+
+  <button class="contact-action" type="button" data-open-wechat>
+    <span aria-hidden="true">◎</span>
+    <span>微信二维码</span>
+  </button>
+
+  <dialog class="wechat-dialog" data-wechat-dialog aria-label="微信二维码">
+    <div class="wechat-dialog-card">
+      <button
+        class="wechat-close"
+        type="button"
+        data-close-wechat
+        aria-label="关闭二维码"
+      >
+        ×
+      </button>
+      <p class="wechat-title cn-kaishu">微信二维码</p>
+      <img
+        src={qrSrc}
+        width="888"
+        height="1137"
+        loading="lazy"
+        decoding="async"
+        alt="联系新人的微信二维码"
+      />
+    </div>
+  </dialog>
+</div>
+
+<script>
+  (() => {
+    const roots = document.querySelectorAll("[data-soft-rsvp]");
+
+    function fallbackCopy(text) {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.append(area);
+      area.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        area.remove();
+      }
+    }
+
+    roots.forEach((root) => {
+      const copyButton = root.querySelector("[data-copy-phone]");
+      const copyLabel = root.querySelector("[data-copy-label]");
+      const dialog = root.querySelector("[data-wechat-dialog]");
+      const openButton = root.querySelector("[data-open-wechat]");
+      const closeButton = root.querySelector("[data-close-wechat]");
+      let lastFocus = null;
+      let previousOverflow = "";
+
+      if (copyButton instanceof HTMLButtonElement) {
+        copyButton.addEventListener("click", async () => {
+          const phone = copyButton.dataset.phone || "";
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(phone);
+            } else {
+              fallbackCopy(phone);
+            }
+            if (copyLabel) {
+              const original = copyLabel.textContent || "复制手机号";
+              copyLabel.textContent = "已复制";
+              window.setTimeout(() => {
+                copyLabel.textContent = original;
+              }, 1600);
+            }
+          } catch {
+            fallbackCopy(phone);
+          }
+        });
+      }
+
+      if (
+        dialog instanceof HTMLDialogElement &&
+        openButton instanceof HTMLButtonElement
+      ) {
+        const closeDialog = () => {
+          if (dialog.open) dialog.close();
+        };
+        openButton.addEventListener("click", () => {
+          lastFocus = document.activeElement;
+          previousOverflow = document.body.style.overflow;
+          document.body.style.overflow = "hidden";
+          if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+          } else {
+            dialog.setAttribute("open", "");
+          }
+          if (closeButton instanceof HTMLButtonElement) closeButton.focus();
+        });
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) closeDialog();
+        });
+        if (closeButton instanceof HTMLButtonElement) {
+          closeButton.addEventListener("click", closeDialog);
+        }
+        dialog.addEventListener("close", () => {
+          document.body.style.overflow = previousOverflow;
+          if (lastFocus instanceof HTMLElement) lastFocus.focus();
+        });
+      }
+    });
+  })();
+</script>
+
+<style>
+  .soft-rsvp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
+  .contact-action {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid color-mix(in oklch, var(--c-sage) 34%, transparent);
+    border-radius: var(--radius-pill);
+    padding: 0.65rem 1rem;
+    background: color-mix(in oklch, var(--c-paper) 84%, white);
+    color: var(--c-sage-deep);
+    font-family: var(--font-cn-sans);
+    font-size: var(--text-caption);
+    line-height: 1;
+    text-decoration: none;
+    box-shadow: 0 6px 18px -14px
+      color-mix(in oklch, var(--c-ink) 28%, transparent);
+    cursor: pointer;
+    transition:
+      border-color 180ms var(--ease-paper),
+      transform 180ms var(--ease-paper),
+      background 180ms var(--ease-paper);
+  }
+
+  .contact-action:hover {
+    border-color: color-mix(in oklch, var(--c-honey) 56%, var(--c-sage));
+    background: color-mix(in oklch, var(--c-mimosa) 14%, var(--c-paper));
+    transform: translateY(-1px);
+  }
+
+  .wechat-dialog {
+    max-width: min(92vw, 420px);
+    border: 0;
+    border-radius: var(--radius-lg);
+    padding: 0;
+    background: transparent;
+  }
+
+  .wechat-dialog::backdrop {
+    background: rgba(42, 42, 38, 0.42);
+  }
+
+  .wechat-dialog-card {
+    position: relative;
+    padding: 1rem;
+    border: 1px solid color-mix(in oklch, var(--c-honey) 28%, transparent);
+    border-radius: var(--radius-lg);
+    background: var(--c-paper);
+    box-shadow: var(--shadow-card);
+  }
+
+  .wechat-title {
+    margin: 0 2rem 0.75rem;
+    color: var(--c-sage-deep);
+    font-size: var(--text-title-md);
+    text-align: center;
+  }
+
+  .wechat-dialog img {
+    display: block;
+    max-width: min(72vw, 320px);
+    max-height: 70vh;
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+    border-radius: var(--radius-md);
+  }
+
+  .wechat-close {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.7rem;
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    place-items: center;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: color-mix(in oklch, var(--c-mist) 35%, transparent);
+    color: var(--c-sage-deep);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .contact-action {
+      transition: none;
+    }
+
+    .contact-action:hover {
+      transform: none;
+    }
+  }
+</style>

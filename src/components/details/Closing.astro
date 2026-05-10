@@ -1,0 +1,165 @@
+---
+/**
+ * Closing.astro · Phase 6 收束落款
+ *
+ * 不渲染“尾声”章节标题；只保留一段收束正文与新人落款。落款进入视口前
+ * 预热 Ma Shan Zheng，避免晚加载签名字体造成跳字。
+ */
+import MimosaSprig from "@/components/motifs/MimosaSprig.astro";
+---
+
+<section
+  id="closing"
+  class="closing-section"
+  data-nav-section
+  aria-label="收束"
+>
+  <div class="closing-inner" data-closing-root>
+    <div class="closing-mimosa closing-mimosa-left" aria-hidden="true">
+      <MimosaSprig opacity={0.52} />
+    </div>
+    <div class="closing-mimosa closing-mimosa-right" aria-hidden="true">
+      <MimosaSprig opacity={0.38} />
+    </div>
+
+    <p class="closing-copy cn-song">
+      无论你能否赴约，我们都感恩你在我们的故事里。
+    </p>
+    <p class="closing-signature cn-mashan">
+      杨倚天 &amp; 希尔娜依 · 二〇二六年六月十四日
+    </p>
+  </div>
+</section>
+
+<script>
+  import { prewarmMaShanZheng } from "@/lib/fonts/prewarm-mashan";
+
+  (() => {
+    const root = document.querySelector("[data-closing-root]");
+    if (!(root instanceof HTMLElement)) return;
+
+    const reveal = () => {
+      prewarmMaShanZheng().catch(() => undefined);
+      root.classList.add("is-visible");
+    };
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      reveal();
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          reveal();
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "42% 0px 0px 0px", threshold: 0.1 },
+    );
+
+    observer.observe(root);
+  })();
+</script>
+
+<style>
+  .closing-section {
+    position: relative;
+    display: grid;
+    min-height: 100svh;
+    place-items: center;
+    isolation: isolate;
+    overflow: hidden;
+    padding-block: clamp(5rem, 11vh, 8rem) clamp(5.5rem, 12vh, 9rem);
+    padding-inline: max(var(--page-padding, 1rem), 1rem);
+    background:
+      radial-gradient(
+        circle at 50% 0%,
+        rgba(230, 199, 107, 0.16),
+        transparent 36%
+      ),
+      linear-gradient(
+        180deg,
+        var(--c-paper) 0%,
+        color-mix(in oklch, var(--c-ivory) 82%, white) 100%
+      );
+    color: var(--c-olive-ink);
+    text-align: center;
+  }
+
+  .closing-inner {
+    position: relative;
+    width: min(100%, 780px);
+    margin: 0 auto;
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 720ms var(--ease-paper),
+      transform 760ms var(--ease-paper);
+  }
+
+  .closing-inner.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .closing-copy {
+    margin: 0;
+    color: var(--c-olive-ink);
+    font-size: var(--text-title-sm);
+    line-height: var(--leading-cn);
+  }
+
+  .closing-signature {
+    margin: clamp(1.5rem, 4vh, 2.2rem) 0 0;
+    color: var(--c-sage-deep);
+    font-size: 2.4rem;
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  .closing-mimosa {
+    position: absolute;
+    width: clamp(120px, 18vw, 210px);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .closing-mimosa-left {
+    top: -3rem;
+    left: -5rem;
+    transform: rotate(-18deg);
+  }
+
+  .closing-mimosa-right {
+    right: -5rem;
+    bottom: -3.4rem;
+    transform: rotate(162deg);
+  }
+
+  @media (max-width: 539px) {
+    .closing-section {
+      padding-top: 4.5rem;
+    }
+
+    .closing-copy {
+      font-size: var(--text-body-lg);
+    }
+
+    .closing-signature {
+      font-size: 1.8rem;
+    }
+
+    .closing-mimosa {
+      width: 120px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .closing-inner {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+</style>

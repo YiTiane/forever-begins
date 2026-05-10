@@ -2,10 +2,50 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.06
+version: 2.08
 last_updated: 2026-05-10
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · 当前代码保护点：主仓本轮提交（基于 `01ca2b2` 修 Family balanced layout 720+ 断点与文档漂移）· GitHub Pages CI 待本轮提交后验证 · 路线图保护点：主仓根目录 `PLAN.md` 所在提交 · dimension gate 覆盖 34 张 story+finale+cats visible photos；发布级 34/34 clean pass 需在稳定网络复验 · Lightbox 已撤回并转入 redesign-deferred**
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 本地实现完成并完成本轮 audit P2/P3 收口，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.08 — Phase 6 audit fixes（地图深链 / 日历 / below-fold map / CDN gate 文案 / Three.Clock 待办）：
+        ① **修 P2（Google Maps 链接缺 WGS84 坐标）**：
+           - Google Maps 链接改为 `query=lat,lng`，不再只用英文地址文本
+           - Apple 继续使用 `q=venue&ll=lat,lng`，国内地图仍以 POI 搜索 / 坐标兜底
+        ② **修 P2（ICS 使用 TZID 但缺 VTIMEZONE）**：
+           - `public/calendar/wedding-2026-06-14.ics` 改为 UTC `DTSTART/DTEND`
+           - 本地时间仍对应 `2026-06-14 19:00–23:00 Asia/Shanghai`
+        ③ **修 P2（Details map below-fold eager load）**：
+           - 地图 `<img>` 改回 `loading="lazy"`
+           - 仅当 `#the-day` 深链或地图接近视口时，脚本升级为 eager/high 并启动失败计时
+           - 避免首屏 Cover 阶段抢 LCP 带宽，也避免未入视口前 4.5s timeout 误显 fallback
+        ④ **修 P2（build-time-check 成功文案误报）**：
+           - 单边失败与双边网络不可判定 warning 分开统计
+           - 若双边只是 timeout/network 不确定，不再输出"至少一侧 CDN 可用"，只输出"未发现确定性 403/404 配置错误"
+        ⑤ **纳入 P3 待办（THREE.Clock 上游 warning）**：
+           - 本地业务代码已不读 `state.clock`；浏览器仍可能由 three / R3F / drei 内部 `new THREE.Clock()` 打出 deprecation warning
+           - 明确加入 Phase 7 性能/依赖待办：评估升级 R3F/drei/three 或上游 Timer 迁移；继续禁止全局 `console.warn` monkey-patch
+  v2.07 — Phase 6 Details / Closing / global nav implementation（第四章 · 这一天 + 收束落款）：
+        ① **新增 Details 章节**：
+           - 首页 Family 之后追加 `#the-day`，渲染 `IV. THE DAY` / `第四章 · 这一天`
+           - 三栏信息：日期 `二〇二六年六月十四日`、时间 `晚七点 / 19:00–23:00`、地点 `二道桥大剧院`
+           - 保留用户指定主句 `花径不曾缘客扫，蓬门今始为君开。`
+        ② **新增 DetailsMap / 地图导航**：
+           - `DetailsMap.astro` 使用 misc CDN 的 `map/venue-1280/2048/2560.png`
+           - primary/backup URL 同时写入 `srcset` / `data-srcset-alt`，资源失败时显示文字 fallback + 同款地图链接
+           - 国内地图以 POI 搜索优先；Apple / Google 使用 WGS84 与场地名，所有链接不含 `null`
+        ③ **新增 calendar + contact**：
+           - `public/calendar/wedding-2026-06-14.ics`：2026-06-14 19:00–23:00 Asia/Shanghai
+           - `SoftRSVP.astro` 提供电话、复制手机号、微信二维码 dialog；不展示微信号
+           - QR 资源 `public/wechat-qr/WeChat.JPG` 走 BASE_URL，GitHub Pages 子路径下可用
+        ④ **新增 Closing 收束区**：
+           - `#closing` 不渲染“尾声 · 此后山高路长”标题，只保留用户确认正文与落款
+           - 落款进入视口前预热 Ma Shan Zheng；closing section 设 100svh，hash deep link 可 composed-frame 落位
+        ⑤ **新增全局导航**：
+           - Cover / Invitation / Story / Family / The Day / Closing 补稳定锚点
+           - 桌面右上 nav 首屏后出现；移动端右下浮点菜单；左侧 1px reading progress rail
+        ⑥ **验收摘要**：
+           - `tsc --noEmit` 0 errors；prettier clean；`pnpm build` 0 errors / 0 Vite warnings
+           - 本轮 `prebuild` 在稳定网络曾 34/34 photo dimension clean pass；后续 CDN 抖动构建可出现 non-blocking warning
+           - 本地 Chrome smoke：wide/mobile `#the-day` + `#closing` deep link 可达；QR dialog open/ESC close；禁用文案 0 命中；地图 CDN stalled 时 fallback 可读
   v2.06 — Phase 5 Family balanced layout audit fix（720+ 统一相册 spread + 文档保护点同步）：
         ① **修 P2（720–1099px 仍保留旧的三猫错位布局）**：
            - FamilySection 的新版 spread 从 `min-width: 1100px` 下放到 `min-width: 720px`
@@ -5575,6 +5615,11 @@ done
   - 首屏 CSS gz < 12KB
   - 字体首屏 < 200KB
 
+- [ ] 🟡 **7.1.3a** 评估并消除上游 `THREE.Clock` deprecation warning（30–60 min）
+  - 现状：业务代码已不调用 `state.clock.getElapsedTime()`，但 three / R3F / drei 仍可能在 Canvas hydrate 时内部创建 `THREE.Clock`
+  - 处理顺序：先评估 `three` / `@react-three/fiber` / `@react-three/drei` 兼容升级，再看上游 Timer 迁移进度
+  - 禁止方案：不做全局 `console.warn` monkey-patch，避免吞掉真实运行时 warning
+
 #### 11.1.2 跨浏览器 / 设备 / 网络
 
 - [ ] 🔵 **7.1.4** 跨设备矩阵测试（90 min）
@@ -6034,4 +6079,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.06 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · 当前代码保护点为主仓本轮提交（基于 `01ca2b2` 修 Family balanced layout 720+ 断点与文档漂移）· Phase 5 Family Astro album 已提交部署并完成文图交替满宽 + 720px 以上 balanced spread 优化 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，发布级 34/34 clean pass 需稳定网络复验**
+> **— Forever Begins · 实施计划 v2.08 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 本地实现完成并完成 audit P2/P3 收口，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
