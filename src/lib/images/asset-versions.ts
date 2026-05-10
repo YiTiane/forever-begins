@@ -15,6 +15,9 @@
  * （详见 DESIGN §7.5 / PLAN §0.1）。
  *
  * **当前进度（v1.42 push）**：
+ *   - misc @ v1.2.0：Phase 6 venue map 按真实坐标
+ *     (43.781356422003576, 87.61508943244256) 重新生成；fb-cdn-misc
+ *     commit `6ca5069` 仅更新 `map/venue-{1280,2048,2560}.png`。
  *   - misc @ v1.1.0：invitation 派生品按真实输出宽度命名
  *     （part_{1,2}-{320,640,800}.{avif,webp,jpg}），取代了 v1.0.0 的
  *     -1024/-1600/-2400/-3840（被 sharp `withoutEnlargement: true` clamp 到 800w 但
@@ -37,8 +40,8 @@ export const ASSET_VERSIONS = {
   "wooden-door": "v1.0.0",
   pearl: "v1.0.0",
   retro: "v1.0.0",
-  // v1.1.0：invitation 派生品按真实输出宽度命名（v1.42 落地 · 详见文件头进度段）
-  misc: "v1.1.0",
+  // v1.2.0：venue map 校准到二道桥民俗风情一条街真实坐标（详见文件头进度段）
+  misc: "v1.2.0",
 } as const;
 
 export type CdnTarget = keyof typeof ASSET_VERSIONS;

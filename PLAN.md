@@ -2,10 +2,19 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.08
+version: 2.09
 last_updated: 2026-05-10
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 本地实现完成并完成本轮 audit P2/P3 收口，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`，待本轮提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.09 — Phase 6 venue coordinate calibration（地图位置校准）：
+        ① **修用户反馈（Details map pin 位置偏移）**：
+           - 以用户确认坐标 `43.781356422003576, 87.61508943244256` 为 WGS84 真值
+           - `wedding.json` 写入 WGS84 / GCJ-02 / BD-09 三坐标：高德 / 百度 / Apple / Google 均可直接落点
+           - 可搜索地址更新为 `中国新疆维吾尔自治区乌鲁木齐市天山区二道桥民俗风情一条街，邮政编码 830094`
+        ② **修静态地图资产**：
+           - 归档仓 `generate-venue-map.ts` 改用新坐标重新生成 `venue-1280/2048/2560.png`
+           - 通过 GitHub Git Data API 发布 `fb-cdn-misc@v1.2.0`（commit `6ca5069`），仅更新 3 张 venue map PNG
+           - 主仓 `asset-versions.ts` `misc` 从 `v1.1.0` 切到 `v1.2.0`
   v2.08 — Phase 6 audit fixes（地图深链 / 日历 / below-fold map / CDN gate 文案 / Three.Clock 待办）：
         ① **修 P2（Google Maps 链接缺 WGS84 坐标）**：
            - Google Maps 链接改为 `query=lat,lng`，不再只用英文地址文本
@@ -4806,80 +4815,98 @@ done
   ```astro
   ---
   // src/components/CdnEarlyProbe.astro · 由 Base.astro 在 <head> 末尾内联
-  import { cdnUrl, ASSET_VERSIONS } from '@/lib/images/asset-versions';
+  import { cdnUrl, ASSET_VERSIONS } from "@/lib/images/asset-versions";
   // ⭐ v1.5 用 define:vars 把构建时常量带进 inline script，不再硬编码 @v1.0.0
-  const probeUrl = cdnUrl('primary', 'misc', 'probe.png');
+  const probeUrl = cdnUrl("primary", "misc", "probe.png");
   ---
+
   <script is:inline define:vars={{ probeUrl }}>
-  (function() {
-    var fallbackApplied = false;
+    (function () {
+      var fallbackApplied = false;
 
-    /**
-     * 把 picture 内所有 <source> 与下方 <img> 一起切到备 CDN。
-     * 可重入（多次调用幂等）：所有 [data-srcset-alt] / [data-src-alt] 一次性消费。
-     */
-    function applyCdnFallback(scope) {
-      var root = scope || document;
-      // <source srcset> 必须先于 <img> 重写——picture 选择器优先级以 source 为先
-      root.querySelectorAll('source[data-srcset-alt]').forEach(function(s) {
-        s.setAttribute('srcset', s.getAttribute('data-srcset-alt'));
-        s.removeAttribute('data-srcset-alt');  // 标记已消费，避免重复
-      });
-      root.querySelectorAll('img[data-src-alt]').forEach(function(img) {
-        img.setAttribute('src', img.getAttribute('data-src-alt'));
-        img.removeAttribute('data-src-alt');
-      });
-    }
-
-    /**
-     * 全局触发：probe 失败时整页一次性切换。
-     * 注意 DOM 时序——probe 可能比 <body> 还早完成，要等 DOMContentLoaded。
-     */
-    function triggerGlobalFallback() {
-      if (fallbackApplied) return;
-      fallbackApplied = true;
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() { applyCdnFallback(); });
-      } else {
-        applyCdnFallback();
-      }
-    }
-
-    /**
-     * 单图兜底：任何 <img> 加载失败时，**只切换它所在的 picture**，
-     * 不影响其他还能正常加载的图片。capture 阶段才能捕获到 <img> 的 error 事件。
-     */
-    document.addEventListener('error', function(e) {
-      var img = e.target;
-      if (!img || img.tagName !== 'IMG' || !img.hasAttribute('data-src-alt')) return;
-      var pic = img.closest('picture');
-      if (pic) applyCdnFallback(pic);
-      else applyCdnFallback(img.parentNode || document);
-    }, /* useCapture */ true);
-
-    /**
-     * 主 CDN 健康探测。用 AbortController + setTimeout（不用 AbortSignal.timeout，
-     * 后者在 iOS 15- / 老 WebView 不支持，会在 fetch 前抛 TypeError）。
-     */
-    // probeUrl 由 Astro define:vars 注入，已包含 ASSET_VERSIONS['misc'] 的当前 tag
-    try {
-      var ctrl = new AbortController();
-      var timer = setTimeout(function() { ctrl.abort(); }, 2000);
-      fetch(probeUrl, { method: 'HEAD', cache: 'no-store', signal: ctrl.signal })
-        .then(function(r) {
-          clearTimeout(timer);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          // 主 CDN 健康——但仍有可能某张图就是 404，靠 onerror 兜底
-        })
-        .catch(function() {
-          clearTimeout(timer);
-          triggerGlobalFallback();
+      /**
+       * 把 picture 内所有 <source> 与下方 <img> 一起切到备 CDN。
+       * 可重入（多次调用幂等）：所有 [data-srcset-alt] / [data-src-alt] 一次性消费。
+       */
+      function applyCdnFallback(scope) {
+        var root = scope || document;
+        // <source srcset> 必须先于 <img> 重写——picture 选择器优先级以 source 为先
+        root.querySelectorAll("source[data-srcset-alt]").forEach(function (s) {
+          s.setAttribute("srcset", s.getAttribute("data-srcset-alt"));
+          s.removeAttribute("data-srcset-alt"); // 标记已消费，避免重复
         });
-    } catch (e) {
-      // AbortController 都不支持的极端环境（IE 等）：直接走全局 fallback
-      triggerGlobalFallback();
-    }
-  })();
+        root.querySelectorAll("img[data-src-alt]").forEach(function (img) {
+          img.setAttribute("src", img.getAttribute("data-src-alt"));
+          img.removeAttribute("data-src-alt");
+        });
+      }
+
+      /**
+       * 全局触发：probe 失败时整页一次性切换。
+       * 注意 DOM 时序——probe 可能比 <body> 还早完成，要等 DOMContentLoaded。
+       */
+      function triggerGlobalFallback() {
+        if (fallbackApplied) return;
+        fallbackApplied = true;
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", function () {
+            applyCdnFallback();
+          });
+        } else {
+          applyCdnFallback();
+        }
+      }
+
+      /**
+       * 单图兜底：任何 <img> 加载失败时，**只切换它所在的 picture**，
+       * 不影响其他还能正常加载的图片。capture 阶段才能捕获到 <img> 的 error 事件。
+       */
+      document.addEventListener(
+        "error",
+        function (e) {
+          var img = e.target;
+          if (
+            !img ||
+            img.tagName !== "IMG" ||
+            !img.hasAttribute("data-src-alt")
+          )
+            return;
+          var pic = img.closest("picture");
+          if (pic) applyCdnFallback(pic);
+          else applyCdnFallback(img.parentNode || document);
+        },
+        /* useCapture */ true,
+      );
+
+      /**
+       * 主 CDN 健康探测。用 AbortController + setTimeout（不用 AbortSignal.timeout，
+       * 后者在 iOS 15- / 老 WebView 不支持，会在 fetch 前抛 TypeError）。
+       */
+      // probeUrl 由 Astro define:vars 注入，已包含 ASSET_VERSIONS['misc'] 的当前 tag
+      try {
+        var ctrl = new AbortController();
+        var timer = setTimeout(function () {
+          ctrl.abort();
+        }, 2000);
+        fetch(probeUrl, {
+          method: "HEAD",
+          cache: "no-store",
+          signal: ctrl.signal,
+        })
+          .then(function (r) {
+            clearTimeout(timer);
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            // 主 CDN 健康——但仍有可能某张图就是 404，靠 onerror 兜底
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            triggerGlobalFallback();
+          });
+      } catch (e) {
+        // AbortController 都不支持的极端环境（IE 等）：直接走全局 fallback
+        triggerGlobalFallback();
+      }
+    })();
   </script>
   ```
 
@@ -4904,7 +4931,7 @@ done
   ```astro
   ---
   // src/components/CdnImage.astro
-  import { cdnUrl, type CdnTarget } from '@/lib/images/asset-versions';   // ⭐ v1.5 集中版本
+  import { cdnUrl, type CdnTarget } from "@/lib/images/asset-versions"; // ⭐ v1.5 集中版本
 
   interface Props {
     /** CDN 资产仓名（与 DESIGN §3.2 双双表里的 series.cdnTarget 字段一致）。
@@ -4921,36 +4948,60 @@ done
 
     sizes: string;
     alt: string;
-    priority?: 'high' | 'low' | 'auto';
-    widths?: number[];     // 默认 [320,640,1024,1600,2400,3840]
+    priority?: "high" | "low" | "auto";
+    widths?: number[]; // 默认 [320,640,1024,1600,2400,3840]
   }
-  const { cdnTarget, stem, sizes, alt, priority = 'auto',
-          widths = [320,640,1024,1600,2400,3840] } = Astro.props;
+  const {
+    cdnTarget,
+    stem,
+    sizes,
+    alt,
+    priority = "auto",
+    widths = [320, 640, 1024, 1600, 2400, 3840],
+  } = Astro.props;
 
   // ⭐ 构建时常量基址 —— 经由 cdnUrl helper，自动读取 ASSET_VERSIONS[cdnTarget]
   // 永远禁止硬编码 @v1.0.0；要回滚就改 src/lib/images/asset-versions.ts 一行
-  const JPG_WIDTHS = widths.filter(w => w <= 1600);   // JPG fallback 仅到 1600w（DESIGN §7.4）
-  const buildSrcset = (host: 'primary' | 'backup', fmt: 'avif'|'webp'|'jpg') => {
-    const ws = fmt === 'jpg' ? JPG_WIDTHS : widths;
-    return ws.map(w => `${cdnUrl(host, cdnTarget, `${fmt}/${stem}-${w}.${fmt}`)} ${w}w`).join(', ');
+  const JPG_WIDTHS = widths.filter((w) => w <= 1600); // JPG fallback 仅到 1600w（DESIGN §7.4）
+  const buildSrcset = (
+    host: "primary" | "backup",
+    fmt: "avif" | "webp" | "jpg",
+  ) => {
+    const ws = fmt === "jpg" ? JPG_WIDTHS : widths;
+    return ws
+      .map(
+        (w) => `${cdnUrl(host, cdnTarget, `${fmt}/${stem}-${w}.${fmt}`)} ${w}w`,
+      )
+      .join(", ");
   };
-  const primaryJpg = cdnUrl('primary', cdnTarget, `jpg/${stem}-1600.jpg`);
-  const backupJpg  = cdnUrl('backup',  cdnTarget, `jpg/${stem}-1600.jpg`);
+  const primaryJpg = cdnUrl("primary", cdnTarget, `jpg/${stem}-1600.jpg`);
+  const backupJpg = cdnUrl("backup", cdnTarget, `jpg/${stem}-1600.jpg`);
   ---
+
   <picture>
-    <source type="image/avif"
-            srcset={buildSrcset('primary', 'avif')}
-            data-srcset-alt={buildSrcset('backup', 'avif')}
-            sizes={sizes} />
-    <source type="image/webp"
-            srcset={buildSrcset('primary', 'webp')}
-            data-srcset-alt={buildSrcset('backup', 'webp')}
-            sizes={sizes} />
-    <img src={primaryJpg}
-         data-src-alt={backupJpg}
-         alt={alt} loading={priority === 'high' ? 'eager' : 'lazy'} decoding="async"
-         fetchpriority={priority} />
-    {/* 注意：不用写 onerror 内联属性，CdnEarlyProbe.astro 的全局 capture 监听器 */}
+    <source
+      type="image/avif"
+      srcset={buildSrcset("primary", "avif")}
+      data-srcset-alt={buildSrcset("backup", "avif")}
+      sizes={sizes}
+    />
+    <source
+      type="image/webp"
+      srcset={buildSrcset("primary", "webp")}
+      data-srcset-alt={buildSrcset("backup", "webp")}
+      sizes={sizes}
+    />
+    <img
+      src={primaryJpg}
+      data-src-alt={backupJpg}
+      alt={alt}
+      loading={priority === "high" ? "eager" : "lazy"}
+      decoding="async"
+      fetchpriority={priority}
+    />
+    {
+      /* 注意：不用写 onerror 内联属性，CdnEarlyProbe.astro 的全局 capture 监听器 */
+    }
     {/* 已在 document 层捕获所有 img.error，按 picture 范围切换 srcset */}
   </picture>
   ```
@@ -5099,10 +5150,11 @@ done
   - 审计可校验：`curl https://yitiane.github.io/forever-begins/` 看到的 HTML 正是 v0.2 占位 Cover 的渲染输出
 
   ```astro
+  ---
+  import Base from "@/layouts/Base.astro";
+  ---
+
   <!-- 原 spec 提供的示例（v1.0 时代冒烟）—— 不实施，仅作为 PLAN 历史归档 -->
-  ---
-  import Base from '@/layouts/Base.astro';
-  ---
   <Base title="Forever Begins">
     <h1>Forever Begins</h1>
   </Base>
@@ -6079,4 +6131,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.08 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 本地实现完成并完成 audit P2/P3 收口，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
+> **— Forever Begins · 实施计划 v2.09 · 2026-05-10 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`，待本轮提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
