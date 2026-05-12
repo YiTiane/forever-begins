@@ -7,8 +7,8 @@ import icon from "astro-icon";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://yitiane.github.io",
-  base: "/forever-begins",
+  site: "https://forever-begins-urumqi.vercel.app",
+  base: "/",
   output: "static",
   integrations: [
     react(),
