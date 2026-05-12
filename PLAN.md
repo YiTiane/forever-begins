@@ -2,10 +2,44 @@
 project: Forever Begins · 永恒之始
 companion_to: DESIGN.md (v2.21)
 document_type: Implementation Plan
-version: 2.11
-last_updated: 2026-05-11
-status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮按用户反馈完成邀请页诗句移除、倒计时突出、Family/The Day 标题收口、猫咪文案补齐，并将 Family 可见标题与导航从「我们的家」改为「彩蛋」，待提交与 GitHub Pages CI 验证 · dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
+version: 2.13
+last_updated: 2026-05-12
+status: **Phase 1 ✓ done · Phase 2 §0 Cover ✓ done · §1 Invitation ✓ done · §2 / Phase 3 Our Story ✓ hardened · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；v2.13 已收口 v2.12 low-end audit：Finale lite twinkle 改低频 timer、不再 60fps rAF 空跑；Globe / Finale first meaningful frame watchdog 改读真实 scene-ready event；Story orchestrator 文档同步；dimension gate 覆盖 34 张 story+finale+cats visible photos；稳定网络可 clean pass，CDN 抖动按 warning 记录但不再误报"至少一侧可用" · Lightbox 已撤回并转入 redesign-deferred**
 changelog: |
+  v2.13 — v2.12 low-end audit fixes（twinkle rAF / meaningful first frame / doc sync）：
+        ① **修 P2（Finale lite 仍保留 60fps rAF callback）**：
+           - `TwinkleInvalidator` 从 `requestAnimationFrame` loop 改为低频 timer
+           - full 100ms / lite 400ms invalidate；离屏、后台、static 均停止
+           - 保留持久星点 twinkle 语义，但 lite 不再每帧执行 JS callback
+        ② **修 P2（first meaningful frame watchdog 只测 import 时间）**：
+           - Globe Canvas 内新增 `globe:first-frame-ready`
+           - Finale Canvas 内新增 `finale:scene-first-frame-ready`
+           - loader 从 hydrate 起计时；1400ms 内未收到真实 scene-ready 才降 lite
+           - 若组件已挂载，loader 通过 `motion-tier:downgrade` 事件让组件即时切 lite，不重建章节 DOM
+        ③ **修 P3（StoryPoemScroller header 落后 v2.12 行为）**：
+           - 顶部注释更新到 v1.2/v2.13，明确 Globe / Finale 由 motion loader 分层
+           - static 不挂 R3F Canvas，lite 降预算，reduced-motion 直接 static
+  v2.12 — Low-End Motion Tier Hardening（Globe / Finale full-lite-static 分层）：
+        ① **新增共享 motion tier 检测**：
+           - `src/lib/motion/motionTier.ts`：首帧前同步判定 `full / lite / static`
+           - `prefers-reduced-motion` / WebGL unavailable → static；Save-Data / 低内存 / 低并发 / 小视口 → lite
+           - runtime sentinel：首帧过慢或帧间隔过高时记入 sessionStorage 降级；WebGL context lost 时降 static
+        ② **Globe 分层**：
+           - full 保留 R3F globe / route network / endpoint pulse / mobile auto-rotate
+           - lite 改 `frameloop="demand"`，关 auto-rotate / endpoint pulse / route draw animation，DPR 上限 1.25，texture 512×256，arc/tube segments 下调
+           - static 不挂 R3F Canvas：HTML/CSS 静态地球、主线乌鲁木齐↔墨尔本加粗高亮、次线保留、文字卡完整可读
+        ③ **Finale 分层**：
+           - full 保留星空、照片入场、点阵破碎、持久星尘、Pearl_04 hold
+           - lite 使用 1024 texture、active range 1、700 background stars、120 residue stars/photo、低采样 PhotoDustBurst、低频 twinkle invalidate
+           - static 不挂 StarCarouselFinale island：正式午夜蓝静态星空 + Pearl_04 主海报 + finale 文案；reduced-motion 直接终态
+        ④ **loader / chunk 边界**：
+           - `globeMotionLoader.ts` / `finaleMotionLoader.ts` 在 React / Three 下载前先判 tier
+           - Vite preload helper 拆到独立 1.2KB chunk，避免 static 分支误拉 `r3f-drei` / `three`
+           - Canvas 显式 `width/height:100%; display:block`，Globe/Finale CSS 继续兜底 root/canvas rect
+        ⑤ **本地验收**：
+           - `tsc --noEmit` ✓；`pnpm build` ✓（34/34 dimension gate；7 项 Statically backup timeout 为 non-blocking warning）
+           - local smoke：wide 1375×997 → full；mobile 390×844 → lite；reduced-motion → static
+           - static Globe / Finale：`canvasCount=0`，只请求 Base/section loader/motionTier/preload-helper，不请求 React / Three / r3f-drei
   v2.11 — Phase 5 visible label rename（Family → 彩蛋）：
         ① **修用户反馈（章节命名）**：
            - Family 可见标题从「我们的家」改为「彩蛋」
@@ -5487,7 +5521,15 @@ done
   - 验收项：canvas rect == root rect；hash landing 是 composed frame；finale 初始纯星空；首次滚动才出现第一张照片；Pearl_04 final hold 不重复循环；console 无 runtime error
   - 走马灯图片顺序 prefetch：每次最多当前 + 邻近必要图片，禁止一次性 15 张并发请求
 
-- [ ] 🔵 **4.1.5** 真机巡检（45 min · 桌面 + iPhone + iPad + 微信内置浏览器）
+- [x] 🟢 **4.1.5** Low-end motion tier hardening（v2.12 完成）
+  - 共享 motion tier：`full / lite / static`
+  - Globe / Finale 首帧前同步判定 tier，避免低端机先跑 full 再补救
+  - lite 保留核心叙事语义但下调 DPR / texture / 粒子 / arc / frame loop 预算
+  - static 是正式设计状态：Globe 静态地球 + 路线网络；Finale 静态星空 + Pearl_04 海报 + 文案
+  - static 不挂 R3F Canvas，不下载 React / Three / r3f-drei；只保留小 loader + motionTier + preload-helper
+  - 本地 smoke 覆盖 wide 1375×997、mobile 390×844、prefers-reduced-motion；canvas rect 全部等于 root rect
+
+- [ ] 🔵 **4.1.6** 真机巡检（45 min · 桌面 + iPhone + iPad + 微信内置浏览器）
 
 ### 8.2 Phase 4 验收清单
 
@@ -6149,4 +6191,4 @@ pnpm tsx scripts/extract-text.ts && bash scripts/subset-fonts.sh
 >
 > _愿这条路上没有大风，只有小雨；没有遗漏的步骤，只有按部就班的温柔。_
 >
-> **— Forever Begins · 实施计划 v2.11 · 2026-05-11 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；本轮完成邀请 / Family / The Day 文案与标题收口，并将 Family 可见标题与导航改为「彩蛋」，待提交与 GitHub Pages CI 验证 · 路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**
+> **— Forever Begins · 实施计划 v2.13 · 2026-05-12 · Phase 1 ✓ done · Phase 2 §0/§1 ✓ done · Phase 3 / §2 Story + Globe + Finale hardened baseline ✓ done · Phase 4 online smoke matrix ✓ done · Phase 5 Family Astro album ✓ deployed（保护点 `f8a45a8`）· Phase 6 Details / Closing / global nav 已部署，venue map 已按二道桥民俗风情一条街真实坐标校准并发布 misc CDN `v1.2.0`；v2.13 收口 Globe / Finale low-end motion tier hardening：lite twinkle 不再 60fps rAF 空跑，first meaningful frame watchdog 绑定真实 scene-ready event，static 为正式静态设计且不挂载 R3F Canvas / 不下载 React、Three、r3f-drei；路线图已同步进主仓根目录 `PLAN.md`，以本文件所在提交作为版本化保护点 · dimension gate 覆盖 34 张，稳定网络可 clean pass；CDN 抖动按 warning 记录且不误报可用性**

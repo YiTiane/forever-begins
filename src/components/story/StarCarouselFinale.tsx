@@ -102,7 +102,8 @@
  *   - 边界 clamp 到 [0, 1]：lifecycle <= 0 表示该照片还没入场；lifecycle >= 1 表示
  *     已完全 dissolve（或 final 定格）
  *
- * 客户端边界：仅 client:visible 加载，不在 SSR 跑；FinaleBeat.astro 包装。
+ * 客户端边界：只由 finaleMotionLoader 在 full/lite 且进入视口时动态 import；
+ * static/reduced-motion 路径停在 FinaleBeat HTML/CSS poster，不加载 R3F / Three。
  */
 
 import * as React from "react";
@@ -115,6 +116,11 @@ import {
   finalePhotoUrl,
   type FinalePhoto,
 } from "@/lib/story/finalePhotos";
+import {
+  detectInitialMotionTier,
+  rememberMotionTier,
+  type MotionTier,
+} from "@/lib/motion/motionTier";
 
 /**
  * v1.99 hardening：自定义 Loader 给 finale 照片 dual-host timeout fallback。
@@ -134,49 +140,10 @@ const DUAL_URL_SEP = "||";
 const TEXTURE_FETCH_TIMEOUT_MS = 5000;
 const FAILED_TEXTURE_USER_DATA_KEY = "finaleTextureFailed";
 const FIRST_FRAME_READY_OPACITY = 0.08;
-type MotionTier = "full" | "lite" | "static";
 type FinaleWindow = Window & {
   __finaleInitialProgress?: number;
   __finaleFirstFrameReady?: boolean;
 };
-
-type NavigatorWithDeviceHints = Navigator & {
-  connection?: { saveData?: boolean };
-  deviceMemory?: number;
-};
-
-function hasWebGLSupport(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
-
-function detectMotionTier(): MotionTier {
-  if (typeof window === "undefined") return "full";
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    return "static";
-  }
-  if (!hasWebGLSupport()) return "static";
-
-  const nav = navigator as NavigatorWithDeviceHints;
-  if (nav.connection?.saveData === true) return "lite";
-  if (typeof nav.deviceMemory === "number" && nav.deviceMemory <= 4) {
-    return "lite";
-  }
-  if (
-    typeof navigator.hardwareConcurrency === "number" &&
-    navigator.hardwareConcurrency <= 4
-  ) {
-    return "lite";
-  }
-  const smallViewport = Math.min(window.innerWidth, window.innerHeight) <= 540;
-  const coarseSmall =
-    window.matchMedia("(pointer: coarse)").matches && smallViewport;
-  return coarseSmall || smallViewport ? "lite" : "full";
-}
 
 function finaleTextureWidth(motionTier: MotionTier): number {
   return motionTier === "lite" ? 1024 : 1600;
@@ -558,9 +525,9 @@ function PhotoDustBurst({
     const [w, h] = planeSize;
     const landscape = w >= h;
     const cols =
-      motionTier === "lite" ? (landscape ? 52 : 36) : landscape ? 92 : 62;
+      motionTier === "lite" ? (landscape ? 36 : 24) : landscape ? 92 : 62;
     const rows =
-      motionTier === "lite" ? (landscape ? 36 : 52) : landscape ? 62 : 92;
+      motionTier === "lite" ? (landscape ? 24 : 36) : landscape ? 62 : 92;
     const total = cols * rows;
     const positions = new Float32Array(total * 3);
     const uvs = new Float32Array(total * 2);
@@ -652,6 +619,8 @@ interface PhotoPlaneProps {
   photo: FinalePhoto;
   /** 在 FINALE_PHOTO_SEQUENCE 里的索引；用于决定方位入场方向 */
   index: number;
+  /** 该 photo 首次进入 active range 时确定的 texture width，避免 full→lite 运行时降级重拉已加载图。 */
+  textureWidth: number;
   /** 0..1 的 lifecycle；< 0 表示还没入场（mesh 隐藏） */
   lifecycle: number;
   isFinal: boolean;
@@ -661,6 +630,7 @@ interface PhotoPlaneProps {
 function PhotoPlane({
   photo,
   index,
+  textureWidth,
   lifecycle,
   isFinal,
   motionTier,
@@ -669,12 +639,12 @@ function PhotoPlane({
   // fallback；编码 "primary||backup" 给 useLoader 当 cache key
   const dualEncoded = useMemo(
     () =>
-      `${finalePhotoUrl(photo, "primary", finaleTextureWidth(motionTier))}${DUAL_URL_SEP}${finalePhotoUrl(
+      `${finalePhotoUrl(photo, "primary", textureWidth)}${DUAL_URL_SEP}${finalePhotoUrl(
         photo,
         "backup",
-        finaleTextureWidth(motionTier),
+        textureWidth,
       )}`,
-    [motionTier, photo],
+    [photo, textureWidth],
   );
   const texture = useLoader(
     DualHostTextureLoader,
@@ -910,7 +880,7 @@ function StarField({
   progress: number;
   motionTier: MotionTier;
 }): React.ReactElement {
-  const N_STARS = motionTier === "lite" ? 900 : 1900;
+  const N_STARS = motionTier === "lite" ? 700 : 1900;
   const { positions, sizes, brightness, revealAt } = useMemo(() => {
     let seed = 17;
     function rand(): number {
@@ -1055,7 +1025,7 @@ function PhotoResidueStars({
     }
 
     const photos = FINALE_PHOTO_SEQUENCE.slice(0, -1);
-    const perPhoto = motionTier === "lite" ? 180 : 520;
+    const perPhoto = motionTier === "lite" ? 120 : 520;
     const total = photos.length * perPhoto;
     const positions = new Float32Array(total * 3);
     const sizes = new Float32Array(total);
@@ -1181,10 +1151,23 @@ function ProgressInvalidator({
   return null;
 }
 
+function SceneFirstFrameReady(): React.ReactElement | null {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    invalidate();
+    const raf = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("finale:scene-first-frame-ready"));
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [invalidate]);
+  return null;
+}
+
 /**
  * Finale 星空需要"定居后仍在闪烁"。frameloop 仍保持 demand，不回到 60fps；
- * 这里只在 finale spacer 仍接近视口且页面可见时用低频 10fps invalidate，
- * 让 uTime 推动持久星点 twinkle。离屏 / 后台 / reduced-motion 下都不启用。
+ * 这里只在 finale spacer 仍接近视口且页面可见时用低频 timer invalidate，
+ * 让 uTime 推动持久星点 twinkle。离屏 / 后台 / reduced-motion 下都不启用；
+ * lite 为 400ms 一次，不再保留 60fps rAF callback loop。
  */
 function TwinkleInvalidator({
   enabled,
@@ -1198,28 +1181,25 @@ function TwinkleInvalidator({
     if (!enabled) return;
     const beat = document.querySelector<HTMLElement>(".finale-beat");
     let active = false;
-    let raf = 0;
-    let last = 0;
+    let timer = 0;
+    const intervalMs = motionTier === "lite" ? 400 : 100;
     const stop = () => {
-      if (raf !== 0) {
-        window.cancelAnimationFrame(raf);
-        raf = 0;
+      if (timer !== 0) {
+        window.clearTimeout(timer);
+        timer = 0;
       }
     };
-    const tick = (time: number) => {
+    const tick = () => {
       if (!active) {
-        raf = 0;
+        timer = 0;
         return;
       }
-      if (time - last >= (motionTier === "lite" ? 250 : 100)) {
-        last = time;
-        invalidate();
-      }
-      raf = window.requestAnimationFrame(tick);
+      invalidate();
+      timer = window.setTimeout(tick, intervalMs);
     };
     const start = () => {
-      if (raf === 0) {
-        raf = window.requestAnimationFrame(tick);
+      if (timer === 0) {
+        tick();
       }
     };
     const updateActive = () => {
@@ -1238,7 +1218,6 @@ function TwinkleInvalidator({
       if (nextActive === active) return;
       active = nextActive;
       if (active) {
-        last = 0;
         start();
       } else {
         stop();
@@ -1269,6 +1248,7 @@ function SceneInner({
   motionTier,
 }: SceneInnerProps): React.ReactElement {
   const N = FINALE_PHOTO_SEQUENCE.length;
+  const textureWidthByIndex = useRef<Map<number, number>>(new Map());
   // 全局 progress 0..1 → 每张照片 lifecycle = globalProgress × N - i
   // 让相邻两张有一段 overlap：i 张 lifecycle 进入 EXIT 阶段时，i+1 张同时进入 ENTER
 
@@ -1281,12 +1261,18 @@ function SceneInner({
   const currentI = Math.min(N - 1, Math.max(0, Math.floor(globalProgress * N)));
   const activeIndices: number[] = [];
   for (let i = currentI - ACTIVE_RANGE; i <= currentI + ACTIVE_RANGE; i += 1) {
-    if (i >= 0 && i < N) activeIndices.push(i);
+    if (i >= 0 && i < N) {
+      activeIndices.push(i);
+      if (!textureWidthByIndex.current.has(i)) {
+        textureWidthByIndex.current.set(i, finaleTextureWidth(motionTier));
+      }
+    }
   }
 
   return (
     <>
       <ProgressInvalidator progress={globalProgress} />
+      <SceneFirstFrameReady />
       <TwinkleInvalidator
         enabled={motionTier !== "static"}
         motionTier={motionTier}
@@ -1308,6 +1294,10 @@ function SceneInner({
             <PhotoPlane
               photo={photo}
               index={i}
+              textureWidth={
+                textureWidthByIndex.current.get(i) ??
+                finaleTextureWidth(motionTier)
+              }
               lifecycle={life}
               isFinal={isFinal}
               motionTier={motionTier}
@@ -1320,23 +1310,67 @@ function SceneInner({
 }
 
 /* ─────────────────────── Public Canvas wrapper ─────────────────────── */
-export function StarCarouselFinale(): React.ReactElement {
+export interface StarCarouselFinaleProps {
+  initialMotionTier?: MotionTier;
+  initialMotionReason?: string;
+}
+
+export function StarCarouselFinale({
+  initialMotionTier,
+  initialMotionReason,
+}: StarCarouselFinaleProps): React.ReactElement | null {
   // Motion tier lazy initializer：reduced-motion / WebGL failure 直接 static；
   // low-memory / save-data / small coarse mobile 走 lite，保留设计语义但降预算。
-  const [motionTier, setMotionTier] = useState<MotionTier>("full");
+  const initialDecision =
+    initialMotionTier === undefined ? detectInitialMotionTier() : null;
+  const [motionTier, setMotionTier] = useState<MotionTier>(
+    initialMotionTier ?? initialDecision?.tier ?? "full",
+  );
+  const [motionReason, setMotionReason] = useState(
+    initialMotionReason ?? initialDecision?.reason ?? "default-full",
+  );
   const [hasMounted, setHasMounted] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setMotionTier(detectMotionTier());
+    if (initialMotionTier === undefined) {
+      const next = detectInitialMotionTier();
+      setMotionTier(next.tier);
+      setMotionReason(next.reason);
+    }
     setHasMounted(true);
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = () => setMotionTier(detectMotionTier());
+    const onChange = () => {
+      const changed = detectInitialMotionTier();
+      setMotionTier(changed.tier);
+      setMotionReason(changed.reason);
+      if (changed.tier !== "full")
+        rememberMotionTier(changed.tier, changed.reason);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, [initialMotionTier]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onDowngrade = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          component?: string;
+          tier?: MotionTier;
+          reason?: string;
+        }>
+      ).detail;
+      if (detail?.component !== "finale") return;
+      if (detail.tier !== "lite" && detail.tier !== "static") return;
+      setMotionTier(detail.tier);
+      setMotionReason(detail.reason ?? "external-downgrade");
+    };
+    window.addEventListener("motion-tier:downgrade", onDowngrade);
+    return () =>
+      window.removeEventListener("motion-tier:downgrade", onDowngrade);
   }, []);
 
   // 内置 progress：root 元素的 boundingClientRect.top 映射到 finale 全局进度
-  const containerRef = useRef<HTMLDivElement>(null);
   /**
    * v0.4（v1.92 audit P2-1 修）：lazy useState initializer **优先读
    * `data-initial-progress`** dataset attribute（StoryPoemScroller alignHash
@@ -1472,12 +1506,60 @@ export function StarCarouselFinale(): React.ReactElement {
     };
   }, [motionTier]);
 
+  useEffect(() => {
+    const host = containerRef.current?.closest<HTMLElement>(
+      ".finale-canvas-root",
+    );
+    if (!host) return;
+    host.dataset["motionTier"] = motionTier;
+    host.dataset["motionReason"] = motionReason;
+    host.dataset["progress"] =
+      motionTier === "static" ? "1.000" : progress.toFixed(3);
+    host.dataset["fallback"] = motionTier === "static" ? "static" : "";
+    host
+      .closest(".finale-canvas")
+      ?.classList.toggle("is-static-fallback", motionTier === "static");
+  }, [motionReason, motionTier, progress]);
+
+  useEffect(() => {
+    if (motionTier !== "full") return;
+    let raf = 0;
+    let last = performance.now();
+    let total = 0;
+    let count = 0;
+    const sample = (time: number) => {
+      total += time - last;
+      last = time;
+      count += 1;
+      if (count >= 30) {
+        const avg = total / count;
+        if (avg > 42) {
+          const reason = `runtime-frame-avg-${avg.toFixed(1)}ms`;
+          setMotionTier("lite");
+          setMotionReason(reason);
+          rememberMotionTier("lite", reason);
+          console.warn("[StarCarouselFinale] downgraded motion tier", {
+            previous: "full",
+            next: "lite",
+            reason,
+          });
+        }
+        return;
+      }
+      raf = window.requestAnimationFrame(sample);
+    };
+    raf = window.requestAnimationFrame(sample);
+    return () => {
+      if (raf !== 0) window.cancelAnimationFrame(raf);
+    };
+  }, [motionTier]);
+
   const displayProgress = staticProgressForTier(motionTier, progress);
   if (!hasMounted) {
     return (
       <div
         ref={containerRef}
-        className="finale-canvas-root"
+        className="finale-r3f-root"
         data-progress="0.000"
         data-current-index="0"
         data-motion-tier="pending"
@@ -1487,22 +1569,13 @@ export function StarCarouselFinale(): React.ReactElement {
   }
 
   if (motionTier === "static") {
-    return (
-      <div
-        ref={containerRef}
-        className="finale-canvas-root"
-        data-progress="1.000"
-        data-current-index={FINALE_PHOTO_SEQUENCE.length - 1}
-        data-motion-tier="static"
-        data-fallback="static"
-      />
-    );
+    return <div ref={containerRef} className="finale-r3f-root" />;
   }
 
   return (
     <div
       ref={containerRef}
-      className="finale-canvas-root"
+      className="finale-r3f-root"
       data-progress={displayProgress.toFixed(3)}
       data-current-index={Math.min(
         FINALE_PHOTO_SEQUENCE.length - 1,
@@ -1530,15 +1603,18 @@ export function StarCarouselFinale(): React.ReactElement {
             "webglcontextlost",
             (event) => {
               event.preventDefault();
+              const reason = "webgl-context-lost";
               console.warn(
                 "[StarCarouselFinale] WebGL context lost; falling back to static finale poster",
               );
+              setMotionReason(reason);
+              rememberMotionTier("static", reason);
               setMotionTier("static");
             },
             { once: true },
           );
         }}
-        dpr={[1, motionTier === "lite" ? 1.5 : 2]}
+        dpr={[1, motionTier === "lite" ? 1.25 : 2]}
       >
         <Suspense fallback={null}>
           <SceneInner

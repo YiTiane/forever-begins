@@ -41,20 +41,15 @@
  *   - 弧线：primary 乌 → 墨随 progress 0→1 绘制并呼吸；secondary 路线常显为细线
  *   - 数字：与弧线同步 CountUp（在 GlobeBeat.astro 外壳渲染）
  *   - 交互：桌面鼠标轻微拖拽（OrbitControls 阻尼 + 限位）；移动端自动慢速旋转
- *   - reduced motion：跳过自旋 / 弧线动画，渲染完整终态 + frameloop=demand
+ *   - motion tier：full 保留自旋 / 弧线 draw / endpoint pulse；lite 渲染完整
+ *     静态路线网络 + demand frameloop；static 由 GlobeBeat 的 HTML/CSS poster
+ *     承担，本组件不会被加载
  *
- * v0.3 新增（v1.73 修 v1.72 audit P2 reduced-motion 仍跑 WebGL 帧循环）：
- *   - **Canvas frameloop 跟 reducedMotion 走**："always"（普通）vs "demand"
- *     （reduced-motion）。demand 模式 rAF 不再常驻 → 静态终态期间 GPU/CPU
- *     工作量降到接近 0；只在 invalidate() 显式触发时重绘（OrbitControls
- *     change / ResponsiveCamera resize / mq.change 都会触发）
- *   - **Endpoint reduced-motion 不再每帧写同样静态值**：原 useFrame 每帧
- *     写 halo scale=1.4 / opacity=0.55；改 useEffect 只跑一次设定终态，
- *     useFrame body 第一行 if (reducedMotion) return —— 即便 frameloop 出 bug
- *     回到 always，也不会重复 work
- *   - **reducedMotion 用 lazy initializer 同步读 matchMedia**：useState 初值
- *     就是 mq.matches，确保首次 Canvas 渲染就用正确的 frameloop 值（旧实现
- *     useEffect 异步赋值导致挂载瞬间仍跑了一次 60fps rAF）
+ * v1.0/v2.12 新增（低端机 motion tier hardening）：
+ *   - motion tier 由轻量 GlobeBeat loader 首帧前判定；static 不 import 本组件
+ *   - lite：demand frameloop、无 auto-rotate / endpoint pulse / route draw animation、
+ *     低 DPR、512×256 map texture、较低 arc/tube segments
+ *   - full→lite 运行时降级：慢首帧 / 前 30 rAF 平均 >42ms 只降预算，不重建章节
  *
  * v0.2（v1.72 audit 视觉诉求修）：ResponsiveCamera 按 canvas aspect 求 z，
  *   保证 globe 在 1920/1366/768/360 各 viewport 都填到约束维度的 82%
@@ -65,8 +60,8 @@
  *   - Bloom + Vignette + ToneMapping postprocessing（DESIGN 提的 halo 视感）
  *   - 高密度 GPU 粒子星尘
  *
- * 客户端边界：本组件仅在 client:visible 加载（GlobeBeat.astro 包），不在 SSR
- * 跑；R3F / drei 使用 useThree / useFrame 等 hook 不能在 server 边界出现。
+ * 客户端边界：本组件只由 globeMotionLoader 在 full/lite 且进入视口时动态
+ * import；static/reduced-motion 路径停在 Astro HTML/CSS，不加载 R3F / drei。
  */
 
 import * as React from "react";
@@ -82,6 +77,11 @@ import {
   latLngToVec3,
 } from "@/lib/story/globe";
 import { NATURAL_EARTH_LAND_110M } from "@/lib/story/naturalEarthLand110m";
+import {
+  detectInitialMotionTier,
+  rememberMotionTier,
+  type MotionTier,
+} from "@/lib/motion/motionTier";
 
 /** 单位球半径（场景内部刻度） */
 const GLOBE_RADIUS = 1;
@@ -102,8 +102,7 @@ interface GlobeProps {
   /** 0..1：滚动 / 入场进度，驱动弧线绘制与 endpoint 脉冲强度。
    *  reduced-motion 模式下父组件应钉到 1。 */
   progress: number;
-  /** prefers-reduced-motion 是否生效（父组件实测后传） */
-  reducedMotion: boolean;
+  motionTier: MotionTier;
 }
 
 export interface NamedLatLng extends LatLng {
@@ -246,11 +245,11 @@ function drawMapTexture(
   ctx.restore();
 }
 
-function createGlobeTexture(): THREE.CanvasTexture | undefined {
+function createGlobeTexture(size: number): THREE.CanvasTexture | undefined {
   if (typeof document === "undefined") return undefined;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = size;
+  canvas.height = size / 2;
   const ctx = canvas.getContext("2d");
   if (!ctx) return undefined;
   drawMapTexture(ctx, canvas.width, canvas.height);
@@ -268,8 +267,11 @@ function createGlobeTexture(): THREE.CanvasTexture | undefined {
  * 澳大利亚大陆形状附近。Phase 3 push `globe-watercolor-2k.jpg` 后，这套
  * createGlobeTexture 一行换成 `useTexture(...)` 即可下线。
  */
-function Globe(): React.ReactElement {
-  const texture = useMemo(() => createGlobeTexture(), []);
+function Globe({ motionTier }: { motionTier: MotionTier }): React.ReactElement {
+  const texture = useMemo(
+    () => createGlobeTexture(motionTier === "lite" ? 512 : 1024),
+    [motionTier],
+  );
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -296,7 +298,13 @@ function Globe(): React.ReactElement {
 
   return (
     <mesh material={material}>
-      <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
+      <sphereGeometry
+        args={[
+          GLOBE_RADIUS,
+          motionTier === "lite" ? 40 : 64,
+          motionTier === "lite" ? 32 : 64,
+        ]}
+      />
     </mesh>
   );
 }
@@ -306,14 +314,14 @@ interface EndpointProps {
   position: Vec3;
   /** 0..1：弧 progress；用来同步 endpoint 脉冲强度（progress=0 时无脉冲） */
   progress: number;
-  reducedMotion: boolean;
+  motionTier: MotionTier;
   featured?: boolean;
 }
 
 function Endpoint({
   position,
   progress,
-  reducedMotion,
+  motionTier,
   featured = false,
 }: EndpointProps): React.ReactElement {
   const haloRef = useRef<THREE.Mesh>(null);
@@ -335,17 +343,12 @@ function Endpoint({
   const elapsedRef = useRef(0);
 
   /**
-   * v0.3（v1.72 audit P2 修）：reduced-motion 不再每帧写同样的静态值。
-   * 旧实现：useFrame 每帧检查 reducedMotion，若是则把 halo scale/opacity 写
-   * 到同样的常量；R3F 默认 frameloop=always 仍然在 60fps 调用，搭配 Canvas
-   * 的 GPU 重绘 → reduced-motion 用户每秒仍跑 ~60 次 rAF + WebGL 提交，
-   * 违反"不要做不必要的工作"。
-   * 新实现：reduced-motion → useEffect 只跑一次写静态终态；useFrame 在
-   * reducedMotion 分支提前 return，**完全不进每帧 work**。SceneInner 还会
-   * 把 Canvas frameloop 切到 "demand"，多重保险。
+   * v2.12：lite/static 不做每帧 endpoint pulse。lite 只在 mount 时把 featured
+   * endpoint 设成完整终态；static 不加载本组件，由 GlobeBeat HTML/CSS poster
+   * 承担。useFrame 仅在 full 分支工作。
    */
   useEffect(() => {
-    if (!reducedMotion || !featured) return;
+    if (motionTier === "full" || !featured) return;
     // 静态终态：halo 钉在最大 1.4 倍 + 0.55 不透明；dot 钉 0.85
     if (haloRef.current) {
       haloRef.current.scale.setScalar(1.4);
@@ -356,12 +359,12 @@ function Endpoint({
       const dotMat = dotRef.current.material as THREE.MeshBasicMaterial;
       dotMat.opacity = 0.85;
     }
-  }, [reducedMotion]);
+  }, [motionTier, featured]);
 
   useFrame((_state, dt) => {
     if (!featured) return;
     // reduced-motion：完全跳过每帧 work（静态终态由 useEffect 一次性写入）
-    if (reducedMotion) return;
+    if (motionTier !== "full") return;
     // v0.4：dt 以秒计；累加到本地 ref 不读 state.clock（避 THREE.Clock dep warn）
     elapsedRef.current += dt;
     // 1.4 Hz 心跳脉冲；progress 从 0→1 决定亮度峰值
@@ -429,7 +432,7 @@ interface ArcProps {
   /** 0..1：截断点（progress<1 时只画 from→from+progress·arcLength） */
   progress: number;
   kind: "primary" | "secondary";
-  reducedMotion: boolean;
+  motionTier: MotionTier;
 }
 
 function Arc({
@@ -437,18 +440,25 @@ function Arc({
   to,
   progress,
   kind,
-  reducedMotion,
+  motionTier,
 }: ArcProps): React.ReactElement {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const elapsedRef = useRef(0);
   const points = useMemo<Vec3[]>(
-    () => greatCircleArc(from, to, ARC_SEGMENTS, ARC_LIFT, GLOBE_RADIUS),
-    [from, to],
+    () =>
+      greatCircleArc(
+        from,
+        to,
+        motionTier === "lite" ? (kind === "primary" ? 48 : 24) : ARC_SEGMENTS,
+        ARC_LIFT,
+        GLOBE_RADIUS,
+      ),
+    [from, kind, motionTier, to],
   );
 
   // 主线按 progress 绘制；其它路线作为已走过的路径常显，避免多条线同时扫动造成噪声。
   const drawProgress =
-    kind === "primary" && !reducedMotion ? Math.max(0.04, progress) : 1;
+    kind === "primary" && motionTier === "full" ? Math.max(0.04, progress) : 1;
   const drawn = Math.max(2, Math.ceil(points.length * drawProgress));
   const sliced = points.slice(0, drawn);
 
@@ -457,7 +467,14 @@ function Arc({
       sliced.map((point) => new THREE.Vector3(point[0], point[1], point[2])),
     );
     const radius = kind === "primary" ? 0.01 : 0.0042;
-    const radialSegments = kind === "primary" ? 12 : 8;
+    const radialSegments =
+      motionTier === "lite"
+        ? kind === "primary"
+          ? 6
+          : 4
+        : kind === "primary"
+          ? 12
+          : 8;
     return new THREE.TubeGeometry(
       curve,
       Math.max(8, sliced.length - 1),
@@ -465,7 +482,7 @@ function Arc({
       radialSegments,
       false,
     );
-  }, [kind, sliced]);
+  }, [kind, motionTier, sliced]);
 
   // 释放旧 geometry 防内存泄漏
   useEffect(() => {
@@ -475,7 +492,7 @@ function Arc({
   }, [geometry]);
 
   useFrame((_state, dt) => {
-    if (kind !== "primary" || reducedMotion) return;
+    if (kind !== "primary" || motionTier !== "full") return;
     const mat = materialRef.current;
     if (!mat) return;
     elapsedRef.current += dt;
@@ -520,6 +537,18 @@ function AutoRotate({
     }
   });
   return <group ref={groupRef}>{children}</group>;
+}
+
+function SceneFirstFrameReady(): React.ReactElement | null {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    invalidate();
+    const raf = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("globe:first-frame-ready"));
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [invalidate]);
+  return null;
 }
 
 /* ─────────────────────── Responsive camera ─────────────────────── */
@@ -582,7 +611,7 @@ function SceneInner({
   to,
   routes,
   progress,
-  reducedMotion,
+  motionTier,
 }: GlobeProps): React.ReactElement {
   const allRoutes = useMemo<GlobeRoute[]>(() => {
     if (routes && routes.length > 0) return [...routes];
@@ -648,7 +677,7 @@ function SceneInner({
   const [autoRotate, setAutoRotate] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (reducedMotion) {
+    if (motionTier !== "full") {
       setAutoRotate(false);
       return;
     }
@@ -657,10 +686,11 @@ function SceneInner({
     const onChange = (e: MediaQueryListEvent) => setAutoRotate(e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, [reducedMotion]);
+  }, [motionTier]);
 
   return (
     <>
+      <SceneFirstFrameReady />
       <ResponsiveCamera />
       <ambientLight intensity={0.55} color={COLOR_PAPER} />
       <directionalLight
@@ -677,7 +707,7 @@ function SceneInner({
       {/* globe 留在世界原点；GlobeBeat 外壳用 canvas/text 双行 safe zone
           避免文字卡压球，3D 场景自身保持居中便于拖拽 */}
       <AutoRotate enabled={autoRotate} speed={0.06}>
-        <Globe />
+        <Globe motionTier={motionTier} />
         {routeVectors.map((route) => (
           <Arc
             key={`${route.from.name}-${route.to.name}-${route.kind}`}
@@ -685,7 +715,7 @@ function SceneInner({
             to={route.toV}
             kind={route.kind}
             progress={progress}
-            reducedMotion={reducedMotion}
+            motionTier={motionTier}
           />
         ))}
         {endpointVectors.map((endpoint) => (
@@ -693,7 +723,7 @@ function SceneInner({
             key={`${endpoint.name}-${endpoint.position.join(",")}`}
             position={endpoint.position}
             progress={progress}
-            reducedMotion={reducedMotion}
+            motionTier={motionTier}
             featured={endpoint.featured}
           />
         ))}
@@ -707,7 +737,7 @@ function SceneInner({
         target={[0, 0, 0]}
         enableZoom={false}
         enablePan={false}
-        enableDamping={!reducedMotion}
+        enableDamping={motionTier === "full"}
         dampingFactor={0.08}
         rotateSpeed={0.4}
         minPolarAngle={Math.PI * 0.28}
@@ -725,6 +755,8 @@ export interface GlobeDistanceSceneProps {
   /** 滚动进度 0..1（StoryPoemScroller 写到 .globe-beat[data-progress]，
    *  本组件读 dataset 同步到 React state；为简化先内置 IO + scroll listener。 */
   progress?: number;
+  initialMotionTier?: MotionTier;
+  initialMotionReason?: string;
 }
 
 export function GlobeDistanceScene({
@@ -732,28 +764,53 @@ export function GlobeDistanceScene({
   to,
   routes,
   progress,
+  initialMotionTier,
+  initialMotionReason,
 }: GlobeDistanceSceneProps): React.ReactElement {
   /**
-   * v0.3（v1.72 audit P2 修）：reduced-motion 状态用 lazy initializer 同步读
-   * matchMedia，确保第一次 Canvas 渲染就拿到正确的 frameloop 值。
-   *
-   * 旧实现 useState(false) + 在 useEffect 里 setReducedMotion(mq.matches)：
-   *   - 第一帧 frameloop="always" → 即使用户 prefers-reduced-motion，挂载瞬间
-   *     仍跑了一次 60fps rAF；
-   *   - 后续 setReducedMotion(true) re-render → frameloop 变 "demand"。
-   * 新实现：初值就是 mq.matches，整个组件生命周期内只在 mq.change 时切换。
-   * 本组件仅在 client:visible 加载，渲染必在浏览器，window 一定可用。
+   * v2.12：motion tier 由 globeMotionLoader 首帧前同步传入；若该组件被直接
+   * import，也用共享 detectInitialMotionTier() 同步兜底。prefers-reduced-motion
+   * / WebGL unavailable 走 static，外壳保持 HTML/CSS poster。
    */
-  const [reducedMotion, setReducedMotion] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
+  const initialDecision =
+    initialMotionTier === undefined ? detectInitialMotionTier() : null;
+  const [motionTier, setMotionTier] = useState<MotionTier>(
+    initialMotionTier ?? initialDecision?.tier ?? "full",
+  );
+  const [motionReason, setMotionReason] = useState(
+    initialMotionReason ?? initialDecision?.reason ?? "default-full",
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    const onChange = () => {
+      const changed = detectInitialMotionTier();
+      setMotionTier(changed.tier);
+      setMotionReason(changed.reason);
+      if (changed.tier !== "full")
+        rememberMotionTier(changed.tier, changed.reason);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onDowngrade = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          component?: string;
+          tier?: MotionTier;
+          reason?: string;
+        }>
+      ).detail;
+      if (detail?.component !== "globe") return;
+      if (detail.tier !== "lite" && detail.tier !== "static") return;
+      setMotionTier(detail.tier);
+      setMotionReason(detail.reason ?? "external-downgrade");
+    };
+    window.addEventListener("motion-tier:downgrade", onDowngrade);
+    return () =>
+      window.removeEventListener("motion-tier:downgrade", onDowngrade);
   }, []);
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -775,7 +832,7 @@ export function GlobeDistanceScene({
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (reducedMotion) {
+    if (motionTier === "static") {
       setInternalProgress(1);
       return;
     }
@@ -850,14 +907,61 @@ export function GlobeDistanceScene({
       window.removeEventListener("resize", schedule);
       if (raf !== 0) window.cancelAnimationFrame(raf);
     };
-  }, [reducedMotion]);
+  }, [motionTier]);
 
-  const effectiveProgress = reducedMotion ? 1 : (progress ?? internalProgress);
+  const effectiveProgress =
+    motionTier === "static" ? 1 : (progress ?? internalProgress);
+
+  useEffect(() => {
+    const host =
+      canvasContainerRef.current?.closest<HTMLElement>(".globe-canvas-root");
+    if (!host) return;
+    host.dataset["motionTier"] = motionTier;
+    host.dataset["motionReason"] = motionReason;
+    host.dataset["progress"] = effectiveProgress.toFixed(3);
+  }, [effectiveProgress, motionReason, motionTier]);
+
+  useEffect(() => {
+    if (motionTier !== "full") return;
+    let raf = 0;
+    let last = performance.now();
+    let total = 0;
+    let count = 0;
+    const sample = (time: number) => {
+      total += time - last;
+      last = time;
+      count += 1;
+      if (count >= 30) {
+        const avg = total / count;
+        if (avg > 42) {
+          const reason = `runtime-frame-avg-${avg.toFixed(1)}ms`;
+          setMotionTier("lite");
+          setMotionReason(reason);
+          rememberMotionTier("lite", reason);
+          console.warn("[GlobeDistanceScene] downgraded motion tier", {
+            previous: "full",
+            next: "lite",
+            reason,
+          });
+        }
+        return;
+      }
+      raf = window.requestAnimationFrame(sample);
+    };
+    raf = window.requestAnimationFrame(sample);
+    return () => {
+      if (raf !== 0) window.cancelAnimationFrame(raf);
+    };
+  }, [motionTier]);
+
+  if (motionTier === "static") {
+    return <div ref={canvasContainerRef} className="globe-r3f-root" />;
+  }
 
   return (
     <div
       ref={canvasContainerRef}
-      className="globe-canvas-root"
+      className="globe-r3f-root"
       data-progress={effectiveProgress.toFixed(3)}
     >
       <Canvas
@@ -870,9 +974,27 @@ export function GlobeDistanceScene({
         // - reduced-motion "demand"：rAF 不再常驻；首帧渲染后只在显式 invalidate()
         //   时才重绘（drei OrbitControls change 事件、ResponsiveCamera resize 都会
         //   主动 invalidate），WebGL/GPU 工作量降到接近 0
-        frameloop={reducedMotion ? "demand" : "always"}
-        gl={{ antialias: true, alpha: true }}
-        dpr={[1, 2]}
+        frameloop={motionTier === "lite" ? "demand" : "always"}
+        gl={{ antialias: motionTier === "full", alpha: true }}
+        dpr={[1, motionTier === "lite" ? 1.25 : 2]}
+        onCreated={({ gl }) => {
+          gl.domElement.addEventListener(
+            "webglcontextlost",
+            (event) => {
+              event.preventDefault();
+              const reason = "webgl-context-lost";
+              setMotionReason(reason);
+              setMotionTier("static");
+              rememberMotionTier("static", reason);
+              console.warn("[GlobeDistanceScene] WebGL context lost", {
+                previous: motionTier,
+                next: "static",
+                reason,
+              });
+            },
+            { once: true },
+          );
+        }}
       >
         <Suspense fallback={null}>
           <SceneInner
@@ -880,7 +1002,7 @@ export function GlobeDistanceScene({
             to={to}
             routes={routes}
             progress={effectiveProgress}
-            reducedMotion={reducedMotion}
+            motionTier={motionTier}
           />
         </Suspense>
       </Canvas>

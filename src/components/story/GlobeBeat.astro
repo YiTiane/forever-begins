@@ -1,7 +1,7 @@
 ---
 /**
- * GlobeBeat.astro · §2.B 唯一 3D 地球高潮 · 包装 GlobeDistanceScene React 岛
- *   v0.1（Phase 2 §2 batch 7 · v1.71）
+ * GlobeBeat.astro · §2.B 地球高潮 · motion-tier loader + GlobeDistanceScene
+ *   v0.2（Phase 2 §2.B · v2.12 low-end hardening）
  *
  * 数据流（DESIGN §15.1 单一源）：
  *   - poem lines / kind=globe 来自 src/content/story-poem/main.json beat 11
@@ -10,14 +10,14 @@
  *
  * 渲染机制：
  *   - 外层 .globe-beat 给 hash 锚 #beat-11-heading（与 PoemBeat 同款契约）
- *   - v1.99：R3F root 与真实 canvas 都显式 100% sizing；hash 深链由
- *     StoryPoemScroller 写 data-initial-progress 并派发 globe:set-progress
+ *   - v2.12：先加载轻量 globeMotionLoader，同步判断 full/lite/static motion tier；
+ *     static 不 import React/R3F/Three，直接展示 HTML/CSS 静态地球与路线网络
+ *   - full/lite 进入视口后动态 import GlobeDistanceScene；R3F root 与真实 canvas
+ *     都显式 100% sizing；hash 深链由 StoryPoemScroller 写 data-initial-progress
+ *     并派发 globe:set-progress
  *   - 内层 .globe-stage：wide 模式 sticky 100vh / portrait 自然流式
- *   - <GlobeDistanceScene client:visible /> 仅在视口内 hydrate，避免 R3F bundle
- *     在初屏进入 critical path
  *   - 文字浮卡 .globe-text 居中或贴底，带 backdrop-blur，与 vignette 同语
- *   - reduced-motion：fallback 渲染纯静态文字（"乌鲁木齐 ↔ 墨尔本 · 10,755 公里"），
- *     <noscript> 与 .globe-canvas-root[data-fallback] 都接住
+ *   - static/reduced-motion：正式静态地球图形 + 主/次路线 + 文字卡，不是错误页
  *   - v1.87：GlobeDistanceScene 不只画最长距离；routes[] 渲染全部去过地点
  *     连线，乌鲁木齐 ↔ 墨尔本作为 primary 更粗且有轻微呼吸闪烁，其它路线
  *     用细 sage 线作为旅行网络背景
@@ -34,7 +34,6 @@
  *   - 城市标签 3D <Html> 锚定（先用 2D 侧栏避免 reflow / a11y 复杂度）
  */
 import { getCollection } from "astro:content";
-import { GlobeDistanceScene } from "@/components/story/GlobeDistanceScene";
 
 interface Props {
   /** main.json beat 11 的 lines（"松开刹那，" "才见已过万重山。"） */
@@ -70,7 +69,28 @@ const distancePrefix = "我们最远时相距";
 const routeLabel =
   routes.length > 1 ? `，并连起重庆、合肥、杭州、新加坡等共同走过的地方` : "";
 const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLabel} 公里${routeLabel}`;
+const globeProps = {
+  from: { lat: from.lat, lng: from.lng },
+  to: { lat: to.lat, lng: to.lng },
+  routes: routes.map((route) => ({
+    from: {
+      name: route.from.name,
+      lat: route.from.lat,
+      lng: route.from.lng,
+    },
+    to: {
+      name: route.to.name,
+      lat: route.to.lat,
+      lng: route.to.lng,
+    },
+    kind: route.kind,
+  })),
+};
 ---
+
+<script>
+  import "@/components/story/globeMotionLoader";
+</script>
 
 <section
   class="globe-beat"
@@ -83,24 +103,44 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     <h3 id={ariaHeadingId} class="sr-only">第 11 段 · {lines[0]}</h3>
 
     <div class="globe-canvas" role="img" aria-label={ariaLabel}>
-      <GlobeDistanceScene
-        from={{ lat: from.lat, lng: from.lng }}
-        to={{ lat: to.lat, lng: to.lng }}
-        routes={routes.map((route) => ({
-          from: {
-            name: route.from.name,
-            lat: route.from.lat,
-            lng: route.from.lng,
-          },
-          to: {
-            name: route.to.name,
-            lat: route.to.lat,
-            lng: route.to.lng,
-          },
-          kind: route.kind,
-        }))}
-        client:visible
-      />
+      <div
+        class="globe-canvas-root"
+        data-globe-motion-root
+        data-motion-tier="pending"
+        data-motion-reason="pending"
+        data-progress="0.000"
+        data-globe-props={JSON.stringify(globeProps)}
+      >
+        <div class="globe-static-scene" aria-hidden="true">
+          <div class="globe-static-orb">
+            <span class="globe-static-land land-a"></span>
+            <span class="globe-static-land land-b"></span>
+            <span class="globe-static-land land-c"></span>
+            <svg
+              class="globe-static-routes"
+              viewBox="0 0 100 100"
+              focusable="false"
+            >
+              <path class="route secondary" d="M32 41 C42 28 54 35 63 29"
+              ></path>
+              <path class="route secondary" d="M47 33 C54 43 59 52 69 58"
+              ></path>
+              <path class="route secondary" d="M42 49 C50 39 56 42 62 47"
+              ></path>
+              <path class="route secondary" d="M36 36 C50 42 61 48 73 44"
+              ></path>
+              <path class="route primary" d="M34 34 C54 8 75 52 70 72"></path>
+              <circle class="point primary-point" cx="34" cy="34" r="2.5"
+              ></circle>
+              <circle class="point primary-point" cx="70" cy="72" r="2.5"
+              ></circle>
+              <circle class="point" cx="48" cy="55" r="1.5"></circle>
+              <circle class="point" cx="61" cy="43" r="1.5"></circle>
+              <circle class="point" cx="72" cy="44" r="1.5"></circle>
+            </svg>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="globe-text">
@@ -184,24 +224,106 @@ const ariaLabel = `${from.name} ↔ ${to.name}，${distancePrefix} ${distanceLab
     min-height: 0; /* 允许 grid 1fr 收缩到比子内容小（canvas 不会限制其父） */
   }
 
-  .globe-canvas :global(astro-island) {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
-  /* React 岛根（GlobeDistanceScene 渲染出 .globe-canvas-root）：
-     v1.99 明确同时约束 root 与真实 <canvas>，避免 headless / WebView 下
-     R3F canvas 退回 300×150 默认尺寸。 */
+  /* v2.12：.globe-canvas-root 先由轻量 loader 决定 motion tier。static
+     不加载 R3F；full/lite 进入视口后再动态 import GlobeDistanceScene。 */
   .globe-canvas :global(.globe-canvas-root) {
+    position: relative;
     width: 100%;
     height: 100%;
     /* 无背景 → 透明 alpha；让站点 page 背景透出，与 §2 章节呼吸一致 */
+  }
+  .globe-canvas :global(.globe-r3f-root) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
   .globe-canvas :global(.globe-canvas-root canvas) {
     display: block;
     width: 100% !important;
     height: 100% !important;
+  }
+
+  .globe-static-scene {
+    position: absolute;
+    inset: 0;
+    display: none;
+    place-items: center;
+  }
+  .globe-canvas
+    :global(.globe-canvas-root[data-motion-tier="static"])
+    .globe-static-scene {
+    display: grid;
+  }
+  .globe-static-orb {
+    position: relative;
+    width: min(62vh, 62vw, 520px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    overflow: hidden;
+    background:
+      radial-gradient(
+        circle at 35% 28%,
+        rgba(245, 240, 230, 0.22),
+        transparent 24%
+      ),
+      radial-gradient(circle at 50% 55%, #274b35 0 62%, #183124 100%);
+    box-shadow:
+      inset -2.2rem -2rem 3.4rem rgba(7, 17, 13, 0.48),
+      inset 1rem 1.2rem 2.6rem rgba(245, 240, 230, 0.12),
+      0 1.5rem 3rem rgba(53, 71, 45, 0.18);
+  }
+  .globe-static-land {
+    position: absolute;
+    display: block;
+    background: rgba(136, 166, 112, 0.82);
+    filter: blur(0.2px);
+  }
+  .globe-static-land.land-a {
+    width: 34%;
+    height: 18%;
+    left: 22%;
+    top: 25%;
+    border-radius: 52% 42% 46% 58%;
+    transform: rotate(-18deg);
+  }
+  .globe-static-land.land-b {
+    width: 30%;
+    height: 24%;
+    right: 18%;
+    top: 37%;
+    border-radius: 48% 60% 44% 54%;
+    transform: rotate(16deg);
+  }
+  .globe-static-land.land-c {
+    width: 16%;
+    height: 12%;
+    right: 22%;
+    bottom: 20%;
+    border-radius: 56% 42% 54% 40%;
+    transform: rotate(26deg);
+  }
+  .globe-static-routes {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .globe-static-routes .route {
+    fill: none;
+    stroke: rgba(250, 245, 231, 0.68);
+    stroke-width: 0.85;
+    stroke-linecap: round;
+  }
+  .globe-static-routes .route.primary {
+    stroke: var(--c-honey);
+    stroke-width: 1.9;
+  }
+  .globe-static-routes .point {
+    fill: rgba(250, 245, 231, 0.9);
+  }
+  .globe-static-routes .primary-point {
+    fill: var(--c-honey);
   }
 
   /* 文字卡：v1.79 起占 grid 第二行 auto，不再 overlay 在 canvas 之上。

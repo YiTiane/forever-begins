@@ -1,6 +1,16 @@
 ---
 /**
- * StoryPoemScroller.astro · §2 Story 长卷 orchestrator（v1.1 · v1.99 hardening）
+ * StoryPoemScroller.astro · §2 Story 长卷 orchestrator（v1.2 · v2.13 motion-tier hardening）
+ *
+ * v2.12-v2.13 low-end hardening：
+ *   - Globe / Finale 不再由 Astro client:visible 直接 hydrate R3F；改为轻量
+ *     motion loader 先同步判断 full / lite / static，再决定是否动态 import React/Three。
+ *   - static 是正式体验：Globe 显示 HTML/CSS 静态地球 + route network；Finale
+ *     显示静态星空 + Pearl_04 主海报 + finale 文案。static 不挂 R3F Canvas。
+ *   - lite 保留核心语义但降预算：Globe 关 auto-rotate/pulse/draw animation，
+ *     Finale 降 texture / 粒子 / dust samples，并用低频 timer 驱动 twinkle。
+ *   - v2.13：Globe / Finale loader 等待真实 scene first-frame-ready；超过
+ *     1400ms 才 runtime 降 lite，不再只用 dynamic import 时间近似。
  *
  * v1.99 hardening：
  *   - Globe hash deep-link 与 finale 同步进入 hard-sync 模式：alignHash 写
@@ -92,17 +102,18 @@
  *     - compact 模式（≤540px）→ flow stack + 轻量 entry motion，去掉强 transform/mask
  *     - 单 IO + scroll + resize + textRO 四源事件 → scheduleUpdate dirty flag
  *       rAF flush 写 --p / --p-photo-1 / --p-photo-2 / --p-text
- *   ✓ globe beat (v1.71)：GlobeBeat 内部独立的 IO + scroll listener 自驱 progress；
- *     不参与本 wrapper 的 applyLayout / phase 变量管理（R3F 岛自治）
+ *   ✓ globe beat：GlobeBeat 由 motion loader 分层；full/lite 下 R3F 组件内部
+ *     独立 IO + scroll listener 自驱 progress；static 下停在 HTML/CSS poster
  *   ✓ [N] 天 CountUp (v1.74-v1.75)：本 wrapper 第二个 <script> IIFE 单 IO 监
  *     visible .days-together span，入场动画 0 → client-time N over 1.4s ease-out；
  *     visible span aria-hidden + .sr-only sibling 拿稳定终值给 AT
- *   ✓ §2.C StarCarouselFinale (beat 12)：v1.90 接入 FinaleBeat（15 张照片走马灯
- *     + Shader Dissolve + final Pearl_04 定格），取代旧 .story-end-cap 静态占位
+ *   ✓ §2.C StarCarouselFinale (beat 12)：FinaleBeat 由 motion loader 分层；
+ *     full/lite 下 15 张照片走马灯 + Shader Dissolve + final Pearl_04 定格；
+ *     static 下显示正式终章 poster，不加载 R3F
  *   ✓ a11y：section aria-labelledby + h2 'Our Story' latin-italic + sr-only h3 per beat /
  *     [N] 天 visible aria-hidden + sr-only stable + finale role="img" aria-label
  *   ✓ prefers-reduced-motion：photo-poem 不绑事件 / --p:1 终态；globe / finale
- *     Canvas frameloop "demand" + 自旋 / 脉冲 / dissolve 全停；[N] CountUp 钉终值
+ *     motion tier 直接 static，不挂 Canvas；[N] CountUp 钉终值
  *   ✓ hash deep-link：公开 id 仍在 .poem-beat / .globe-beat / .finale-beat，
  *     hash 浏览器原生 scroll 后由 alignHashToComposedFrame 再对齐到稳定 composed frame
  *     —— v1.91 起 finale 也接入对齐
