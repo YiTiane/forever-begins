@@ -1,7 +1,7 @@
 ---
 /**
- * GlobeBeat.astro · §2.B 地球高潮 · motion-tier loader + GlobeDistanceScene
- *   v0.2（Phase 2 §2.B · v2.12 low-end hardening）
+ * GlobeBeat.astro · §2.B 地球高潮 · Vercel static globe
+ *   v0.3（Vercel 静态版）
  *
  * 数据流（DESIGN §15.1 单一源）：
  *   - poem lines / kind=globe 来自 src/content/story-poem/main.json beat 11
@@ -10,14 +10,11 @@
  *
  * 渲染机制：
  *   - 外层 .globe-beat 给 hash 锚 #beat-11-heading（与 PoemBeat 同款契约）
- *   - v2.12：先加载轻量 globeMotionLoader，同步判断 full/lite/static motion tier；
- *     static 不 import React/R3F/Three，直接展示 HTML/CSS 静态地球与路线网络
- *   - full/lite 进入视口后动态 import GlobeDistanceScene；R3F root 与真实 canvas
- *     都显式 100% sizing；hash 深链由 StoryPoemScroller 写 data-initial-progress
- *     并派发 globe:set-progress
+ *   - Vercel 静态版不 import React/R3F/Three，不 hydrate，不响应拖拽；
+ *     构建时把 Natural Earth 1:110m 陆地轮廓投影成 inline SVG 静态地球
  *   - 内层 .globe-stage：wide 模式 sticky 100vh / portrait 自然流式
  *   - 文字浮卡 .globe-text 居中或贴底，带 backdrop-blur，与 vignette 同语
- *   - static/reduced-motion：正式静态地球图形 + 主/次路线 + 文字卡，不是错误页
+ *   - 静态地球图形 + 主/次路线 + 文字卡是正式体验，不是错误页
  *   - v1.87：GlobeDistanceScene 不只画最长距离；routes[] 渲染全部去过地点
  *     连线，乌鲁木齐 ↔ 墨尔本作为 primary 更粗且有轻微呼吸闪烁，其它路线
  *     用细 sage 线作为旅行网络背景
@@ -27,13 +24,9 @@
  *   - canvas 容器 role="img" aria-label 含距离数字 / 城市名
  *   - 动效信息（脉冲 / 弧线）不向 AT 暴露——AT 只朗读 alt 文字
  *
- * NOT in this batch（v0.2 留刀）：
- *   - 2K 水彩贴图 globe-watercolor-2k.jpg（misc CDN 仓 Phase 3 资产 push 后接）
- *   - Bloom + Vignette + ToneMapping postprocessing
- *   - 距离数字 CountUp（简化先静态渲染；motion polish 批接 IO + raf ease-out）
- *   - 城市标签 3D <Html> 锚定（先用 2D 侧栏避免 reflow / a11y 复杂度）
  */
 import { getCollection } from "astro:content";
+import { NATURAL_EARTH_LAND_110M } from "@/lib/story/naturalEarthLand110m";
 
 interface Props {
   /** main.json beat 11 的 lines（"松开刹那，" "才见已过万重山。"） */
@@ -86,11 +79,101 @@ const globeProps = {
     kind: route.kind,
   })),
 };
----
 
-<script>
-  import "@/components/story/globeMotionLoader";
-</script>
+type ProjectedPoint = readonly [x: number, y: number];
+
+const GLOBE_CENTER = {
+  lng: 113,
+  lat: 5,
+};
+const GLOBE_RADIUS = 46;
+
+function deg(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function fmt(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function projectPoint(lng: number, lat: number): ProjectedPoint | null {
+  const lambda = deg(lng - GLOBE_CENTER.lng);
+  const phi = deg(lat);
+  const phi0 = deg(GLOBE_CENTER.lat);
+  const cosc =
+    Math.sin(phi0) * Math.sin(phi) +
+    Math.cos(phi0) * Math.cos(phi) * Math.cos(lambda);
+
+  if (cosc < -0.01) return null;
+
+  const x = 50 + GLOBE_RADIUS * Math.cos(phi) * Math.sin(lambda);
+  const y =
+    50 -
+    GLOBE_RADIUS *
+      (Math.cos(phi0) * Math.sin(phi) -
+        Math.sin(phi0) * Math.cos(phi) * Math.cos(lambda));
+  return [x, y];
+}
+
+function pointsToPath(points: ProjectedPoint[]): string {
+  if (points.length < 2) return "";
+  return points
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${fmt(x)} ${fmt(y)}`)
+    .join(" ");
+}
+
+function landRingToPaths(
+  ring: (readonly [lng: number, lat: number])[],
+): string[] {
+  const paths: string[] = [];
+  let segment: ProjectedPoint[] = [];
+
+  for (const [lng, lat] of ring) {
+    const projected = projectPoint(lng, lat);
+    if (!projected) {
+      const path = pointsToPath(segment);
+      if (path) paths.push(`${path} Z`);
+      segment = [];
+      continue;
+    }
+    segment.push(projected);
+  }
+
+  const path = pointsToPath(segment);
+  if (path) paths.push(`${path} Z`);
+  return paths;
+}
+
+function interpolateRoute(
+  start: { lng: number; lat: number },
+  end: { lng: number; lat: number },
+  steps = 44,
+): ProjectedPoint[] {
+  const points: ProjectedPoint[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const eased = t * t * (3 - 2 * t);
+    const lng = start.lng + (end.lng - start.lng) * eased;
+    const lat =
+      start.lat +
+      (end.lat - start.lat) * eased +
+      Math.sin(Math.PI * t) * (start.lat > end.lat ? 10 : 5);
+    const projected = projectPoint(lng, lat);
+    if (projected) points.push(projected);
+  }
+  return points;
+}
+
+const staticLandPaths = NATURAL_EARTH_LAND_110M.flatMap((ring) =>
+  landRingToPaths(ring),
+);
+const staticRoutes = globeProps.routes.map((route) => ({
+  kind: route.kind,
+  path: pointsToPath(interpolateRoute(route.from, route.to)),
+  from: projectPoint(route.from.lng, route.from.lat),
+  to: projectPoint(route.to.lng, route.to.lat),
+}));
+---
 
 <section
   class="globe-beat"
@@ -106,37 +189,68 @@ const globeProps = {
       <div
         class="globe-canvas-root"
         data-globe-motion-root
-        data-motion-tier="pending"
-        data-motion-reason="pending"
-        data-progress="0.000"
-        data-globe-props={JSON.stringify(globeProps)}
+        data-motion-tier="static"
+        data-motion-reason="vercel-static"
+        data-progress="1.000"
       >
         <div class="globe-static-scene" aria-hidden="true">
           <div class="globe-static-orb">
-            <span class="globe-static-land land-a"></span>
-            <span class="globe-static-land land-b"></span>
-            <span class="globe-static-land land-c"></span>
             <svg
               class="globe-static-routes"
               viewBox="0 0 100 100"
               focusable="false"
             >
-              <path class="route secondary" d="M32 41 C42 28 54 35 63 29"
-              ></path>
-              <path class="route secondary" d="M47 33 C54 43 59 52 69 58"
-              ></path>
-              <path class="route secondary" d="M42 49 C50 39 56 42 62 47"
-              ></path>
-              <path class="route secondary" d="M36 36 C50 42 61 48 73 44"
-              ></path>
-              <path class="route primary" d="M34 34 C54 8 75 52 70 72"></path>
-              <circle class="point primary-point" cx="34" cy="34" r="2.5"
+              <defs>
+                <clipPath id="static-globe-clip">
+                  <circle cx="50" cy="50" r={GLOBE_RADIUS}></circle>
+                </clipPath>
+                <radialGradient
+                  id="static-globe-water"
+                  cx="34%"
+                  cy="28%"
+                  r="72%"
+                >
+                  <stop offset="0%" stop-color="#5f8461"></stop>
+                  <stop offset="60%" stop-color="#274b35"></stop>
+                  <stop offset="100%" stop-color="#13271d"></stop>
+                </radialGradient>
+              </defs>
+              <circle class="static-water" cx="50" cy="50" r={GLOBE_RADIUS}
               ></circle>
-              <circle class="point primary-point" cx="70" cy="72" r="2.5"
-              ></circle>
-              <circle class="point" cx="48" cy="55" r="1.5"></circle>
-              <circle class="point" cx="61" cy="43" r="1.5"></circle>
-              <circle class="point" cx="72" cy="44" r="1.5"></circle>
+              <g clip-path="url(#static-globe-clip)">
+                {
+                  staticLandPaths.map((path) => (
+                    <path class="static-land" d={path} />
+                  ))
+                }
+                {
+                  staticRoutes.map(
+                    (route) =>
+                      route.path && (
+                        <path
+                          class={`route ${route.kind === "primary" ? "primary" : "secondary"}`}
+                          d={route.path}
+                        />
+                      ),
+                  )
+                }
+                {
+                  staticRoutes.flatMap((route) =>
+                    [route.from, route.to]
+                      .filter((point): point is ProjectedPoint =>
+                        Boolean(point),
+                      )
+                      .map(([x, y]) => (
+                        <circle
+                          class={`point ${route.kind === "primary" ? "primary-point" : ""}`}
+                          cx={fmt(x)}
+                          cy={fmt(y)}
+                          r={route.kind === "primary" ? "2.4" : "1.4"}
+                        />
+                      )),
+                  )
+                }
+              </g>
             </svg>
           </div>
         </div>
@@ -224,84 +338,31 @@ const globeProps = {
     min-height: 0; /* 允许 grid 1fr 收缩到比子内容小（canvas 不会限制其父） */
   }
 
-  /* v2.12：.globe-canvas-root 先由轻量 loader 决定 motion tier。static
-     不加载 R3F；full/lite 进入视口后再动态 import GlobeDistanceScene。 */
+  /* Vercel 静态版：不加载 R3F；root 只承载 inline SVG 静态地球。 */
   .globe-canvas :global(.globe-canvas-root) {
     position: relative;
     width: 100%;
     height: 100%;
     /* 无背景 → 透明 alpha；让站点 page 背景透出，与 §2 章节呼吸一致 */
   }
-  .globe-canvas :global(.globe-r3f-root) {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  .globe-canvas :global(.globe-canvas-root canvas) {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
-  }
 
   .globe-static-scene {
     position: absolute;
     inset: 0;
-    display: none;
-    place-items: center;
-  }
-  .globe-canvas
-    :global(.globe-canvas-root[data-motion-tier="static"])
-    .globe-static-scene {
     display: grid;
+    place-items: center;
   }
   .globe-static-orb {
     position: relative;
-    width: min(62vh, 62vw, 520px);
+    width: min(72vh, 68vw, 620px);
     aspect-ratio: 1;
     border-radius: 50%;
     overflow: hidden;
-    background:
-      radial-gradient(
-        circle at 35% 28%,
-        rgba(245, 240, 230, 0.22),
-        transparent 24%
-      ),
-      radial-gradient(circle at 50% 55%, #274b35 0 62%, #183124 100%);
+    background: #173024;
     box-shadow:
       inset -2.2rem -2rem 3.4rem rgba(7, 17, 13, 0.48),
       inset 1rem 1.2rem 2.6rem rgba(245, 240, 230, 0.12),
       0 1.5rem 3rem rgba(53, 71, 45, 0.18);
-  }
-  .globe-static-land {
-    position: absolute;
-    display: block;
-    background: rgba(136, 166, 112, 0.82);
-    filter: blur(0.2px);
-  }
-  .globe-static-land.land-a {
-    width: 34%;
-    height: 18%;
-    left: 22%;
-    top: 25%;
-    border-radius: 52% 42% 46% 58%;
-    transform: rotate(-18deg);
-  }
-  .globe-static-land.land-b {
-    width: 30%;
-    height: 24%;
-    right: 18%;
-    top: 37%;
-    border-radius: 48% 60% 44% 54%;
-    transform: rotate(16deg);
-  }
-  .globe-static-land.land-c {
-    width: 16%;
-    height: 12%;
-    right: 22%;
-    bottom: 20%;
-    border-radius: 56% 42% 54% 40%;
-    transform: rotate(26deg);
   }
   .globe-static-routes {
     position: absolute;
@@ -309,21 +370,32 @@ const globeProps = {
     width: 100%;
     height: 100%;
   }
+  .globe-static-routes .static-water {
+    fill: url("#static-globe-water");
+  }
+  .globe-static-routes .static-land {
+    fill: rgba(153, 180, 128, 0.78);
+    stroke: rgba(236, 230, 204, 0.18);
+    stroke-width: 0.08;
+  }
   .globe-static-routes .route {
     fill: none;
-    stroke: rgba(250, 245, 231, 0.68);
-    stroke-width: 0.85;
+    stroke: rgba(255, 246, 215, 0.86);
+    stroke-width: 0.6;
     stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .globe-static-routes .route.primary {
-    stroke: var(--c-honey);
-    stroke-width: 1.9;
+    stroke: #ffe08f;
+    stroke-width: 1.35;
   }
   .globe-static-routes .point {
     fill: rgba(250, 245, 231, 0.9);
   }
   .globe-static-routes .primary-point {
-    fill: var(--c-honey);
+    fill: #ffe08f;
+    stroke: rgba(49, 36, 8, 0.45);
+    stroke-width: 0.3;
   }
 
   /* 文字卡：v1.79 起占 grid 第二行 auto，不再 overlay 在 canvas 之上。

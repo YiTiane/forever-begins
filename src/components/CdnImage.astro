@@ -144,8 +144,10 @@ const backupJpg = cdnUrl(
   `jpg/${stem}-${JPG_FALLBACK_WIDTH}.jpg`,
 );
 
-// loading 由 priority 推导：high → eager · 其余 lazy（auto / low 同 lazy）
-const loading: "eager" | "lazy" = priority === "high" ? "eager" : "lazy";
+// Vercel 静态版：所有图片都立即进入加载队列，不再按视口 lazy-load。
+// 这个分支专门服务 `forever-begins-urumqi.vercel.app`，目标是刷新页面后
+// 关键照片已经在 DOM 中并开始请求；GitHub Pages 主仓仍保留原 lazy 策略。
+const loading: "eager" = "eager";
 ---
 
 <picture>
