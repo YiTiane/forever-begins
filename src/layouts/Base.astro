@@ -16,8 +16,8 @@
  *   ⑤ **Open Graph + Twitter Card**（v0.4）：
  *      - og:* 8 条（type/title/description/url/image[+w/h/alt]/locale/site_name）
  *      - twitter:card=summary_large_image + 标题/描述/图同 OG
- *      - 图源经 cdnUrl('primary', 'misc', 'og/og-cover-1200x630.jpg') 由 asset-versions.ts 集中接缝
- *        （§1.1.13a 重做正式 OG 后只需 bump misc tag → v1.0.1，本文件无需改动）
+ *      - 默认图源为同源 `/share/wechat-card-v1.jpg`：无 JS-SDK 条件下优先保证
+ *        微信抓取稳定；改图时换文件名而不是 query，绕开微信缓存
  *   ⑥ **JSON-LD Event schema**（v0.4）：
  *      - @type: SocialEvent · Schema.org 推荐 · Google Rich Results 支持
  *      - 婚礼日期 2026-06-14T19:00 (UTC+8) → 23:00 · 二道桥大剧院 · CN/新疆/乌鲁木齐
@@ -39,7 +39,6 @@
  */
 import FontFaces from "@/components/FontFaces.astro";
 import CdnEarlyProbe from "@/components/CdnEarlyProbe.astro";
-import { cdnUrl } from "@/lib/images/asset-versions";
 
 // v0.3 §1.1.12：全站样式入口（Tailwind v4 base + reset + tokens + helper class）
 // 顺序契约 / 约束 / 缺哪条会怎么坏 见 src/styles/global.css 文件头注释
@@ -57,10 +56,12 @@ interface Props {
   noindex?: boolean;
   /**
    * 页面级 OG 图片覆盖（v0.4 新增）。
-   * 不传则走默认的 fb-cdn-misc og-cover-1200x630.jpg。
+   * 不传则走默认的同源微信方图 `/share/wechat-card-v1.jpg`。
    * 用例：未来 Cover/Story/Cats 等章节如有专属 OG 图可单独覆盖。
    */
   ogImage?: string;
+  ogImageWidth?: number;
+  ogImageHeight?: number;
   /**
    * 抑制 OG / Twitter card 与 JSON-LD Event schema 输出（v0.5 新增）。
    * 用于 dev-only 路由（/dev-fonts/）：noindex + sitemap.filter 已防搜索收录，
@@ -78,6 +79,8 @@ const {
   lang = "zh-CN",
   noindex = false,
   ogImage,
+  ogImageWidth = 800,
+  ogImageHeight = 800,
   suppressSocialMeta = false,
 } = Astro.props;
 
@@ -91,10 +94,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 // 注意：Astro.site 在 astro.config.mjs 中已配；如未配会抛 build 警告。
 const canonicalURL = new URL(Astro.url.pathname, Astro.site).href;
 
-// OG 主图：默认指向 fb-cdn-misc 的 og-cover-1200x630.jpg。
-// §1.1.13a "重做正式 OG" 完成后只需 bump asset-versions.ts misc → v1.0.1，
-// 这里的 URL 自动指向新版本。
-const defaultOgImage = cdnUrl("primary", "misc", "og/og-cover-1200x630.jpg");
+// OG 主图：默认同源微信分享卡。没有微信 JS-SDK 时，同源 + 版本化文件名
+// 比远程 CDN / query 参数更稳定；更换图时新建 wechat-card-vN.jpg。
+const defaultOgImage = new URL(`${base}/share/wechat-card-v1.jpg`, Astro.site)
+  .href;
 const finalOgImage = ogImage ?? defaultOgImage;
 
 // JSON-LD Event schema · 婚礼是 SocialEvent (Schema.org) 子类型
@@ -161,8 +164,8 @@ const eventSchema = {
           <meta property="og:description" content={description} />
           <meta property="og:url" content={canonicalURL} />
           <meta property="og:image" content={finalOgImage} />
-          <meta property="og:image:width" content="1200" />
-          <meta property="og:image:height" content="630" />
+          <meta property="og:image:width" content={String(ogImageWidth)} />
+          <meta property="og:image:height" content={String(ogImageHeight)} />
           <meta
             property="og:image:alt"
             content="杨倚天 & 希尔娜依 · 二〇二六年六月十四日"
