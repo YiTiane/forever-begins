@@ -94,7 +94,7 @@
     {
       "id": "05",
       "kind": "photo-poem",
-      "layout": "anchor-single",
+      "layout": "scroll-unfold",
       "lines": ["不知不觉，已携手走过 [N] 天。"],
       "photos": [
         {

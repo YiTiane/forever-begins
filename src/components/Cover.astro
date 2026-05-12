@@ -117,7 +117,7 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
   .cover {
     max-width: 720px;
     margin: 0 auto;
-    padding: 4rem 1.5rem 6rem;
+    padding: 4rem 1.5rem clamp(2rem, 5vh, 3rem);
     text-align: center;
     /* v0.5（修 v1.45 审计 P2）：position: relative 锚定 absolute 子元素；
        isolation: isolate 创建独立 stacking context，确保 z-index 计算只在 .cover 内闭合。
@@ -176,7 +176,7 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
   }
 
   .meta {
-    margin: 0 0 4rem;
+    margin: 0 0 clamp(1rem, 3vh, 1.5rem);
     font-weight: 300;
   }
   .meta p {
@@ -185,8 +185,14 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     line-height: 1.7;
   }
   @media (max-width: 540px) {
+    .cover {
+      padding-bottom: 2.5rem;
+    }
     .hero {
       font-size: 3.5rem;
+    }
+    .meta {
+      margin-bottom: 1.25rem;
     }
     .meta p {
       font-size: 1rem;

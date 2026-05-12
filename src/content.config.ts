@@ -268,7 +268,7 @@ const PHOTO_ROLES = [
   "top-left", // diagonal-gaze (beat 02)
   "bottom-right", // diagonal-gaze (beat 02)
   "center", // radial-mask (beat 03)
-  "anchor", // anchor-single (beat 04 / 05)
+  "anchor", // anchor-single (beat 04) / scroll-unfold (beat 05)
   "vignette", // vignette (beat 06)
   "overlap", // overlap (beat 07)
   "reveal", // reveal (beat 08)
@@ -341,6 +341,7 @@ const PHOTO_POEM_LAYOUTS = [
   "diagonal-gaze", // beat 02：左上 + 右下，对视斜线，中间留白给文字
   "radial-mask", // beat 03：单图居中，radial gradient mask 让边缘柔焦"晕散"
   "anchor-single", // beat 04：单图小框作锚点，scale 0.95→1 settle
+  "scroll-unfold", // beat 05：Snow_13 卷轴式展开，配 daysTogether CountUp
   "vignette", // beat 06：夜色 vignette（v1.55 留 enum 但 batch 2 渲染时再实施 CSS）
   "overlap", // beat 07：两个半透明图层短暂重合（同上）
   "reveal", // beat 08：图像从裁切中展开（同上）
@@ -409,7 +410,7 @@ const EXPECTED_BEAT_LAYOUTS: readonly (PhotoPoemLayout | null)[] = [
   "diagonal-gaze", // 02 · snow_14 + snow_15 对视斜线
   "radial-mask", // 03 · snow_05 居中柔焦晕散
   "anchor-single", // 04 · snow_11 日期锚点
-  "anchor-single", // 05 · snow_13 携手 [N] 天（v1.74 起 CountUp 已实接入）
+  "scroll-unfold", // 05 · snow_13 携手 [N] 天（卷轴展开 + CountUp）
   "vignette", // 06 · snow_08 夜色
   "overlap", // 07 · snow_09 契合
   "reveal", // 08 · snow_12 卸下防备
@@ -430,6 +431,7 @@ const VALID_ROLES_BY_LAYOUT: Record<PhotoPoemLayout, readonly PhotoRole[]> = {
   "diagonal-gaze": ["top-left", "bottom-right"],
   "radial-mask": ["center"],
   "anchor-single": ["anchor"],
+  "scroll-unfold": ["anchor"],
   vignette: ["vignette"],
   overlap: ["overlap"],
   reveal: ["reveal"],
@@ -473,7 +475,7 @@ const storyPoem = defineCollection({
           }),
         {
           message:
-            "beat layout 必须严格匹配 EXPECTED_BEAT_LAYOUTS：01 parallax-pair · 02 diagonal-gaze · 03 radial-mask · 04 anchor-single · 05 anchor-single · 06 vignette · 07 overlap · 08 reveal · 09 wooden · 10 pearl · 11/12 不写 layout",
+            "beat layout 必须严格匹配 EXPECTED_BEAT_LAYOUTS：01 parallax-pair · 02 diagonal-gaze · 03 radial-mask · 04 anchor-single · 05 scroll-unfold · 06 vignette · 07 overlap · 08 reveal · 09 wooden · 10 pearl · 11/12 不写 layout",
         },
       )
       .refine(
@@ -492,7 +494,7 @@ const storyPoem = defineCollection({
           }),
         {
           message:
-            "photo role 必须属于 layout 的 VALID_ROLES_BY_LAYOUT：parallax-pair → far|near · diagonal-gaze → top-left|bottom-right · radial-mask → center · anchor-single → anchor · vignette/overlap/reveal/wooden/pearl 各自同名",
+            "photo role 必须属于 layout 的 VALID_ROLES_BY_LAYOUT：parallax-pair → far|near · diagonal-gaze → top-left|bottom-right · radial-mask → center · anchor-single/scroll-unfold → anchor · vignette/overlap/reveal/wooden/pearl 各自同名",
         },
       ),
   }),

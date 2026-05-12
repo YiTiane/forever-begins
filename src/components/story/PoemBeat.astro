@@ -1,6 +1,12 @@
 ---
 /**
- * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.8 · v1.86 SnowAtmosphere scoped CSS 修）
+ * PoemBeat.astro · §2 第一章单个 beat 渲染（v1.9 · Story visual polish）
+ *
+ * v1.9 新增（v2.14 polish）：
+ *   - beat 05 从 anchor-single 改 scroll-unfold：Snow_13 竖幅照片做上下卷轴式展开，
+ *     保留原图亮度，不走旧照片褪色方向。
+ *   - wide diagonal-gaze 放大 Snow_14 / Snow_15 并增大对角入场幅度。
+ *   - overlap ghost 从轻白影改为暖金 / 橄榄双影，强化“两个契合的灵魂”合拢感。
  *
  * v1.8 新增（v1.86 修用户“电脑和手机都看不到下雪动画”反馈）：
  *   - 删除父组件 `.snow-atmosphere` scoped CSS。SnowAtmosphere 是子组件，
@@ -32,8 +38,7 @@
  * v1.6（v1.81 宽屏视觉复审）：
  *   - **wide parallax-pair / diagonal-gaze / anchor-single 三处照片尺度重调**：
  *     Snow_03 / Snow_07 改为同一 solver box，初始与完成帧尺寸一致且更大；
- *     Snow_14 / Snow_15 放大并收近中央文字，但保留 9% inset + ±5% entrance
- *     transform 防 sticky 裁切；Snow_11 宽屏横幅 photoMaxW 提升并加 clip/scale/
+ *     Snow_14 / Snow_15 放大并收近中央文字；Snow_11 宽屏横幅 photoMaxW 提升并加 clip/scale/
  *     saturate 开场动画。所有改动限定 wide 或 cover-landscape 路径，不改变
  *     portrait / compact 的流式排布。
  *
@@ -183,6 +188,7 @@ type BeatLayout =
   | "diagonal-gaze"
   | "radial-mask"
   | "anchor-single"
+  | "scroll-unfold"
   | "vignette"
   | "overlap"
   | "reveal"
@@ -477,6 +483,9 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-beat[data-layout="anchor-single"] {
     min-height: 130vh;
   }
+  .poem-beat[data-layout="scroll-unfold"] {
+    min-height: 135vh;
+  }
   /* v1.62 batch 4：新 5 套 single-photo layout（仅 wide 模式给 sticky scroll spacer 高度，
      portrait / compact 由后续 [data-story-mode="..."] 重置回 auto） */
   .poem-beat[data-layout="vignette"] {
@@ -511,6 +520,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
   .poem-beat[data-story-mode="wide"][data-layout="radial-mask"],
   .poem-beat[data-story-mode="wide"][data-layout="anchor-single"],
+  .poem-beat[data-story-mode="wide"][data-layout="scroll-unfold"],
   .poem-beat[data-story-mode="wide"][data-layout="vignette"],
   .poem-beat[data-story-mode="wide"][data-layout="overlap"],
   .poem-beat[data-story-mode="wide"][data-layout="reveal"],
@@ -849,27 +859,27 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     gap: 0;
     z-index: 1;
   }
-  /* v1.81 宽屏复审：diagonal-gaze 从“安全不裁切”推进到“更大、更近”。
-     solver 给 top-left / bottom-right 更大的 portrait box，CSS 用 9% 角落 inset
-     + ±5% entrance transform 保留对角入场，同时避免人物被 sticky stage 裁掉。 */
+  /* v2.14：diagonal-gaze 继续加大动作幅度。solver 给更大的 portrait box，
+     CSS 用 7% 角落 inset + ±12% entrance transform，让两张人像从对角更明显地
+     靠近中央，但仍给 1366/1375/1920 宽屏留安全边界。 */
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="top-left"] {
     position: absolute;
-    top: 9%;
-    left: 9%;
+    top: 7%;
+    left: 7%;
     transform: translate(
-      calc((1 - var(--p, 0)) * -5%),
-      calc((1 - var(--p, 0)) * -5%)
+      calc((1 - var(--p, 0)) * -12%),
+      calc((1 - var(--p, 0)) * -12%)
     );
   }
   .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
     .poem-photo[data-role="bottom-right"] {
     position: absolute;
-    bottom: 9%;
-    right: 9%;
+    bottom: 7%;
+    right: 7%;
     transform: translate(
-      calc((1 - var(--p, 0)) * 5%),
-      calc((1 - var(--p, 0)) * 5%)
+      calc((1 - var(--p, 0)) * 12%),
+      calc((1 - var(--p, 0)) * 12%)
     );
   }
 
@@ -913,7 +923,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
 
   /* ──────────────────────────────────────────────────────────────  */
-  /* layout = anchor-single · beat 04 / 05                            */
+  /* layout = anchor-single · beat 04                                  */
   /* ──────────────────────────────────────────────────────────────  */
   .poem-beat[data-layout="anchor-single"] .poem-stage {
     display: flex;
@@ -943,6 +953,75 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-beat[data-layout="anchor-single"] .poem-text {
     max-width: var(--text-max-w);
     transform: translateY(calc((1 - var(--p, 0)) * 6px));
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
+  /* layout = scroll-unfold · beat 05（Snow_13 卷轴展开 + CountUp）     */
+  /*                                                                   */
+  /* 视觉：竖幅照片从上下同时展开，不做旧照片褪色；保留原照片亮度，     */
+  /* 用细滚轴边和轻微阴影让「已携手走过 [N] 天」像被慢慢展开的相册页。 */
+  /* ──────────────────────────────────────────────────────────────  */
+  .poem-beat[data-layout="scroll-unfold"] .poem-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--stage-gap);
+  }
+  .poem-beat[data-layout="scroll-unfold"] .poem-photos {
+    width: var(--photo-w);
+    max-width: var(--photo-w);
+    perspective: 1200px;
+  }
+  .poem-beat[data-layout="scroll-unfold"] .poem-photo[data-role="anchor"] {
+    width: var(--photo-w);
+    height: var(--photo-h);
+    position: relative;
+    overflow: hidden;
+    clip-path: inset(
+      calc((1 - var(--p, 0)) * 40%) 0 calc((1 - var(--p, 0)) * 40%) 0 round
+        var(--radius-sm)
+    );
+    transform: translateY(calc((1 - var(--p, 0)) * 12px))
+      rotateX(calc((1 - var(--p, 0)) * 2deg))
+      scale(calc(0.955 + var(--p, 0) * 0.045));
+    transform-origin: center;
+    box-shadow:
+      0 18px 42px rgba(47, 58, 37, 0.12),
+      0 0 0 1px rgba(91, 102, 62, 0.08);
+  }
+  .poem-beat[data-layout="scroll-unfold"]
+    .poem-photo[data-role="anchor"]::before,
+  .poem-beat[data-layout="scroll-unfold"]
+    .poem-photo[data-role="anchor"]::after {
+    content: "";
+    position: absolute;
+    left: 0.45rem;
+    right: 0.45rem;
+    height: 7px;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 249, 235, 0.12),
+      rgba(255, 249, 235, 0.72),
+      rgba(91, 102, 62, 0.18)
+    );
+    opacity: calc(0.18 + var(--p, 0) * 0.42);
+    box-shadow: 0 2px 8px rgba(47, 58, 37, 0.14);
+  }
+  .poem-beat[data-layout="scroll-unfold"]
+    .poem-photo[data-role="anchor"]::before {
+    top: 0.5rem;
+  }
+  .poem-beat[data-layout="scroll-unfold"]
+    .poem-photo[data-role="anchor"]::after {
+    bottom: 0.5rem;
+  }
+  .poem-beat[data-layout="scroll-unfold"] .poem-text {
+    max-width: var(--text-max-w);
+    transform: translateY(calc((1 - var(--p, 0)) * 8px));
   }
 
   /* ──────────────────────────────────────────────────────────────  */
@@ -1121,7 +1200,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* ──────────────────────────────────────────────────────────────  */
   /* layout = overlap · beat 07（双层 ghost 重合 → 收敛单图）           */
   /*                                                                   */
-  /* 视觉：双侧白色 drop-shadow ghost；--p 0→1 把 ghost 偏移 12px→0     */
+  /* 视觉：双侧暖金 / 橄榄 ghost；--p 0→1 把 ghost 偏移 34px→0           */
   /*   合到单图。"两个契合的灵魂" 由两层错位渐合表达。                 */
   /* ──────────────────────────────────────────────────────────────  */
   .poem-beat[data-layout="overlap"] .poem-stage {
@@ -1138,12 +1217,16 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-beat[data-layout="overlap"] .poem-photo[data-role="overlap"] {
     width: var(--photo-w);
     height: var(--photo-h);
-    /* 用 filter drop-shadow 实现"双层 ghost"——纯 CSS，不需要复制 DOM */
+    transform: scale(calc(0.965 + var(--p, 0) * 0.035))
+      translateY(calc((1 - var(--p, 0)) * 8px));
+    /* 用 filter drop-shadow 实现"双层 ghost"——纯 CSS，不复制 DOM */
     filter: drop-shadow(
-        calc((1 - var(--p, 0)) * 12px) 0 0 rgba(255, 255, 255, 0.32)
+        calc((1 - var(--p, 0)) * 34px) 0 0 rgba(91, 102, 62, 0.2)
       )
-      drop-shadow(calc((1 - var(--p, 0)) * -12px) 0 0 rgba(245, 240, 230, 0.32));
-    transition: filter 120ms linear;
+      drop-shadow(calc((1 - var(--p, 0)) * -34px) 0 0 rgba(231, 195, 105, 0.32));
+    transition:
+      filter 120ms linear,
+      transform 120ms linear;
   }
   .poem-beat[data-layout="overlap"] .poem-text {
     max-width: var(--text-max-w);
@@ -1363,6 +1446,14 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
       opacity: calc(0.88 + var(--p-photo-2, var(--p, 0)) * 0.12);
       transform: translateY(calc((1 - var(--p-photo-2, var(--p, 0))) * 12px))
         scale(calc(0.985 + var(--p-photo-2, var(--p, 0)) * 0.015)) !important;
+    }
+    .poem-beat[data-layout="scroll-unfold"] .poem-photo[data-role="anchor"] {
+      clip-path: inset(
+        calc((1 - var(--p, 0)) * 24%) 0 calc((1 - var(--p, 0)) * 24%) 0 round
+          var(--radius-sm)
+      ) !important;
+      transform: translateY(calc((1 - var(--p, 0)) * 10px))
+        scale(calc(0.975 + var(--p, 0) * 0.025)) !important;
     }
     .poem-photo :global(picture),
     .poem-photo :global(img) {

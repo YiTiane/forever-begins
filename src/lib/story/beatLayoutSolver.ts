@@ -21,7 +21,7 @@
  *     输出一个 `Record<string, string>` 给调用方写到元素上。便于在 worker / SSR / test 里复用。
  *   - **photo 尺寸单位 px**：避免 vw/vh 在被 sticky 父容器嵌套时的怪行为；solver 自己负
  *     责把 px 数算到「不会爆破 vw / vh」的范围。
- *   - **每 layout 一支函数**：parallax-pair / diagonal-gaze / radial-mask / anchor-single
+ *   - **每 layout 一支函数**：parallax-pair / diagonal-gaze / radial-mask / anchor-single / scroll-unfold
  *     的几何约束差很多，避免一个共用函数被参数堆撑爆。
  *   - **role 显式查找**：不依赖数组顺序；schema 已 enum 化 role，solver 拿到的就是合法值。
  *
@@ -40,6 +40,7 @@ export type BeatLayout =
   | "diagonal-gaze"
   | "radial-mask"
   | "anchor-single"
+  | "scroll-unfold"
   | "vignette" // beat 06：夜色 vignette
   | "overlap" // beat 07：契合双层重合
   | "reveal" // beat 08：clip-path 展开
@@ -58,7 +59,7 @@ export type StoryLayoutMode = "compact" | "portrait" | "wide";
  *   - parallax-pair portrait → "between"（display:contents + order，文字夹在两图之间）
  *   - diagonal-gaze wide → "overlay-center"（文字浮卡居中 + backdrop-blur）
  *   - diagonal-gaze portrait → "between"
- *   - radial-mask / anchor-single / overlap → "below"
+ *   - radial-mask / anchor-single / scroll-unfold / overlap → "below"
  *   - vignette → "overlay-bottom"（文字浮在夜色暗角图底部，营造亲密语境）
  *   - reveal / pearl → "overlay-top"
  *   - wooden wide → "side-text-photo"，portrait / compact → "below"
@@ -274,11 +275,11 @@ function solveDiagonalGaze(input: SolverInput): SolverResult {
      * transform。这样 top-left / bottom-right 能更靠近中央文字，但 p=0
      * 仍有足够边界，不会被 sticky stage overflow:hidden 裁掉。
      */
-    const photoMaxW = stageW * 0.32;
-    const photoMaxH = stageH * 0.48;
+    const photoMaxW = stageW * 0.36;
+    const photoMaxH = stageH * 0.52;
     const [tlW, tlH] = fitAspect(photoMaxW, photoMaxH, tlPhoto.aspectRatio);
     const [brW, brH] = fitAspect(photoMaxW, photoMaxH, brPhoto.aspectRatio);
-    const textW = clampPx(stageW * 0.32, 340, 400);
+    const textW = clampPx(stageW * 0.3, 330, 390);
 
     return {
       vars: {
@@ -351,7 +352,7 @@ function solveRadialMask(input: SolverInput): SolverResult {
   };
 }
 
-// ─── anchor-single（beat 04 / 05 · 单图作锚点）─────────────────────
+// ─── anchor-single（beat 04 · 单图作锚点）──────────────────────────
 function solveAnchorSingle(input: SolverInput): SolverResult {
   const { vw, vh, photos, textHeight } = input;
   const photo = photos[0];
@@ -375,6 +376,35 @@ function solveAnchorSingle(input: SolverInput): SolverResult {
       "--photo-w": `${photoW}px`,
       "--photo-h": `${photoH}px`,
       "--text-max-w": `${Math.min(photoW + 40, stageW)}px`,
+      "--stage-gap": `${gap}px`,
+    },
+    dataAttrs: { textPlacement: "below" },
+  };
+}
+
+// ─── scroll-unfold（beat 05 · Snow_13 携手 [N] 天 · 卷轴展开）───────
+function solveScrollUnfold(input: SolverInput): SolverResult {
+  const { vw, vh, photos, textHeight } = input;
+  const photo = photos[0];
+  if (!photo) return { vars: {} };
+
+  const mode = getStoryLayoutMode(vw, vh);
+  const stageW = Math.min(vw, 1280) - SAFE_PAD * 2;
+  const stageH = vh - STAGE_PAD_Y * 2;
+  const textReserveH = textHeight ?? clampPx(vh * 0.15, 96, 170);
+  const gap = mode === "compact" ? 18 : 22;
+  const photoMaxW =
+    mode === "wide"
+      ? Math.min(stageW * 0.48, 520)
+      : Math.min(stageW * (mode === "portrait" ? 0.58 : 0.82), 460);
+  const photoMaxH = stageH - textReserveH - gap;
+  const [photoW, photoH] = fitAspect(photoMaxW, photoMaxH, photo.aspectRatio);
+
+  return {
+    vars: {
+      "--photo-w": `${photoW}px`,
+      "--photo-h": `${photoH}px`,
+      "--text-max-w": `${Math.min(photoW + 80, stageW)}px`,
       "--stage-gap": `${gap}px`,
     },
     dataAttrs: { textPlacement: "below" },
@@ -542,6 +572,8 @@ export function solveBeatLayout(input: SolverInput): SolverResult {
       return solveRadialMask(input);
     case "anchor-single":
       return solveAnchorSingle(input);
+    case "scroll-unfold":
+      return solveScrollUnfold(input);
     case "vignette":
       return solveVignette(input);
     case "overlap":
