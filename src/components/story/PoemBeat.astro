@@ -206,6 +206,8 @@ interface Props {
    *  入场 CountUp。父组件 StoryPoemScroller 从 main.data.anchor_date 透传；不传则不
    *  做替换（保留 "[N]" 字面量，相当于 v1.73 之前的行为）。 */
   anchorDate?: string;
+  /** Vercel static edition：照片停在最终完成帧，不挂雪粒子 / scroll motion。 */
+  staticStory?: boolean;
 }
 
 const {
@@ -215,6 +217,7 @@ const {
   photos,
   firstAboveFold = false,
   anchorDate,
+  staticStory = false,
 } = Astro.props;
 
 /**
@@ -347,6 +350,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   data-beat-id={id}
   data-layout={layout}
   data-story-mode="portrait"
+  data-static-story={staticStory ? "true" : undefined}
   data-text-placement={ssrTextPlacement}
   aria-labelledby={ariaHeadingId}
 >
@@ -422,9 +426,9 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
               />
               {/* v1.65：vignette layout 在 photo 之上叠 SnowAtmosphere canvas
                   雪粒子（仅 vignette role；canvas 自身 absolute inset:0 + IO 生命周期）*/}
-              {layout === "vignette" && photo.role === "vignette" && (
-                <SnowAtmosphere />
-              )}
+              {!staticStory &&
+                layout === "vignette" &&
+                photo.role === "vignette" && <SnowAtmosphere />}
             </figure>
           ))}
         </div>
@@ -1356,6 +1360,73 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   }
 
   /* ──────────────────────────────────────────────────────────────  */
+  /* Vercel static story edition                                      */
+  /*                                                                   */
+  /* 父级 StoryPoemScroller 写 data-static-story 并在首帧把所有 progress */
+  /* 变量固定为 1；这里提供 SSR/CSS 兜底，移除 sticky spacer 与所有过渡感。 */
+  /* ──────────────────────────────────────────────────────────────  */
+  :global(.story-poem[data-static-story]) .poem-beat,
+  :global(.story-poem[data-static-story]) .poem-beat[data-layout],
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-story-mode="wide"][data-layout] {
+    min-height: auto;
+    padding: clamp(1.25rem, 3vh, 2.25rem) 0;
+    --p: 1;
+    --p-photo-1: 1;
+    --p-photo-2: 1;
+    --p-text: 1;
+  }
+  :global(.story-poem[data-static-story]) .poem-beat + .poem-beat {
+    margin-top: clamp(0.75rem, 2vh, 1.5rem);
+  }
+  :global(.story-poem[data-static-story]) .poem-stage {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+    padding-block: clamp(1.25rem, 3vh, 2.25rem);
+  }
+  :global(.story-poem[data-static-story]) .poem-photo,
+  :global(.story-poem[data-static-story]) .poem-photo::before,
+  :global(.story-poem[data-static-story]) .poem-photo::after,
+  :global(.story-poem[data-static-story]) .poem-text {
+    transition: none !important;
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="radial-mask"]
+    .poem-photo[data-role="center"],
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="reveal"]
+    .poem-photo[data-role="reveal"],
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="scroll-unfold"]
+    .poem-photo[data-role="anchor"],
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="anchor-single"]
+    .poem-photo[data-role="anchor"][data-fit="cover"] {
+    clip-path: none !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="overlap"]
+    .poem-photo[data-role="overlap"] {
+    filter: none !important;
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="pearl"]
+    .poem-photo[data-role="pearl"]::after {
+    display: none !important;
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-layout="vignette"]
+    .poem-photo[data-role="vignette"]
+    :global(.snow-atmosphere) {
+    display: none !important;
+  }
+
+  /* ──────────────────────────────────────────────────────────────  */
   /* 移动端 · ≤ 540px（windows 取消 sticky / absolute，单列流式堆叠） */
   /* solver 在窄屏依然给出尺寸值，但视觉上简化为竖向流式             */
   /* ──────────────────────────────────────────────────────────────  */
@@ -1468,6 +1539,16 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     }
     .poem-beat[data-layout="vignette"] .poem-text p {
       opacity: 1 !important;
+    }
+  }
+
+  @media (max-width: 540px) {
+    :global(.story-poem[data-static-story]) .poem-beat + .poem-beat {
+      margin-top: clamp(0.75rem, 2.5vh, 1.25rem);
+    }
+    :global(.story-poem[data-static-story]) .poem-photo,
+    :global(.story-poem[data-static-story]) .poem-photo[data-role] {
+      transition: none !important;
     }
   }
 

@@ -153,6 +153,7 @@ interface Props {
 }
 
 const { maxBeats = 10 } = Astro.props;
+const staticStory = true;
 
 const storyPoemEntries = await getCollection("storyPoem");
 const main = storyPoemEntries.find((e) => e.id === "main");
@@ -201,6 +202,7 @@ const anchorDate = main.data.anchor_date;
   class="story-poem"
   aria-labelledby="story-poem-heading"
   data-nav-section
+  data-static-story={staticStory ? "true" : undefined}
 >
   {/* 章节标题（拉丁体细斜，与 §1 'Invitation' 同档） */}
   <h2 id="story-poem-heading" class="section-title latin-italic">Our Story</h2>
@@ -220,6 +222,7 @@ const anchorDate = main.data.anchor_date;
         lines={beat.lines}
         photos={beat.photos}
         anchorDate={anchorDate}
+        staticStory={staticStory}
       />
     ))
   }
@@ -246,7 +249,7 @@ const anchorDate = main.data.anchor_date;
     width: 100%;
     /* v1.100 finale 收口：底部 2rem paper padding 会在最终 Pearl_04 定格时露出
        浅色条带；§2 结尾现在由 FinaleBeat 自己负责完整深色舞台。 */
-    padding: 4rem 0 0;
+    padding: clamp(2rem, 5vh, 4rem) 0 0;
   }
 
   .section-title {
@@ -254,7 +257,7 @@ const anchorDate = main.data.anchor_date;
     line-height: 1.1;
     color: var(--c-sage);
     font-weight: 300;
-    margin: 0 auto 2rem;
+    margin: 0 auto clamp(1.25rem, 3vh, 2rem);
     text-align: center;
   }
 
@@ -442,6 +445,106 @@ const anchorDate = main.data.anchor_date;
 
     // 初始一次：page load 后立刻给每个 beat 算一遍 layout 变量
     beats.forEach(applyLayout);
+
+    // Vercel 静态版：Story 照片不再由 scroll progress 驱动。保留 solver 的
+    // viewport-aware 最终尺寸 / 位置，但所有 beat 从首帧起固定在完成态。
+    const isStaticStory = Boolean(
+      document.querySelector(".story-poem[data-static-story]"),
+    );
+    if (isStaticStory) {
+      function finalizeStaticStory(): void {
+        beats.forEach((beat) => {
+          applyLayout(beat);
+          writeProgress(beat, 1);
+        });
+      }
+
+      function alignStaticHashToStage(): void {
+        const rawHash = window.location.hash;
+        if (!rawHash || rawHash.length <= 1) return;
+
+        const id = decodeURIComponent(rawHash.slice(1));
+        const anchor = document.getElementById(id);
+        if (!anchor) return;
+
+        const target =
+          anchor
+            .closest<HTMLElement>(".poem-beat")
+            ?.querySelector<HTMLElement>(".poem-stage") ??
+          anchor
+            .closest<HTMLElement>(".globe-beat")
+            ?.querySelector<HTMLElement>(".globe-stage") ??
+          anchor
+            .closest<HTMLElement>(".finale-beat")
+            ?.querySelector<HTMLElement>(".finale-stage");
+
+        if (!target) return;
+
+        const vh = window.innerHeight || 1;
+        const absoluteTop = window.scrollY + target.getBoundingClientRect().top;
+        window.scrollTo({
+          top: Math.max(0, absoluteTop - vh * 0.025),
+          behavior: "auto",
+        });
+      }
+
+      finalizeStaticStory();
+      window.addEventListener("resize", finalizeStaticStory);
+      window.addEventListener("hashchange", () => {
+        finalizeStaticStory();
+        window.requestAnimationFrame(alignStaticHashToStage);
+      });
+      window.addEventListener(
+        "load",
+        () => {
+          finalizeStaticStory();
+          window.requestAnimationFrame(() => {
+            alignStaticHashToStage();
+            window.requestAnimationFrame(alignStaticHashToStage);
+          });
+        },
+        { once: true },
+      );
+
+      const staticTextRO = new ResizeObserver(() => finalizeStaticStory());
+      beats.forEach((beat) => {
+        const textEl = beat.querySelector<HTMLElement>(".poem-text");
+        if (textEl) staticTextRO.observe(textEl);
+      });
+
+      window.requestAnimationFrame(() => {
+        alignStaticHashToStage();
+        window.requestAnimationFrame(alignStaticHashToStage);
+      });
+
+      (
+        window as unknown as {
+          __storyPoem?: {
+            progress: () => Record<
+              string,
+              { p: number; p1: number; p2: number; pt: number }
+            >;
+            list: () => string[];
+            active: () => string[];
+          };
+        }
+      ).__storyPoem = {
+        progress: () => {
+          const out: Record<
+            string,
+            { p: number; p1: number; p2: number; pt: number }
+          > = {};
+          beats.forEach((b) => {
+            const id = b.dataset.beatId ?? "?";
+            out[id] = { p: 1, p1: 1, p2: 1, pt: 1 };
+          });
+          return out;
+        },
+        list: () => beats.map((b) => b.dataset.beatId ?? "?"),
+        active: () => [],
+      };
+      return;
+    }
 
     // prefers-reduced-motion：写终态后退出；不绑事件、不跑 rAF。
     // （solver 已经在上面跑过了，layout 尺寸已写到位）
@@ -802,7 +905,7 @@ const anchorDate = main.data.anchor_date;
       }
     });
 
-    if (prefersReduced) return; // 全部已写终值，无需 IO
+    if (prefersReduced || isStaticStory) return; // 全部已写终值，无需 IO
 
     // ease-out cubic 让数字结尾"减速"，不像 linear 那么机械
     function easeOut(t: number): number {
