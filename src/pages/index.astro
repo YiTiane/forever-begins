@@ -15,7 +15,7 @@
  *
  * v0.7 变化：
  *   - 在 Family 之后追加 <Details /> 与 <Closing />，补全 Phase 6 主叙事。
- *   - 注入 <SiteNav />：首屏后出现的全局锚点导航 + 左侧阅读进度 rail。
+ *   - Vercel static edition 移除全局锚点导航，避免右上菜单遮挡静态照片审阅。
  * v0.6 变化：
  *   - 在 StoryPoemScroller 之后追加 <FamilySection />，进入 Phase 5 第三章。
  *   - Family 是 Astro-only 浅纸面章节，不继承 Finale 深色星场，不恢复 Lightbox。
@@ -39,12 +39,10 @@ import Closing from "@/components/details/Closing.astro";
 import Details from "@/components/details/Details.astro";
 import Invitation from "@/components/Invitation.astro";
 import FamilySection from "@/components/family/FamilySection.astro";
-import SiteNav from "@/components/nav/SiteNav.astro";
 import StoryPoemScroller from "@/components/story/StoryPoemScroller.astro";
 ---
 
 <Base>
-  <SiteNav />
   <Cover />
   <Invitation />
   <StoryPoemScroller />

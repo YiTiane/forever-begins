@@ -1180,7 +1180,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     .poem-stage {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, var(--photo-w));
-    gap: clamp(1.5rem, 4vw, 3rem);
+    gap: clamp(1rem, 2.25vw, 1.75rem);
     align-items: center;
     justify-items: center;
   }
@@ -1370,14 +1370,15 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   :global(.story-poem[data-static-story])
     .poem-beat[data-story-mode="wide"][data-layout] {
     min-height: auto;
-    padding: clamp(1.25rem, 3vh, 2.25rem) 0;
+    padding: clamp(1.75rem, 4vh, 3rem) 0;
+    overflow: hidden;
     --p: 1;
     --p-photo-1: 1;
     --p-photo-2: 1;
     --p-text: 1;
   }
   :global(.story-poem[data-static-story]) .poem-beat + .poem-beat {
-    margin-top: clamp(0.75rem, 2vh, 1.5rem);
+    margin-top: clamp(1.75rem, 4vh, 3rem);
   }
   :global(.story-poem[data-static-story]) .poem-stage {
     position: relative;
@@ -1386,6 +1387,23 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     min-height: auto;
     overflow: visible;
     padding-block: clamp(1.25rem, 3vh, 2.25rem);
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-story-mode="wide"]
+    .poem-stage {
+    min-height: max(var(--stage-h), 720px);
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-story-mode="wide"][data-layout="parallax-pair"]
+    .poem-stage {
+    min-height: calc(var(--photos-col-h) + clamp(10rem, 18vh, 14rem));
+  }
+  :global(.story-poem[data-static-story])
+    .poem-beat[data-story-mode="wide"][data-layout="diagonal-gaze"]
+    .poem-stage {
+    min-height: calc(
+      var(--photo-tl-h) + var(--photo-br-h) + clamp(8rem, 15vh, 12rem)
+    );
   }
   :global(.story-poem[data-static-story]) .poem-photo,
   :global(.story-poem[data-static-story]) .poem-photo::before,

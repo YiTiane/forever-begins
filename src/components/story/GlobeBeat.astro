@@ -95,7 +95,7 @@ const GLOBE_CENTER = {
   lng: 113,
   lat: 5,
 };
-const GLOBE_RADIUS = 46;
+const GLOBE_RADIUS = 48;
 
 function fmt(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, "");
@@ -205,7 +205,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
                 >
                   <stop offset="0%" stop-color="#496b3b"></stop>
                   <stop offset="58%" stop-color="#10251b"></stop>
-                  <stop offset="100%" stop-color="#03100b"></stop>
+                  <stop offset="100%" stop-color="#10251b"></stop>
                 </radialGradient>
                 <radialGradient
                   id="static-globe-limb"
@@ -215,7 +215,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
                 >
                   <stop offset="55%" stop-color="#000000" stop-opacity="0"
                   ></stop>
-                  <stop offset="100%" stop-color="#000000" stop-opacity="0.46"
+                  <stop offset="100%" stop-color="#000000" stop-opacity="0.06"
                   ></stop>
                 </radialGradient>
               </defs>
@@ -354,10 +354,9 @@ const staticRoutes = globeProps.routes.map((route) => ({
     aspect-ratio: 1;
     border-radius: 50%;
     overflow: hidden;
-    background: #06130e;
+    background: #10251b;
     box-shadow:
-      inset -2.6rem -2.2rem 3.6rem rgba(0, 8, 5, 0.5),
-      inset 1rem 1.2rem 2.6rem rgba(238, 229, 186, 0.09),
+      inset 0.9rem 1rem 2rem rgba(238, 229, 186, 0.1),
       0 1.25rem 2.6rem rgba(53, 71, 45, 0.14);
   }
   .globe-static-routes {
@@ -375,7 +374,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
     stroke-width: 0.06;
   }
   .globe-static-routes .static-limb {
-    fill: url("#static-globe-limb");
+    display: none;
   }
   .globe-static-routes .route {
     fill: none;
