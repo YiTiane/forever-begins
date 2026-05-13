@@ -586,7 +586,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   .poem-text {
     color: var(--c-olive-ink);
     font-weight: 300;
-    font-size: 1.5rem;
+    font-size: calc(1.5rem + 3px);
     line-height: 1.85;
     text-align: center;
     width: 100%;
@@ -613,7 +613,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
     /* 数字 tabular 等宽，CountUp 改写时不会让上下行抖动 */
     font-variant-numeric: tabular-nums;
     /* 数字稍大 + 字距收紧让"天"贴近数字 */
-    font-size: 1.18em;
+    font-size: calc(1.18em + 3px);
     margin: 0 0.18em;
     letter-spacing: 0.01em;
   }
@@ -621,7 +621,7 @@ function getObjectPositionStyle(p: BeatPhoto): string | undefined {
   /* 移动端字号收一档 */
   @media (max-width: 540px) {
     .poem-text {
-      font-size: 1.25rem;
+      font-size: calc(1.25rem + 3px);
       line-height: 1.7;
     }
   }

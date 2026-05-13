@@ -105,7 +105,7 @@ const { targetDate } = Astro.props;
     margin: 0;
     color: var(--c-sage-deep);
     font-weight: 300;
-    font-size: 1.0625rem;
+    font-size: calc(1.0625rem + 3px);
     line-height: 1.7;
     letter-spacing: 0;
     text-align: center;
@@ -129,20 +129,20 @@ const { targetDate } = Astro.props;
 
   .countdown .digits :is(.d, .h, .m, .s) {
     color: var(--c-sage-deep);
-    font-size: 1.55rem;
+    font-size: calc(1.55rem + 3px);
     font-weight: 500;
     line-height: 1;
   }
 
   .countdown .digits .unit {
     color: color-mix(in oklch, var(--c-olive-ink) 88%, var(--c-sage));
-    font-size: 1rem;
+    font-size: calc(1rem + 3px);
     line-height: 1;
   }
 
   /* —— arrived（v0.2 P2 #2 修复）：整段一句 cn-kaishu 抒情体替代倒计时 —— */
   .countdown .arrived {
-    font-size: 1.25rem;
+    font-size: calc(1.25rem + 3px);
     color: var(--c-olive-ink);
     line-height: 1.85;
   }
@@ -167,29 +167,29 @@ const { targetDate } = Astro.props;
 
   @media (min-width: 720px) {
     .countdown .digits :is(.d, .h, .m, .s) {
-      font-size: 1.9rem;
+      font-size: calc(1.9rem + 3px);
     }
     .countdown .digits .unit {
-      font-size: 1.16rem;
+      font-size: calc(1.16rem + 3px);
     }
   }
 
   @media (min-width: 1100px) {
     .countdown .digits :is(.d, .h, .m, .s) {
-      font-size: 2.25rem;
+      font-size: calc(2.25rem + 3px);
     }
     .countdown .digits .unit {
-      font-size: 1.28rem;
+      font-size: calc(1.28rem + 3px);
     }
   }
 
   /* 移动端字号微缩 */
   @media (max-width: 540px) {
     .countdown {
-      font-size: 0.9375rem;
+      font-size: calc(0.9375rem + 3px);
     }
     .countdown .arrived {
-      font-size: 1.125rem;
+      font-size: calc(1.125rem + 3px);
     }
   }
 </style>

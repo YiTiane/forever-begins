@@ -410,7 +410,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
 
   .globe-line {
     margin: 0 0 0.85rem;
-    font-size: 1.5rem;
+    font-size: calc(1.5rem + 3px);
     line-height: 1.85;
     font-weight: 300;
   }
@@ -420,7 +420,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
 
   .globe-distance {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: calc(1.125rem + 3px);
     line-height: 1.6;
     color: var(--c-sage-deep);
     display: flex;
@@ -437,7 +437,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
 
   .globe-km {
     color: var(--c-honey, #c69d4e);
-    font-size: 1.65rem;
+    font-size: calc(1.65rem + 3px);
     line-height: 1.2;
     font-weight: 400;
     /* v1.74：prefix + num + unit 横向排成一句，让 "我们最远时相距 10,755 公里"
@@ -450,7 +450,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
   }
   .globe-km-prefix {
     /* prefix "我们最远时相距" —— 比数字克制，sage 色让数字自己抓眼 */
-    font-size: 1rem;
+    font-size: calc(1rem + 3px);
     color: var(--c-sage);
     letter-spacing: 0.04em;
     /* 与数字之间留一个字宽 */
@@ -462,7 +462,7 @@ const staticRoutes = globeProps.routes.map((route) => ({
     font-variant-numeric: tabular-nums;
   }
   .globe-km-unit {
-    font-size: 1rem;
+    font-size: calc(1rem + 3px);
     color: var(--c-sage);
   }
   /* v1.79：grid 不再 1×1 overlay；fallback 直接占 row 1 (canvas 位置) 居中 */
@@ -496,10 +496,10 @@ const staticRoutes = globeProps.routes.map((route) => ({
       min-height: 50vh;
     }
     .globe-line {
-      font-size: 1.25rem;
+      font-size: calc(1.25rem + 3px);
     }
     .globe-km {
-      font-size: 1.4rem;
+      font-size: calc(1.4rem + 3px);
     }
   }
 </style>

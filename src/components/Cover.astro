@@ -164,12 +164,12 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
      用 helper class（.latin-italic / .cn-song）替代 inline font-family；
      字号继续用静态 rem（不绑 vw，DESIGN §2.3.5 v2.21）。 */
   .welcome {
-    font-size: 1.5rem;
+    font-size: calc(1.5rem + 3px);
     color: var(--c-sage);
     margin: 0 0 1rem;
   }
   .hero {
-    font-size: 5rem;
+    font-size: calc(5rem + 3px);
     line-height: 1.1;
     color: var(--c-sage-deep);
     margin: 0 0 3rem;
@@ -180,7 +180,7 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
     font-weight: 300;
   }
   .meta p {
-    font-size: 1.125rem;
+    font-size: calc(1.125rem + 3px);
     margin: 0.5rem 0;
     line-height: 1.7;
   }
@@ -189,13 +189,13 @@ import InvitationParallax from "@/components/cover/InvitationParallax.astro";
       padding-bottom: 2.5rem;
     }
     .hero {
-      font-size: 3.5rem;
+      font-size: calc(3.5rem + 3px);
     }
     .meta {
       margin-bottom: 1.25rem;
     }
     .meta p {
-      font-size: 1rem;
+      font-size: calc(1rem + 3px);
     }
   }
 </style>
